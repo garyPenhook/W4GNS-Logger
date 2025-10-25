@@ -234,9 +234,23 @@ class MainWindow(QMainWindow):
 
     def _create_awards_tab(self) -> QWidget:
         """Create awards dashboard tab"""
+        from PyQt6.QtWidgets import QTabWidget, QScrollArea
+        from src.ui.centurion_progress_widget import CenturionProgressWidget
+
         widget = QWidget()
         layout = QVBoxLayout()
-        layout.addWidget(self._create_placeholder("Awards Dashboard"))
+
+        # Create tab widget for different awards
+        awards_tabs = QTabWidget()
+
+        # Centurion Award Tab
+        centurion_scroll = QScrollArea()
+        centurion_scroll.setWidgetResizable(True)
+        centurion_widget = CenturionProgressWidget(self.db)
+        centurion_scroll.setWidget(centurion_widget)
+        awards_tabs.addTab(centurion_scroll, "Centurion")
+
+        layout.addWidget(awards_tabs)
         widget.setLayout(layout)
         return widget
 
