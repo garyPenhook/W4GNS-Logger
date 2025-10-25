@@ -101,8 +101,8 @@ class LoggingForm(QWidget):
                 'band': 80,
                 'mode': 100,
                 'frequency': 100,
-                'country': 120,
-                'state': 80,
+                'country': 84,  # 30% narrower (was 120, now 84)
+                'state': 56,  # 30% narrower (was 80, now 56)
                 'grid': 73,  # Grid square field width
                 'qth': 96,  # QTH field width
                 'rst_sent': 50,
@@ -289,8 +289,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.country_combo.setFont(font)
         self.country_combo.setMinimumHeight(35)
+        self.country_combo.setMaximumWidth(84)  # 30% narrower
         row2.addWidget(create_label("Country:"))
-        row2.addWidget(self.country_combo, 2)
+        row2.addWidget(self.country_combo, 0)
 
         # State
         self.state_combo = QComboBox()
@@ -300,8 +301,11 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.state_combo.setFont(font)
         self.state_combo.setMinimumHeight(35)
+        self.state_combo.setMaximumWidth(56)  # 30% narrower
         row2.addWidget(create_label("State:"))
-        row2.addWidget(self.state_combo, 1)
+        row2.addWidget(self.state_combo, 0)
+
+        row2.addStretch()
 
         main_layout.addLayout(row2)
 
