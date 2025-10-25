@@ -42,11 +42,21 @@ class ConfigManager:
         },
         "qrz": {
             "enabled": False,
-            "auto_upload": False,
+            "username": "",  # QRZ.com username
+            "password": "",  # QRZ.com password (stored in config)
+            "auto_upload": False,  # Auto-upload contacts to QRZ logbook
+            "auto_fetch": False,  # Auto-fetch callsign info from QRZ
         },
         "awards": {
             "enabled": True,
             "auto_calculate": True,
+        },
+        "skcc": {
+            "spots_enabled": False,  # Enable SKCC member spot monitoring
+            "auto_start_spots": False,  # Auto-start monitoring on launch
+            "unworked_only": False,  # Show unworked stations only
+            "min_signal_strength": 0,  # dB
+            "max_spot_age_seconds": 300,  # seconds
         },
         "ui": {
             "theme": "light",

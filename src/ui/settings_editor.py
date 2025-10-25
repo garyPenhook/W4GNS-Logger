@@ -64,6 +64,9 @@ class SettingsEditor(QWidget):
         # Features settings
         self.tabs.addTab(self._create_features_tab(), "Features")
 
+        # QRZ.com integration
+        self.tabs.addTab(self._create_qrz_tab(), "QRZ.com")
+
         # Raw config editor
         self.tabs.addTab(self._create_raw_config_tab(), "Raw Config")
 
@@ -334,6 +337,149 @@ class SettingsEditor(QWidget):
 
         widget.setLayout(form_layout)
         return widget
+
+    def _create_qrz_tab(self) -> QWidget:
+        """Create QRZ.com integration settings tab"""
+        widget = QWidget()
+        form_layout = QFormLayout()
+        form_layout.setSpacing(5)  # Reduce spacing between label and field
+
+        # Enable QRZ.com integration
+        qrz_enable_check = QCheckBox("Enable QRZ.com integration")
+        qrz_enable_check.setChecked(self.config_manager.get("qrz.enabled", False))
+        qrz_enable_check.setToolTip("Enable callsign lookups and logbook management via QRZ.com")
+        self.settings_widgets["qrz.enabled"] = qrz_enable_check
+        form_layout.addRow("", qrz_enable_check)
+
+        form_layout.addRow("", QLabel(""))  # Spacer
+
+        # QRZ.com username
+        username_input = QLineEdit()
+        username_input.setText(self.config_manager.get("qrz.username", ""))
+        username_input.setPlaceholderText("Your QRZ.com username")
+        username_input.setToolTip("QRZ.com account username")
+        self.settings_widgets["qrz.username"] = username_input
+        form_layout.addRow("QRZ.com Username:", username_input)
+
+        # QRZ.com password
+        password_input = QLineEdit()
+        password_input.setText(self.config_manager.get("qrz.password", ""))
+        password_input.setPlaceholderText("Your QRZ.com password")
+        password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        password_input.setToolTip("QRZ.com account password (encrypted in config)")
+        self.settings_widgets["qrz.password"] = password_input
+        form_layout.addRow("QRZ.com Password:", password_input)
+
+        form_layout.addRow("", QLabel(""))  # Spacer
+
+        # Auto-fetch callsign info
+        auto_fetch_check = QCheckBox("Auto-fetch callsign info from QRZ")
+        auto_fetch_check.setChecked(self.config_manager.get("qrz.auto_fetch", False))
+        auto_fetch_check.setToolTip("Automatically look up callsign info when entering a callsign in the logging form")
+        self.settings_widgets["qrz.auto_fetch"] = auto_fetch_check
+        form_layout.addRow("", auto_fetch_check)
+
+        # Auto-upload contacts
+        auto_upload_check = QCheckBox("Auto-upload contacts to QRZ logbook")
+        auto_upload_check.setChecked(self.config_manager.get("qrz.auto_upload", False))
+        auto_upload_check.setToolTip("Automatically upload logged contacts to your QRZ.com logbook")
+        self.settings_widgets["qrz.auto_upload"] = auto_upload_check
+        form_layout.addRow("", auto_upload_check)
+
+        form_layout.addRow("", QLabel(""))  # Spacer
+
+        # Test connection button
+        test_btn = QPushButton("Test Connection")
+        test_btn.clicked.connect(self._test_qrz_connection)
+        test_btn.setToolTip("Test QRZ.com credentials and connection")
+        form_layout.addRow("", test_btn)
+
+        form_layout.addRow("", QLabel(""))  # Spacer
+
+        # Info label
+        info_label = QLabel(
+            "QRZ.com Integration:\n"
+            "• Look up callsign information in the QRZ database\n"
+            "• Upload your contacts to your QRZ logbook\n"
+            "• Requires a QRZ.com account\n"
+            "• Visit https://www.qrz.com for account info"
+        )
+        info_label.setStyleSheet("color: #666; font-size: 9pt;")
+        form_layout.addRow("", info_label)
+
+        widget.setLayout(form_layout)
+        return widget
+
+    def _test_qrz_connection(self) -> None:
+        """Test QRZ.com connection with provided credentials"""
+        username = self.settings_widgets["qrz.username"].text()
+        password = self.settings_widgets["qrz.password"].text()
+
+        if not username or not password:
+            QMessageBox.warning(
+                self,
+                "Missing Credentials",
+                "Please enter your QRZ.com username and password."
+            )
+            return
+
+        try:
+            import urllib.request
+            import urllib.parse
+            import xml.etree.ElementTree as ET
+
+            # QRZ.com XML API endpoint
+            qrz_url = "https://xmldata.qrz.com/xml/current/"
+            params = urllib.parse.urlencode({
+                'username': username,
+                'password': password,
+                'agent': 'W4GNSLogger/1.0'
+            })
+
+            # Test authentication
+            with urllib.request.urlopen(f"{qrz_url}?{params}", timeout=5) as response:
+                data = response.read()
+                root = ET.fromstring(data)
+
+                # Check for error
+                if root.find('Error') is not None:
+                    error_msg = root.find('Error').text
+                    QMessageBox.critical(
+                        self,
+                        "Connection Failed",
+                        f"QRZ.com authentication failed:\n{error_msg}"
+                    )
+                    return
+
+                # Check for session key
+                if root.find('Session/Key') is not None:
+                    QMessageBox.information(
+                        self,
+                        "Connection Successful",
+                        "QRZ.com credentials are valid!\nYour session key has been obtained."
+                    )
+                    logger.info("QRZ.com connection test successful")
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Unexpected Response",
+                        "QRZ.com response did not contain expected session information."
+                    )
+
+        except urllib.error.URLError as e:
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Failed to connect to QRZ.com:\n{str(e)}"
+            )
+            logger.error(f"QRZ.com connection error: {e}")
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error testing QRZ.com connection:\n{str(e)}"
+            )
+            logger.error(f"QRZ.com test error: {e}")
 
     def _create_raw_config_tab(self) -> QWidget:
         """Create raw config editor tab"""
