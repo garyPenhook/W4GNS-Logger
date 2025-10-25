@@ -50,3 +50,71 @@ main.adi
 # OS
 Thumbs.db
 .DS_Store
+
+# IDE and Editor configs
+.continue/
+.vscode/
+.idea/
+.vim/
+*.swp
+*.swo
+*~
+
+# Development documentation and session notes
+ANALYSIS_INDEX.md
+*_ANALYSIS*.md
+*_ANALYSIS*.txt
+SESSION_*.md
+SESSION_*.txt
+PHASE_*.md
+PHASE_*.txt
+*_DELIVERABLES.md
+*_DELIVERABLES.txt
+*_SUMMARY.md
+*_SUMMARY.txt
+*_REPORT.md
+*_REPORT.txt
+GUI_*.md
+IMPLEMENTATION_*.md
+PERFORMANCE_*.md
+START_HERE*.md
+*_QUICK_START*.txt
+*_QUICK_START*.md
+*_QUICK_REFERENCE*.txt
+*_QUICK_REFERENCE*.md
+LAUNCHING_*.md
+LAUNCHER_*.md
+*_GUIDE.md
+*_UPDATE.md
+GRACEFUL_SHUTDOWN_IMPLEMENTATION.md
+DROPDOWN_RESIZING.md
+EXCEPTION_HANDLING.md
+FIELD_SIZING.md
+RESIZABLE_FIELDS.md
+ALWAYS_RUNNING_CLOCK.md
+ANSWER_TO_YOUR_QUESTION.md
+*_REFERENCE.txt
+Ham_Radio_Logging_Program_Design_Document.txt
+QT_PLATFORM_TROUBLESHOOTING.md
+
+# Development and test files
+migrate_database.py
+test_*.py
+*_test.py
+
+# Screenshots and media
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+
+# Large reference documents
+*.pdf
+
+# Development artifacts
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+__pycache__/
