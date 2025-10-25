@@ -129,118 +129,158 @@ class LoggingForm(QWidget):
             raise
 
     def _create_compact_grid_section(self) -> QGroupBox:
-        """Create compact grid layout with all essential fields"""
+        """Create compact grid layout with larger labels and fields spread horizontally"""
         group = QGroupBox("")
         group.setStyleSheet("QGroupBox { border: none; padding: 0px; }")
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(12)
+
+        # Helper to create larger labels (15% larger)
+        def create_label(text: str) -> QLabel:
+            label = QLabel(text)
+            font = label.font()
+            font.setPointSize(int(font.pointSize() * 1.15))
+            font.setBold(True)
+            label.setFont(font)
+            return label
 
         # ROW 1: Callsign, RST Sent, RST Received, Date/Time
         row1 = QHBoxLayout()
-        row1.setSpacing(8)
+        row1.setSpacing(15)
 
         # Callsign
         self.callsign_input = QLineEdit()
         self.callsign_input.setPlaceholderText("Callsign")
-        self.callsign_input.setMaximumWidth(120)
         self.callsign_input.textChanged.connect(self._on_callsign_changed)
-        row1.addWidget(QLabel("Call:"))
-        row1.addWidget(self.callsign_input)
+        font = self.callsign_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.callsign_input.setFont(font)
+        self.callsign_input.setMinimumHeight(35)
+        row1.addWidget(create_label("Call:"))
+        row1.addWidget(self.callsign_input, 2)
 
         # RST Sent
         self.rst_sent_input = QLineEdit()
         self.rst_sent_input.setPlaceholderText("59")
         self.rst_sent_input.setMaxLength(3)
-        self.rst_sent_input.setMaximumWidth(50)
-        row1.addWidget(QLabel("Sent:"))
-        row1.addWidget(self.rst_sent_input)
+        font = self.rst_sent_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.rst_sent_input.setFont(font)
+        self.rst_sent_input.setMinimumHeight(35)
+        row1.addWidget(create_label("Sent:"))
+        row1.addWidget(self.rst_sent_input, 1)
 
         # RST Received
         self.rst_rcvd_input = QLineEdit()
         self.rst_rcvd_input.setPlaceholderText("59")
         self.rst_rcvd_input.setMaxLength(3)
-        self.rst_rcvd_input.setMaximumWidth(50)
-        row1.addWidget(QLabel("Rcvd:"))
-        row1.addWidget(self.rst_rcvd_input)
+        font = self.rst_rcvd_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.rst_rcvd_input.setFont(font)
+        self.rst_rcvd_input.setMinimumHeight(35)
+        row1.addWidget(create_label("Rcvd:"))
+        row1.addWidget(self.rst_rcvd_input, 1)
 
         # Date/Time
         self.datetime_input = QDateTimeEdit()
         self.datetime_input.setDateTime(QDateTime.currentDateTime())
         self.datetime_input.setDisplayFormat("MM-dd hh:mm")
-        self.datetime_input.setMaximumWidth(110)
         self.datetime_input.focusInEvent = lambda event: self._on_datetime_focus_in()
         self.datetime_input.focusOutEvent = lambda event: self._on_datetime_focus_out()
-        row1.addWidget(QLabel("Time:"))
-        row1.addWidget(self.datetime_input)
-        row1.addStretch()
+        font = self.datetime_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.datetime_input.setFont(font)
+        self.datetime_input.setMinimumHeight(35)
+        row1.addWidget(create_label("Time:"))
+        row1.addWidget(self.datetime_input, 1)
 
         main_layout.addLayout(row1)
 
         # ROW 2: Band, Mode, Frequency, Country, State
         row2 = QHBoxLayout()
-        row2.setSpacing(8)
+        row2.setSpacing(15)
 
         # Band
         self.band_combo = QComboBox()
         self.band_combo.addItems(self.dropdown_data.get_bands())
         self.band_combo.currentTextChanged.connect(self._on_band_changed)
-        self.band_combo.setMaximumWidth(70)
-        row2.addWidget(QLabel("Band:"))
-        row2.addWidget(self.band_combo)
+        font = self.band_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.band_combo.setFont(font)
+        self.band_combo.setMinimumHeight(35)
+        row2.addWidget(create_label("Band:"))
+        row2.addWidget(self.band_combo, 1)
 
         # Mode
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(self.dropdown_data.get_modes())
-        self.mode_combo.setMaximumWidth(80)
-        row2.addWidget(QLabel("Mode:"))
-        row2.addWidget(self.mode_combo)
+        font = self.mode_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.mode_combo.setFont(font)
+        self.mode_combo.setMinimumHeight(35)
+        row2.addWidget(create_label("Mode:"))
+        row2.addWidget(self.mode_combo, 1)
 
         # Frequency
         self.frequency_input = QDoubleSpinBox()
         self.frequency_input.setRange(0.1, 10000.0)
         self.frequency_input.setDecimals(3)
         self.frequency_input.setSingleStep(0.1)
-        self.frequency_input.setMaximumWidth(100)
-        row2.addWidget(QLabel("Freq:"))
-        row2.addWidget(self.frequency_input)
+        font = self.frequency_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.frequency_input.setFont(font)
+        self.frequency_input.setMinimumHeight(35)
+        row2.addWidget(create_label("Freq:"))
+        row2.addWidget(self.frequency_input, 1)
 
         # Country
         self.country_combo = QComboBox()
         self.country_combo.addItems([""] + self.dropdown_data.get_countries())
         self.country_combo.currentTextChanged.connect(self._on_country_changed)
-        self.country_combo.setMaximumWidth(100)
-        row2.addWidget(QLabel("Country:"))
-        row2.addWidget(self.country_combo)
+        font = self.country_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.country_combo.setFont(font)
+        self.country_combo.setMinimumHeight(35)
+        row2.addWidget(create_label("Country:"))
+        row2.addWidget(self.country_combo, 2)
 
         # State
         self.state_combo = QComboBox()
         self.state_combo.addItems([""] + self.dropdown_data.get_us_states())
         self.state_combo.setEnabled(False)
-        self.state_combo.setMaximumWidth(70)
-        row2.addWidget(QLabel("State:"))
-        row2.addWidget(self.state_combo)
-        row2.addStretch()
+        font = self.state_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.state_combo.setFont(font)
+        self.state_combo.setMinimumHeight(35)
+        row2.addWidget(create_label("State:"))
+        row2.addWidget(self.state_combo, 1)
 
         main_layout.addLayout(row2)
 
         # ROW 3: Grid, QTH, TX Power, RX Power, SKCC
         row3 = QHBoxLayout()
-        row3.setSpacing(8)
+        row3.setSpacing(15)
 
         # Grid Square
         self.grid_input = QLineEdit()
         self.grid_input.setPlaceholderText("Grid")
-        self.grid_input.setMaximumWidth(70)
-        row3.addWidget(QLabel("Grid:"))
-        row3.addWidget(self.grid_input)
+        font = self.grid_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.grid_input.setFont(font)
+        self.grid_input.setMinimumHeight(35)
+        row3.addWidget(create_label("Grid:"))
+        row3.addWidget(self.grid_input, 1)
 
         # QTH
         self.qth_input = QLineEdit()
         self.qth_input.setPlaceholderText("City")
-        self.qth_input.setMaximumWidth(90)
-        row3.addWidget(QLabel("QTH:"))
-        row3.addWidget(self.qth_input)
+        font = self.qth_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.qth_input.setFont(font)
+        self.qth_input.setMinimumHeight(35)
+        row3.addWidget(create_label("QTH:"))
+        row3.addWidget(self.qth_input, 2)
 
         # TX Power
         self.tx_power_input = QDoubleSpinBox()
@@ -248,9 +288,12 @@ class LoggingForm(QWidget):
         self.tx_power_input.setValue(0)
         self.tx_power_input.setDecimals(1)
         self.tx_power_input.setSuffix("W")
-        self.tx_power_input.setMaximumWidth(70)
-        row3.addWidget(QLabel("TX:"))
-        row3.addWidget(self.tx_power_input)
+        font = self.tx_power_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.tx_power_input.setFont(font)
+        self.tx_power_input.setMinimumHeight(35)
+        row3.addWidget(create_label("TX:"))
+        row3.addWidget(self.tx_power_input, 1)
 
         # RX Power
         self.rx_power_input = QDoubleSpinBox()
@@ -258,39 +301,49 @@ class LoggingForm(QWidget):
         self.rx_power_input.setValue(0)
         self.rx_power_input.setDecimals(1)
         self.rx_power_input.setSuffix("W")
-        self.rx_power_input.setMaximumWidth(70)
-        row3.addWidget(QLabel("RX:"))
-        row3.addWidget(self.rx_power_input)
+        font = self.rx_power_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.rx_power_input.setFont(font)
+        self.rx_power_input.setMinimumHeight(35)
+        row3.addWidget(create_label("RX:"))
+        row3.addWidget(self.rx_power_input, 1)
 
         # SKCC Number
         self.skcc_number_input = QLineEdit()
         self.skcc_number_input.setPlaceholderText("SKCC#")
         self.skcc_number_input.setMaxLength(20)
-        self.skcc_number_input.setMaximumWidth(80)
-        row3.addWidget(QLabel("SKCC:"))
-        row3.addWidget(self.skcc_number_input)
-        row3.addStretch()
+        font = self.skcc_number_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.skcc_number_input.setFont(font)
+        self.skcc_number_input.setMinimumHeight(35)
+        row3.addWidget(create_label("SKCC:"))
+        row3.addWidget(self.skcc_number_input, 1)
 
         main_layout.addLayout(row3)
 
         # ROW 4: Key Type, Operator Name
         row4 = QHBoxLayout()
-        row4.setSpacing(8)
+        row4.setSpacing(15)
 
         # Key Type
         self.key_type_combo = QComboBox()
         self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
-        self.key_type_combo.setMaximumWidth(90)
-        row4.addWidget(QLabel("Key Type:"))
-        row4.addWidget(self.key_type_combo)
+        font = self.key_type_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.key_type_combo.setFont(font)
+        self.key_type_combo.setMinimumHeight(35)
+        row4.addWidget(create_label("Key Type:"))
+        row4.addWidget(self.key_type_combo, 1)
 
         # Operator Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Operator name")
-        self.name_input.setMaximumWidth(150)
-        row4.addWidget(QLabel("Name:"))
-        row4.addWidget(self.name_input)
-        row4.addStretch()
+        font = self.name_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.name_input.setFont(font)
+        self.name_input.setMinimumHeight(35)
+        row4.addWidget(create_label("Name:"))
+        row4.addWidget(self.name_input, 3)
 
         main_layout.addLayout(row4)
 
