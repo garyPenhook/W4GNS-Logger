@@ -201,27 +201,29 @@ class LoggingForm(QWidget):
         row1.addWidget(create_label("Call:"))
         row1.addLayout(callsign_row, 0)
 
-        # RST Sent
-        self.rst_sent_input = QLineEdit()
-        self.rst_sent_input.setPlaceholderText("59")
-        self.rst_sent_input.setMaxLength(3)
+        # RST Sent (3-digit RST code: 111-599)
+        self.rst_sent_input = QSpinBox()
+        self.rst_sent_input.setRange(111, 599)
+        self.rst_sent_input.setValue(599)  # Default: 5=readability, 9=strength, 9=tone
         font = self.rst_sent_input.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.rst_sent_input.setFont(font)
         self.rst_sent_input.setMinimumHeight(35)
-        self.rst_sent_input.setMaximumWidth(40)  # Reduced by 80%
+        self.rst_sent_input.setMaximumWidth(60)
+        self.rst_sent_input.setToolTip("RST Sent: 3-digit code (e.g., 599 = 5,9,9)")
         row1.addWidget(create_label("Sent:"))
         row1.addWidget(self.rst_sent_input, 0)
 
-        # RST Received
-        self.rst_rcvd_input = QLineEdit()
-        self.rst_rcvd_input.setPlaceholderText("59")
-        self.rst_rcvd_input.setMaxLength(3)
+        # RST Received (3-digit RST code: 111-599)
+        self.rst_rcvd_input = QSpinBox()
+        self.rst_rcvd_input.setRange(111, 599)
+        self.rst_rcvd_input.setValue(599)  # Default: 5=readability, 9=strength, 9=tone
         font = self.rst_rcvd_input.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.rst_rcvd_input.setFont(font)
         self.rst_rcvd_input.setMinimumHeight(35)
-        self.rst_rcvd_input.setMaximumWidth(40)  # Reduced by 80%
+        self.rst_rcvd_input.setMaximumWidth(60)
+        self.rst_rcvd_input.setToolTip("RST Received: 3-digit code (e.g., 599 = 5,9,9)")
         row1.addWidget(create_label("Rcvd:"))
         row1.addWidget(self.rst_rcvd_input, 0)
 
@@ -664,14 +666,7 @@ class LoggingForm(QWidget):
         if self.frequency_input.value() <= 0:
             errors.append("Frequency must be greater than 0")
 
-        # Validate RST if provided
-        rst_sent = self.rst_sent_input.text().strip()
-        if rst_sent and not self._is_valid_rst(rst_sent):
-            errors.append("RST Sent must be numeric (e.g., 59)")
-
-        rst_rcvd = self.rst_rcvd_input.text().strip()
-        if rst_rcvd and not self._is_valid_rst(rst_rcvd):
-            errors.append("RST Received must be numeric (e.g., 59)")
+        # RST Sent/Received are validated by spinbox range (111-599), no manual validation needed
 
         if errors:
             QMessageBox.warning(self, "Validation Error", "\n".join(errors))
@@ -738,8 +733,8 @@ class LoggingForm(QWidget):
                     county=self.county_input.text().strip() if self.county_input.text().strip() else None,
                     gridsquare=self.grid_input.text().strip() if self.grid_input.text().strip() else None,
                     qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
-                    rst_sent=self.rst_sent_input.text().strip() if self.rst_sent_input.text().strip() else None,
-                    rst_rcvd=self.rst_rcvd_input.text().strip() if self.rst_rcvd_input.text().strip() else None,
+                    rst_sent=str(self.rst_sent_input.value()),
+                    rst_rcvd=str(self.rst_rcvd_input.value()),
                     skcc_number=self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None,
                     key_type=self.key_type_combo.currentText(),
                     paddle=self.paddle_combo.currentText() if self.paddle_combo.currentText().strip() else None,
@@ -827,8 +822,8 @@ class LoggingForm(QWidget):
             self.state_combo.setCurrentIndex(0)
             self.grid_input.clear()
             self.qth_input.clear()
-            self.rst_sent_input.clear()
-            self.rst_rcvd_input.clear()
+            self.rst_sent_input.setValue(599)  # Reset to 599 (5,9,9)
+            self.rst_rcvd_input.setValue(599)  # Reset to 599 (5,9,9)
             self.skcc_number_input.clear()
             self.key_type_combo.setCurrentIndex(0)  # Reset to STRAIGHT
             self.paddle_combo.setCurrentIndex(0)  # Reset to empty
