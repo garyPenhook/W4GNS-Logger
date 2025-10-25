@@ -129,18 +129,6 @@ class SKCCSpotWidget(QWidget):
         self.sync_btn.clicked.connect(self._sync_roster)
         header_layout.addWidget(self.sync_btn)
 
-        # Test data button (for development)
-        self.test_btn = QPushButton("Load Test Data")
-        self.test_btn.clicked.connect(self._load_test_data)
-        self.test_btn.setToolTip("Load test SKCC members for development (no internet required)")
-        header_layout.addWidget(self.test_btn)
-
-        # Diagnostics button
-        self.diag_btn = QPushButton("Test RBN")
-        self.diag_btn.setToolTip("Test RBN connection (if real spots don't work)")
-        self.diag_btn.clicked.connect(self._test_rbn_connection)
-        header_layout.addWidget(self.diag_btn)
-
         # Connection button
         self.connect_btn = QPushButton("Start Monitoring")
         self.connect_btn.clicked.connect(self._toggle_monitoring)
@@ -266,84 +254,6 @@ class SKCCSpotWidget(QWidget):
             self.status_label.setText(f"Error syncing roster: {str(e)}")
         finally:
             self.sync_btn.setEnabled(True)
-
-    def _test_rbn_connection(self) -> None:
-        """Test RBN server connectivity"""
-        import socket
-
-        self.diag_btn.setEnabled(False)
-        self.status_label.setText("Testing RBN servers...")
-
-        rbn_servers = [
-            ("telnet.reversebeacon.net", 7000),
-            ("aprs.gids.nl", 14500),
-            ("rbn.telegraphy.net", 7000),  # Alternative
-        ]
-
-        results = []
-        for server, port in rbn_servers:
-            try:
-                logger.info(f"Testing {server}:{port}...")
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(5)
-                sock.connect((server, port))
-
-                # Try to receive initial data
-                sock.send(b"hello\n")
-                sock.settimeout(2)
-                data = sock.recv(1024).decode('utf-8', errors='ignore')
-                sock.close()
-
-                results.append(f"✓ {server}:{port} - Connected, received {len(data)} bytes")
-                logger.info(f"Success: {server}:{port} - {data[:100]}")
-
-            except socket.timeout:
-                results.append(f"⏱️ {server}:{port} - Timeout (slow/blocked)")
-                logger.warning(f"Timeout: {server}:{port}")
-            except socket.gaierror:
-                results.append(f"❌ {server}:{port} - DNS lookup failed")
-                logger.warning(f"DNS failed: {server}:{port}")
-            except ConnectionRefusedError:
-                results.append(f"❌ {server}:{port} - Connection refused")
-                logger.warning(f"Refused: {server}:{port}")
-            except Exception as e:
-                results.append(f"❌ {server}:{port} - {str(e)[:30]}")
-                logger.warning(f"Error: {server}:{port} - {e}")
-
-        # Show results
-        if any("✓" in r for r in results):
-            msg = "✓ RBN connection available:\n" + "\n".join(results)
-        else:
-            msg = "⚠️ All RBN servers unreachable. Use Test Data mode or check network:\n" + "\n".join(results)
-
-        self.status_label.setText(msg)
-        logger.info(f"RBN Test Results:\n{msg}")
-        self.diag_btn.setEnabled(True)
-
-    def _load_test_data(self) -> None:
-        """Load test SKCC data and enable test spot generation"""
-        try:
-            self.test_btn.setEnabled(False)
-            self.status_label.setText("Status: Loading test data...")
-
-            success = self.spot_manager.db.skcc_members.load_test_data()
-            roster_count = self.spot_manager.db.skcc_members.get_member_count()
-
-            if success:
-                # Enable test spot mode
-                self.spot_manager.use_test_spots = True
-                self.status_label.setText(f"✓ Test data & simulated spots enabled: {roster_count} test members")
-                logger.warning(f"Test mode enabled: {roster_count} members, simulated spots will be generated")
-                # Refresh award cache
-                self._refresh_award_cache()
-            else:
-                self.status_label.setText("Error loading test data")
-
-        except Exception as e:
-            logger.error(f"Error loading test data: {e}", exc_info=True)
-            self.status_label.setText(f"Error loading test data: {str(e)}")
-        finally:
-            self.test_btn.setEnabled(True)
 
     def _toggle_monitoring(self) -> None:
         """Toggle RBN monitoring on/off"""
