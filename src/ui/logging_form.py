@@ -21,6 +21,8 @@ from src.database.repository import DatabaseRepository
 from src.ui.dropdown_data import DropdownData
 from src.ui.field_manager import FieldManager
 from src.ui.resizable_field import ResizableFieldRow
+from src.qrz import get_qrz_service
+from src.config.settings import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,8 @@ class LoggingForm(QWidget):
 
             self.db = db
             self.dropdown_data = DropdownData()
+            self.config_manager = get_config_manager()
+            self.qrz_service = get_qrz_service()
 
             # QSO timing tracking
             self.qso_start_time: Optional[datetime] = None
@@ -149,7 +153,10 @@ class LoggingForm(QWidget):
         row1 = QHBoxLayout()
         row1.setSpacing(15)
 
-        # Callsign
+        # Callsign with QRZ lookup button
+        callsign_row = QHBoxLayout()
+        callsign_row.setSpacing(5)
+
         self.callsign_input = QLineEdit()
         self.callsign_input.setPlaceholderText("Callsign")
         self.callsign_input.textChanged.connect(self._on_callsign_changed)
@@ -157,8 +164,19 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.callsign_input.setFont(font)
         self.callsign_input.setMinimumHeight(35)
+        callsign_row.addWidget(self.callsign_input, 2)
+
+        # QRZ Lookup button (only show if QRZ is enabled)
+        if self.config_manager.get("qrz.enabled", False):
+            self.qrz_lookup_btn = QPushButton("QRZ↻")
+            self.qrz_lookup_btn.setMaximumWidth(50)
+            self.qrz_lookup_btn.setMinimumHeight(35)
+            self.qrz_lookup_btn.clicked.connect(self._fetch_qrz_callsign)
+            self.qrz_lookup_btn.setToolTip("Fetch callsign info from QRZ.com")
+            callsign_row.addWidget(self.qrz_lookup_btn)
+
         row1.addWidget(create_label("Call:"))
-        row1.addWidget(self.callsign_input, 2)
+        row1.addLayout(callsign_row, 2)
 
         # RST Sent
         self.rst_sent_input = QLineEdit()
@@ -691,6 +709,35 @@ class LoggingForm(QWidget):
                 logger.error(f"Error saving to database: {e}", exc_info=True)
                 raise RuntimeError(f"Database error: {str(e)}")
 
+            # Auto-upload to QRZ if enabled
+            if self.config_manager.get("qrz.auto_upload", False):
+                try:
+                    # Convert frequency to MHz if needed
+                    freq_mhz = contact.frequency
+                    if freq_mhz and freq_mhz > 0:
+                        # Ensure frequency is in MHz
+                        if freq_mhz > 30000:  # If in Hz
+                            freq_mhz = freq_mhz / 1_000_000
+                        elif freq_mhz > 300:  # If in kHz
+                            freq_mhz = freq_mhz / 1000
+
+                        # Upload asynchronously
+                        self.qrz_service.upload_qso_async(
+                            callsign=contact.callsign,
+                            qso_date=contact.qso_date,
+                            time_on=contact.time_on,
+                            freq=freq_mhz,
+                            mode=contact.mode,
+                            rst_sent=contact.rst_sent or "59",
+                            rst_rcvd=contact.rst_rcvd or "59",
+                            tx_power=contact.tx_power,
+                            notes=f"Key Type: {contact.key_type}" if contact.key_type else None
+                        )
+                        logger.debug(f"Queued QSO for upload to QRZ: {contact.callsign}")
+                except Exception as e:
+                    logger.warning(f"Failed to queue QRZ upload: {e}")
+                    # Don't fail contact save if QRZ upload fails
+
             # Show success message
             QMessageBox.information(
                 self,
@@ -944,13 +991,17 @@ class LoggingForm(QWidget):
         """
         Called when callsign has been stable for 5 seconds
 
-        Records the QSO start time.
+        Records the QSO start time and optionally fetches QRZ callsign info.
         """
         current_callsign = self.callsign_input.text().strip()
 
         if current_callsign:
             self.qso_start_time = datetime.now()
             logger.info(f"QSO start time recorded: {self.qso_start_time.strftime('%H:%M:%S')} for {current_callsign}")
+
+            # Auto-fetch QRZ info if enabled
+            if self.config_manager.get("qrz.auto_fetch", False):
+                self._fetch_qrz_callsign_async(current_callsign)
         else:
             self.qso_start_time = None
             logger.debug("QSO start time cleared (callsign empty)")
@@ -1012,3 +1063,88 @@ class LoggingForm(QWidget):
             logger.error(f"Error cleaning up LoggingForm: {e}", exc_info=True)
             # Accept event anyway to allow exit
             event.accept()
+
+    def _fetch_qrz_callsign(self) -> None:
+        """
+        Manually fetch QRZ callsign info for current callsign
+        """
+        callsign = self.callsign_input.text().strip()
+        if not callsign:
+            QMessageBox.warning(self, "No Callsign", "Please enter a callsign first")
+            return
+
+        # Disable button during fetch
+        if hasattr(self, 'qrz_lookup_btn'):
+            self.qrz_lookup_btn.setEnabled(False)
+            self.qrz_lookup_btn.setText("Loading...")
+
+        self._fetch_qrz_callsign_async(callsign)
+
+    def _fetch_qrz_callsign_async(self, callsign: str) -> None:
+        """
+        Fetch QRZ callsign info asynchronously
+
+        Args:
+            callsign: The callsign to look up
+        """
+        def _callback(info):
+            """Callback when lookup completes"""
+            # Re-enable button if it exists
+            if hasattr(self, 'qrz_lookup_btn') and self.qrz_lookup_btn:
+                self.qrz_lookup_btn.setEnabled(True)
+                self.qrz_lookup_btn.setText("QRZ↻")
+
+            if info is None:
+                logger.debug(f"No QRZ info found for {callsign}")
+                return
+
+            # Update form fields with QRZ data
+            self._populate_from_qrz_info(info)
+            logger.info(f"Populated form with QRZ info for {callsign}")
+
+        # Make async request
+        self.qrz_service.lookup_callsign_async(callsign, _callback)
+
+    def _populate_from_qrz_info(self, info) -> None:
+        """
+        Populate form fields with QRZ callsign information
+
+        Args:
+            info: CallsignInfo object from QRZ
+        """
+        try:
+            # Fill in name if available and not already filled
+            if info.name and not self.name_input.text().strip():
+                self.name_input.setText(info.name)
+                logger.debug(f"Filled operator name from QRZ: {info.name}")
+
+            # Fill in state if available
+            if info.state:
+                # Try to set state combo if it exists
+                if hasattr(self, 'state_combo'):
+                    index = self.state_combo.findText(info.state.upper())
+                    if index >= 0:
+                        self.state_combo.setCurrentIndex(index)
+                        logger.debug(f"Set state to {info.state}")
+
+            # Fill in grid if available
+            if info.grid and not self.grid_input.text().strip():
+                self.grid_input.setText(info.grid.upper())
+                logger.debug(f"Filled grid from QRZ: {info.grid}")
+
+            # Fill in QTH if available
+            if info.qth and not self.qth_input.text().strip():
+                self.qth_input.setText(info.qth)
+                logger.debug(f"Filled QTH from QRZ: {info.qth}")
+
+            # Fill in country if available
+            if info.country:
+                # Try to set country combo if it exists
+                if hasattr(self, 'country_combo'):
+                    index = self.country_combo.findText(info.country)
+                    if index >= 0:
+                        self.country_combo.setCurrentIndex(index)
+                        logger.debug(f"Set country to {info.country}")
+
+        except Exception as e:
+            logger.error(f"Error populating form from QRZ info: {e}", exc_info=True)
