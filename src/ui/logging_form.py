@@ -103,8 +103,8 @@ class LoggingForm(QWidget):
                 'frequency': 100,
                 'country': 120,
                 'state': 80,
-                'grid': 73,  # Grid square field width (increased by 10%)
-                'qth': 70,  # QTH field width (increased by 10%)
+                'grid': 73,  # Grid square field width
+                'qth': 84,  # QTH field width (increased by 20%)
                 'rst_sent': 50,
                 'rst_rcvd': 50,
                 'tx_power': 70,
@@ -327,7 +327,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.qth_input.setFont(font)
         self.qth_input.setMinimumHeight(35)
-        self.qth_input.setMaximumWidth(70)  # QTH field width (increased by 10%)
+        self.qth_input.setMaximumWidth(84)  # QTH field width (increased by 20%)
         row3.addWidget(create_label("QTH:"))
         row3.addWidget(self.qth_input, 0)
 
@@ -533,7 +533,7 @@ class LoggingForm(QWidget):
         # QTH
         self.qth_input = QLineEdit()
         self.qth_input.setPlaceholderText("City/Location")
-        self.qth_input.setMaximumWidth(70)  # QTH field width (increased by 10%)
+        self.qth_input.setMaximumWidth(84)  # QTH field width (increased by 20%)
         qth_row = ResizableFieldRow("QTH:", self.qth_input)
         layout.addWidget(qth_row)
 
