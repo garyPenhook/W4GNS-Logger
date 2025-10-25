@@ -42,6 +42,9 @@ class CallsignLineEdit(QLineEdit):
 class LoggingForm(QWidget):
     """Contact logging form with dropdown menus"""
 
+    # Signal for thread-safe QRZ data updates
+    qrz_data_ready = pyqtSignal(object)  # Emits CallsignInfo object
+
     def __init__(self, db: DatabaseRepository, parent: Optional[QWidget] = None):
         """
         Initialize logging form
@@ -85,6 +88,9 @@ class LoggingForm(QWidget):
             self.callsign_stable_timer = QTimer()  # Timer for detecting stable callsign
             self.callsign_stable_timer.timeout.connect(self._on_callsign_stable)
             self.callsign_stable_timer.setSingleShot(True)
+
+            # Connect QRZ data signal to populate method for thread-safe UI updates
+            self.qrz_data_ready.connect(self._populate_from_qrz_info)
 
             # Store minimum widths for resizing
             self.min_widths = {
@@ -1128,9 +1134,9 @@ class LoggingForm(QWidget):
                 logger.debug(f"No QRZ info found for {callsign}")
                 return
 
-            # Update form fields with QRZ data
-            self._populate_from_qrz_info(info)
-            logger.info(f"Populated form with QRZ info for {callsign}")
+            # Emit signal to update form fields on main thread (thread-safe)
+            self.qrz_data_ready.emit(info)
+            logger.info(f"Emitted QRZ data ready signal for {callsign}")
 
         # Make async request
         self.qrz_service.lookup_callsign_async(callsign, _callback)
