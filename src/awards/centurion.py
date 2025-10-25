@@ -89,8 +89,16 @@ class CenturionAward(AwardProgram):
                 skcc_number = contact.get('skcc_number', '').strip()
                 if skcc_number:
                     # Extract base number (remove suffix like C, T, S, x10, etc.)
-                    base_number = skcc_number.split()[0].rstrip('CTSx0123456789')
-                    if base_number:
+                    # SKCC numbers are: digits optionally followed by letter (C, T, S) or x number
+                    base_number = skcc_number.split()[0]  # Remove any spaces first
+                    # Remove letter suffix if present (C, T, S at the end)
+                    if base_number and base_number[-1] in 'CTS':
+                        base_number = base_number[:-1]
+                    # Remove x multiplier if present (xN at the end)
+                    if base_number and 'x' in base_number:
+                        base_number = base_number.split('x')[0]
+                    # Only add if it's a valid number
+                    if base_number and base_number.isdigit():
                         unique_members.add(base_number)
 
         current_count = len(unique_members)

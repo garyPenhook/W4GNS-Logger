@@ -237,7 +237,13 @@ class CenturionFetcher:
         """
         try:
             # Remove any suffix (C, T, S, x, etc.)
-            base_number = skcc_number.split()[0].rstrip('CTSx')
+            base_number = skcc_number.split()[0]  # Remove spaces first
+            # Remove letter suffix if present (C, T, S at the end)
+            if base_number and base_number[-1] in 'CTS':
+                base_number = base_number[:-1]
+            # Remove x multiplier if present (xN at the end)
+            if base_number and 'x' in base_number:
+                base_number = base_number.split('x')[0]
 
             member = db.query(CenturionMember).filter(
                 CenturionMember.skcc_number == base_number
