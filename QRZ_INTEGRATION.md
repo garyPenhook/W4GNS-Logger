@@ -36,8 +36,10 @@ All QRZ settings are managed in the Settings dialog:
 Open **Settings → QRZ.com** tab:
 
 1. Check "Enable QRZ.com integration"
-2. Enter your QRZ.com username and password
-3. Click "Test Connection" to verify credentials
+2. **For Callsign Lookups**: Enter your QRZ.com username and password
+   - Click "Test Callsign Lookup" to verify credentials
+3. **For Logbook Uploads** (optional): Enter your QRZ.com API Key
+   - Get API Key from: QRZ.com → Settings → Account → API → Logbook API Key
 4. Optional: Enable "Auto-fetch callsign info from QRZ"
 5. Optional: Enable "Auto-upload contacts to QRZ logbook"
 6. Click "Save Settings"
@@ -66,11 +68,25 @@ When auto-upload is enabled:
 
 ## API Information
 
-### QRZ.com XML API
+### QRZ.com has TWO separate APIs:
+
+#### 1. Callsign Database API (for lookups)
 - Endpoint: `https://xmldata.qrz.com/xml/current/`
-- Authentication: Username/password
+- Authentication: Username/password → Session key
 - Session-based: Session key valid for 24 hours
-- Rate limiting: Reasonable limits for automated lookups
+- Purpose: Look up callsign information
+- Requirement: QRZ.com account (free or paid)
+
+#### 2. Logbook API (for uploads)
+- Endpoint: `https://logbook.qrz.com/api`
+- Authentication: API Key
+- Session-based: N/A
+- Purpose: Upload QSOs to logbook
+- Requirement: QRZ.com Logbook Data subscription (paid)
+
+### Rate Limiting
+- Reasonable limits for automated lookups
+- API Key method has separate rate limits
 
 ### Data Retrieved
 
@@ -127,8 +143,9 @@ LoggingForm (logging_form.py)
 ```yaml
 qrz:
   enabled: false                 # Enable/disable QRZ integration
-  username: ""                   # QRZ.com username
-  password: ""                   # QRZ.com password
+  username: ""                   # QRZ.com username (for callsign lookups)
+  password: ""                   # QRZ.com password (for callsign lookups)
+  api_key: ""                    # QRZ.com API Key (for logbook uploads - optional)
   auto_fetch: false             # Auto-fetch callsign info when stable
   auto_upload: false            # Auto-upload contacts to logbook
 ```
@@ -144,10 +161,10 @@ service = get_qrz_service()
 # Initialize (loads credentials from config)
 if service.initialize():
     
-    # Authenticate
+    # Authenticate for callsign lookups
     if service.authenticate():
         
-        # Lookup callsign
+        # Lookup callsign (uses username/password)
         info = service.lookup_callsign("W4GNS")
         if info:
             print(f"Found: {info.name} in {info.state}")
@@ -158,27 +175,31 @@ if service.initialize():
                 print(f"Async: {info.name}")
         
         service.lookup_callsign_async("K0ABC", on_result)
-        
-        # Upload QSO
-        success = service.upload_qso(
-            callsign="W4GNS",
-            qso_date="2025-10-25",
-            time_on="12:34:56",
-            freq=7.050,
-            mode="CW",
-            rst_sent="599",
-            rst_rcvd="579",
-            tx_power=5.0
-        )
+
+# Upload QSO (uses API Key if configured)
+if service.api_client and service.api_client.api_key:
+    success = service.upload_qso(
+        callsign="W4GNS",
+        qso_date="2025-10-25",
+        time_on="12:34:56",
+        freq=7.050,
+        mode="CW",
+        rst_sent="599",
+        rst_rcvd="579",
+        tx_power=5.0
+    )
+else:
+    print("API Key not configured - logbook uploads disabled")
 ```
 
 ## Troubleshooting
 
-### "Connection Failed" when testing credentials
-- Check username and password
+### "Connection Failed" when testing callsign lookup
+- Check username and password (NOT API Key)
 - Verify internet connection
 - QRZ.com API may be temporarily unavailable
 - Check application logs for details
+- Note: The test button only validates callsign lookup credentials
 
 ### Callsign not found
 - Verify callsign spelling
@@ -194,17 +215,22 @@ if service.initialize():
 ### Upload not appearing in QRZ logbook
 - Verify "Enable QRZ.com integration" is checked
 - Verify "Auto-upload contacts to QRZ logbook" is checked
+- **Verify API Key is configured** (required for uploads)
 - Check that frequency and mode are valid
+- Verify QRZ.com Logbook Data subscription is active
 - Check QRZ.com logbook directly
 - Check application logs for upload errors
 
 ## Limitations
 
-- QRZ.com API requires valid account
+- Callsign lookups require QRZ.com account (free or paid)
+- Logbook uploads require QRZ.com Logbook Data subscription (paid)
+- API Key must be obtained separately from account settings
 - Not all callsigns are in QRZ database
 - Some QRZ fields may be incomplete
 - Session key expires after 24 hours (auto-refreshed)
 - Logbook uploads follow QRZ.com validation rules
+- API Key is required to be given by the user (not auto-generated)
 
 ## Future Enhancements
 
