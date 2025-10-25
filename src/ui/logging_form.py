@@ -368,6 +368,9 @@ class LoggingForm(QWidget):
         row3.addWidget(create_label("SKCC:"))
         row3.addWidget(self.skcc_number_input, 1)
 
+        # Add stretch to prevent Grid/QTH width changes from affecting other fields
+        row3.addStretch()
+
         main_layout.addLayout(row3)
 
         # ROW 4: Key Type, Operator Name
