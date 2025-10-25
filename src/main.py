@@ -37,6 +37,7 @@ if not os.environ.get('QT_QPA_PLATFORM'):
     os.environ['QT_QPA_PLATFORM'] = 'xcb'
 
 from src.ui.main_window import MainWindow
+from src.ui.theme_manager import ThemeManager
 from src.config.settings import load_config
 from PyQt6.QtWidgets import QApplication
 
@@ -84,6 +85,11 @@ def main():
         _app = app  # Store for signal handler access
         app.setApplicationName("W4GNS Ham Radio Logger")
         app.setApplicationVersion("1.0.0")
+
+        # Apply stored theme
+        theme = config.get("ui", {}).get("theme", "light")
+        ThemeManager.apply_theme(app, theme)
+        logger.info(f"Applied {theme} theme on startup")
 
         # Register signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, signal_handler)   # type: ignore # Ctrl+C

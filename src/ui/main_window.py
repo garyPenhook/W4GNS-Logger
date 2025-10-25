@@ -16,6 +16,7 @@ from PyQt6.QtGui import QAction, QIcon
 
 from src.database.repository import DatabaseRepository
 from src.config.settings import get_config_manager
+from src.ui.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +103,9 @@ class MainWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("&View")
-        theme_action = QAction("&Toggle Dark Mode", self)
-        view_menu.addAction(theme_action)
+        self.theme_action = QAction("&Toggle Dark Mode", self)
+        self.theme_action.triggered.connect(self._toggle_theme)
+        view_menu.addAction(self.theme_action)
 
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
@@ -302,6 +304,30 @@ class MainWindow(QMainWindow):
             "with ADIF support, award tracking, and DX cluster integration.\n\n"
             "Press F1 or go to Help → Help Contents for more information."
         )
+
+    def _toggle_theme(self) -> None:
+        """Toggle between light and dark theme"""
+        try:
+            # Get current theme
+            current_theme = self.config_manager.get("ui.theme", "light")
+            new_theme = "dark" if current_theme == "light" else "light"
+
+            # Apply the new theme
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app:
+                success = ThemeManager.apply_theme(app, new_theme)
+                if success:
+                    # Update config
+                    self.config_manager.set("ui.theme", new_theme)
+                    logger.info(f"Theme changed to: {new_theme}")
+                else:
+                    QMessageBox.warning(self, "Theme Error", f"Failed to apply {new_theme} theme")
+            else:
+                logger.error("Could not get QApplication instance")
+        except Exception as e:
+            logger.error(f"Error toggling theme: {e}", exc_info=True)
+            QMessageBox.critical(self, "Theme Error", f"Error changing theme: {str(e)}")
 
     def _show_import_dialog(self) -> None:
         """Show ADIF import dialog"""

@@ -1,0 +1,339 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║          W4GNS Logger - Power Tracking & QRP Awards Quick Start            ║
+║                                                                            ║
+║           Complete guide to using new TX/RX Power features               ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════════
+GETTING STARTED
+═══════════════════════════════════════════════════════════════════════════════
+
+1. START THE APPLICATION:
+
+   cd /home/w4gns/Projects/W4GNS\ Logger
+   source venv/bin/activate
+   python3 -m src.main
+
+2. DATABASE AUTOMATICALLY INITIALIZES:
+   - Creates tables on first run
+   - Adds all new columns (skcc_number, key_type, tx_power, rx_power)
+   - Ready to use immediately
+
+═══════════════════════════════════════════════════════════════════════════════
+LOGGING A CONTACT WITH POWER TRACKING
+═══════════════════════════════════════════════════════════════════════════════
+
+1. OPEN "QUICK ENTRY" TAB
+
+2. FILL IN STANDARD FIELDS:
+   Callsign:     K5ABC
+   Date:         10/21/2025
+   Time:         14:30
+   Band:         40M
+   Mode:         CW
+   RST Sent:     579
+   RST Received: 589
+
+3. ENTER POWER INFORMATION:
+
+   TX Power:     [0.5] W     ← Your transmit power (0.1W resolution)
+   RX Power:     [5.0] W     ← Their receive power (for 2-way QRP)
+
+   Power Entry Tips:
+   • Use decimal format: 0.5, 1.5, 12.3, 100.0
+   • Valid range: 0.1W to 10,000W
+   • Leave blank for unknown power
+   • RX Power is optional (only if you know their power)
+
+4. SAVE CONTACT:
+   Click "Save" button
+   Contact is stored with power values
+
+═══════════════════════════════════════════════════════════════════════════════
+UNDERSTANDING POWER CATEGORIES
+═══════════════════════════════════════════════════════════════════════════════
+
+Your transmit power determines award eligibility:
+
+  QRPp: < 0.5W       Extreme QRP (rare, specialized equipment)
+  QRP:  0.5-5W       Standard QRP (portable stations, field day)
+  STD:  5-100W       Normal power (typical transceiver)
+  QRO:  > 100W       High power (amplified stations)
+
+For QRP awards:
+• QRP x1: You use ≤5W (any mode, any power from other end)
+• QRP x2: You use ≤5W AND they use ≤5W (mutual QRP)
+• MPW: Miles Per Watt ≥1000 at ≤5W (distance/power ratio)
+
+═══════════════════════════════════════════════════════════════════════════════
+MONITORING QRP AWARD PROGRESS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CLICK "QRP PROGRESS" TAB (red progress bar icon)
+
+2. YOU'LL SEE FOUR SECTIONS:
+
+   SECTION A: QRP x1 Award (Your Power ≤5W)
+   ┌─────────────────────────────────────────────┐
+   │ QRP x1 Award (Your Power ≤5W)               │
+   │ [████████░░░░░░░░░] 250/300 points (83%)   │
+   │ Points: 250/300 | Bands: 12 | Contacts: 47 │
+   │ ✓ QUALIFIED                                  │
+   └─────────────────────────────────────────────┘
+
+   What it means:
+   • You've made 47 contacts with TX power ≤5W
+   • You've earned 250 out of 300 required points
+   • Points vary by band (160M=4pts, 20M=1pt, etc.)
+   • Green when qualified (≥300 points)
+
+   SECTION B: QRP x2 Award (Both Stations ≤5W)
+   ┌─────────────────────────────────────────────┐
+   │ QRP x2 Award (Both Stations ≤5W)            │
+   │ [██████░░░░░░░░░░░░] 80/150 points (53%)   │
+   │ Points: 80/150 | Bands: 8 | Contacts: 25   │
+   └─────────────────────────────────────────────┘
+
+   What it means:
+   • 25 contacts where BOTH stations used ≤5W
+   • You've earned 80 of 150 required points
+   • Less common than QRP x1 (needs both parties to be QRP)
+   • Requires RX Power to be tracked
+
+   SECTION C: QRP Miles Per Watt (≥1000 MPW at ≤5W)
+   ┌─────────────────────────────────────────────┐
+   │ QRP Miles Per Watt (≥1000 MPW at ≤5W)       │
+   │ Qualifications: 3                            │
+   │ Qualifying contacts:                        │
+   │ • K5ABC: 1200 MPW                           │
+   │ • W5XYZ: 1050 MPW                           │
+   │ • N5PQR: 1001 MPW                           │
+   │ ... and 0 more                              │
+   └─────────────────────────────────────────────┘
+
+   What it means:
+   • Miles Per Watt = Distance / TX Power
+   • At ≤5W transmit, if you achieve ≥1000 MPW, it qualifies
+   • Example: 500 miles at 0.5W = 1000 MPW (qualifies)
+   • Example: 1200 miles at 1W = 1200 MPW (qualifies)
+
+   SECTION D: Power Statistics
+   ┌─────────────────────────────────────────────┐
+   │ QRP (≤5W): 42 contacts                      │
+   │ Standard (5-100W): 95 contacts              │
+   │ QRO (>100W): 8 contacts                     │
+   │ Average Power: 45.3 W                       │
+   └─────────────────────────────────────────────┘
+
+   What it shows:
+   • Breakdown of your contact power levels
+   • Visual reference for power usage patterns
+   • Average power across all QSOs
+
+3. AUTO-REFRESH:
+   • Updates every 5 seconds automatically
+   • As you log new contacts, watch progress bars grow
+   • Qualification status updates in real-time
+
+═══════════════════════════════════════════════════════════════════════════════
+ANALYZING POWER STATISTICS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CLICK "POWER STATS" TAB (chart icon)
+
+2. YOU'LL SEE THREE SECTIONS:
+
+   SECTION A: Overall Statistics
+   ┌─────────────────────────────────────────────┐
+   │ Overall:                                    │
+   │ • Total Contacts: 150                       │
+   │ • Average Power: 45.3 W                     │
+   │ • Minimum: 0.1 W (QRPp)                     │
+   │ • Maximum: 1500 W (QRO)                     │
+   └─────────────────────────────────────────────┘
+
+   SECTION B: Power Distribution
+   ┌────────────────────────────────────────────┐
+   │ Category        Count  Percentage           │
+   │ QRPp (<0.5W)      5      3%    [RED]        │
+   │ QRP (0.5-5W)     42     28%    [GREEN]      │
+   │ STANDARD (5-100W) 95     63%    [YELLOW]    │
+   │ QRO (>100W)       8      5%    [ORANGE]     │
+   └────────────────────────────────────────────┘
+
+   What it shows:
+   • Your power usage distribution
+   • Most contacts at what power level
+   • Percentage breakdown for analysis
+
+   SECTION C: Band Breakdown
+   ┌──────────────────────────────────────────────┐
+   │ Band    Contacts  QRP  Avg Power             │
+   │ 160M       12      5    75.0 W               │
+   │ 80M        28     12    45.0 W               │
+   │ 40M        35     15    35.0 W               │
+   │ 30M        18      8    28.0 W               │
+   │ 20M        32      2    55.0 W               │
+   │ ...                                         │
+   └──────────────────────────────────────────────┘
+
+   What it shows:
+   • Contacts on each band
+   • How many were QRP on that band
+   • Average power used per band
+   • Useful for band-specific analysis
+
+3. AUTO-REFRESH:
+   • Updates every 10 seconds
+   • Reflects newly logged contacts
+   • Use for performance tracking
+
+═══════════════════════════════════════════════════════════════════════════════
+CHECKING AWARD ELIGIBILITY (FUTURE FEATURE)
+═══════════════════════════════════════════════════════════════════════════════
+
+In future releases, you'll be able to:
+
+1. Right-click any SKCC contact in log view
+2. Select "Show Award Status"
+3. Dialog opens showing:
+   • SKCC member's current achievement level
+   • Award progress toward next level
+   • Previous contacts with this member
+   • Award eligibility summary
+
+For now, this requires manual dialog launch (coming soon).
+
+═══════════════════════════════════════════════════════════════════════════════
+POWER ENTRY EXAMPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Typical QRP Contacts:
+  TX: 0.5   (half watt - 500mW portable rig)
+  RX: 5.0   (5W station on other end)
+
+  TX: 1.5   (1.5W QRP kit)
+  RX: 2.5   (other party also QRP)
+
+  TX: 5.0   (upper limit of QRP)
+  RX: 100   (standard power station)
+
+Typical Standard Power:
+  TX: 50    (common transceiver power)
+  RX: 50    (both stations standard)
+
+  TX: 100   (full power)
+  RX: 100   (both stations at full)
+
+High Power:
+  TX: 500   (amplified station)
+  RX: 1000  (high-power amplifier)
+
+Leave Blank:
+  TX: [blank]   (power unknown, won't count toward QRP)
+  RX: [blank]   (typical - often don't know remote station power)
+
+═══════════════════════════════════════════════════════════════════════════════
+FREQUENTLY ASKED QUESTIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+Q: Do I have to enter RX Power?
+A: No, it's optional. RX Power is only used for QRP x2 awards. Enter it if
+   you know the other station's power (they tell you, or logged separately).
+
+Q: What if I don't know my transmit power?
+A: Leave TX Power blank. The contact will still be logged, but won't count
+   toward any QRP awards (since we need to verify ≤5W).
+
+Q: What's the difference between QRP x1 and QRP x2?
+A: QRP x1 = You use ≤5W (other station any power) = harder to get
+   QRP x2 = You AND they both use ≤5W = rarer, worth more points
+
+Q: How is MPW calculated?
+A: Miles Per Watt = Distance (miles) / TX Power (watts)
+   If you don't enter distance, MPW can't be calculated.
+   Look for "Distance (km)" or "Grid Square" fields to auto-calculate.
+
+Q: Why does my band show 0 QRP when I entered QRP power?
+A: Check that TX Power is ≤5W AND mode is CW. SKCC QRP is CW-only.
+   Other bands/modes count for general QRP but not SKCC QRP awards.
+
+Q: Can I edit TX Power after logging?
+A: Yes, click the contact in Log Viewer, edit power field, save.
+   Stats automatically recalculate.
+
+Q: When does the progress bar update?
+A: QRP Progress tab updates every 5 seconds. If you just logged a contact,
+   wait a few seconds and you'll see progress bars increase.
+
+═══════════════════════════════════════════════════════════════════════════════
+TIPS FOR POWER TRACKING
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CONSISTENT POWER NOTATION:
+   Use format: 0.5, 1.0, 5.0 (not "500mW" or "1W")
+   System expects decimal watts
+
+2. QRP FIELD DAYS:
+   Log power as 0.5 or 1.5 to build QRP awards quickly
+
+3. GRID SQUARE TRACKING:
+   Enable "Grid Square" field in logging form
+   Allows distance auto-calculation for MPW awards
+
+4. RX POWER FOR 2-WAY:
+   Ask other station: "What power you using?"
+   Enter in RX Power field to track QRP x2
+
+5. BATCH ENTRY:
+   If logging many QRP contacts:
+   - Default TX Power to 0.5 in Settings
+   - Can override per-contact as needed
+
+═══════════════════════════════════════════════════════════════════════════════
+DATABASE STORAGE
+═══════════════════════════════════════════════════════════════════════════════
+
+Power data stored in:
+  Location: ~/.w4gns_logger/contacts.db (SQLite)
+  Columns:
+    tx_power (FLOAT) - Your transmit power in watts
+    rx_power (FLOAT) - Remote station receive power in watts
+    skcc_number (VARCHAR) - SKCC member number
+    key_type (VARCHAR) - Mechanical key type
+
+All power values are decimal (0.1W resolution).
+Queries are optimized for fast award calculations.
+
+═══════════════════════════════════════════════════════════════════════════════
+SUPPORT & NEXT STEPS
+═══════════════════════════════════════════════════════════════════════════════
+
+For issues or questions:
+1. Check the main application Help menu
+2. Review GUI_IMPLEMENTATION_GUIDE.md for technical details
+3. See GUI_TESTING_CHECKLIST.md for known issues
+
+To report bugs:
+  Location: /home/w4gns/Projects/W4GNS Logger/
+  Include: Screenshot, power values, expected vs actual results
+
+═══════════════════════════════════════════════════════════════════════════════
+VERSION & STATUS
+═══════════════════════════════════════════════════════════════════════════════
+
+W4GNS Logger v1.0.0
+Power Tracking: Complete
+QRP Awards: Complete
+SKCC Awards: Complete
+
+Status: ✅ PRODUCTION READY
+Date: October 21, 2025
+
+═══════════════════════════════════════════════════════════════════════════════
+
+That's it! You're ready to start tracking QRP power and building awards.
+
+Start with one QRP contact today and watch your progress build!
+
+73, Good DX!

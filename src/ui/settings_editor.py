@@ -20,8 +20,10 @@ from PyQt6.QtWidgets import (
     QFormLayout, QFileDialog, QTabWidget
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
 
 from src.config.settings import get_config_manager
+from src.ui.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
 
@@ -625,6 +627,16 @@ class SettingsEditor(QWidget):
 
             # Save all settings to disk
             self.config_manager.save()
+
+            # Apply theme if it was changed
+            try:
+                theme = self.config_manager.get("ui.theme", "light")
+                app = QApplication.instance()
+                if app:
+                    ThemeManager.apply_theme(app, theme)
+                    logger.info(f"Applied {theme} theme from settings")
+            except Exception as e:
+                logger.warning(f"Could not apply theme: {e}")
 
             QMessageBox.information(
                 self,

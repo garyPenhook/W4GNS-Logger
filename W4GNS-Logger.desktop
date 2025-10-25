@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=W4GNS Ham Radio Logger
+Comment=Professional ham radio contact logging application
+Exec=/home/w4gns/Projects/W4GNS Logger/run_gui.sh
+Icon=radio
+Terminal=false
+Categories=Utility;
+Keywords=ham;radio;logging;QSO;ADIF;DXCC;
+
+# Optional: Set to true to run in a terminal window for debugging
+X-DebugLog=false

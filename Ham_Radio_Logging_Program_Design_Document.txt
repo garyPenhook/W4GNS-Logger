@@ -1,0 +1,1561 @@
+# Ham Radio Logging Program - Comprehensive Design Document
+
+**Version:** 1.0  
+**Date:** October 2025  
+**Language:** Python 3.10+  
+**Platform:** Cross-platform (Windows, macOS, Linux)
+
+---
+
+## Table of Contents
+
+1. [Executive Overview](#executive-overview)
+2. [Core Requirements](#core-requirements)
+3. [System Architecture](#system-architecture)
+4. [Database Design](#database-design)
+5. [ADIF Standard Implementation](#adif-standard-implementation)
+6. [Awards System Architecture](#awards-system-architecture)
+7. [DX Cluster Integration](#dx-cluster-integration)
+8. [GUI Framework Selection](#gui-framework-selection)
+9. [QRZ.com Integration](#qrzcom-integration)
+10. [Implementation Roadmap](#implementation-roadmap)
+11. [Design Patterns & Best Practices](#design-patterns--best-practices)
+
+---
+
+## Executive Overview
+
+This document outlines the design for a professional-grade ham radio logging application emphasizing extensibility, maintainability, and user experience. The application supports multiple award programs, integrates with real-time DX cluster data, provides a modern GUI, enables QRZ.com synchronization, and implements full ADIF standard compliance.
+
+### Key Design Principles
+
+- **Extensibility First:** Awards and data sources easily added without code modification
+- **Separation of Concerns:** Clear boundaries between data layer, business logic, and UI
+- **Asynchronous Operations:** Network operations never block UI
+- **Data Integrity:** Robust validation, backup mechanisms, transaction support
+- **Standards Compliance:** Full ADIF compliance for industry interoperability
+- **User-Centric Design:** Intuitive workflows for logging, award tracking, and data exchange
+
+---
+
+## Core Requirements
+
+### Functional Requirements
+
+#### 1. Contact Logging
+- Record complete QSO details: callsign, date/time, band, mode, frequency, RST, power, operator notes, grid square
+- Support all HF (160m-10m) and VHF/UHF bands (6m, 2m, 70cm, etc.)
+- Track confirmation status: unconfirmed, QSL received, LoTW confirmed, eQSL confirmed, club confirmed
+- Support all common modes: CW, SSB, FM, AM, RTTY, PSK31, JT65, JT9, WSPR, FT8, and future digital modes
+- Real-time contact search and filtering
+- Duplicate detection and merge capabilities
+- Contact history and audit trail
+
+#### 2. ADIF Standard Support (Full Implementation - Priority Requirement)
+
+**Import Capabilities:**
+- Parse both ADI (text) and ADX (XML) format files
+- Support all standard ADIF fields per ADIF3.x specification
+- Handle custom user-defined fields gracefully (preservation, not enforcement)
+- Batch import with transaction rollback on validation errors
+- Import preview with duplicate detection and conflict resolution
+- Merge vs. replace import modes
+- Progress tracking for large files (1GB+)
+- Error reporting with line numbers and field-level diagnostics
+- Recovery mechanism for partially corrupted files
+
+**Export Capabilities:**
+- Generate ADIF files compatible with industry applications (N1MM+, Log4OM, HAMRS, DXKeeper)
+- Support ADI (text) and ADX (XML) export formats
+- Preserve all contact fields, including custom data
+- Selective export by date range, band, mode, award type, confirmation status
+- Include ADIF headers with operator info, equipment, and metadata
+- Bulk export with progress tracking
+- Support ADIF records structure with proper field formatting
+
+**Field Support Priority (ADIF3.x Compliant):**
+
+| Category | Fields |
+|----------|--------|
+| **Core QSO** | CALL, QSO_DATE, TIME_ON, TIME_OFF, FREQ, MODE, RST_SENT, RST_RCVD, TX_PWR, RX_PWR |
+| **Station Info** | OPERATOR, STATION_CALLSIGN, MY_GRIDSQUARE, GRIDSQUARE, NAME, QTH |
+| **Location** | COUNTRY, STATE, DXCC, CQZ, ITUZ, IOTA, COUNTY, PRIMARY_ADMINISTRATIVE_SUBDIVISION |
+| **Awards** | ARRL_SECT, SOTA_REF, POTA_REF, SOTA_PARKS, CONTEST_ID, CLASS |
+| **Confirmation** | QSL_RCVD, QSL_SENT, QSLRDATE, QSLSDATE, LOTW_QSL_RCVD, LOTW_QSL_SENT, EQSL_QSL_RCVD, EQSL_QSL_SENT, CLUBLOG_QSO_UPLOAD_STATUS |
+| **Notes/Comments** | NOTES, COMMENT, QSLMSG |
+| **Technical** | FREQ_RX, BAND, BAND_RX, PROPAGATION_MODE, SAT_NAME, SAT_MODE, RIG_MAKE, RIG_MODEL, ANT_MAKE, ANT_MODEL |
+
+**Data Validation During Import/Export:**
+- Callsign format validation (alphanumeric with slash)
+- Date/time validation (ISO 8601 format: YYYYMMDD, HHMM)
+- Band validation against IARU band plan
+- Frequency range validation for each band
+- Mode validation against standardized modes list
+- Signal report (RST) format validation (1-5 range for each digit)
+- Grid square validation (Maidenhead format)
+- Duplicate prevention (same callsign + date + time + band)
+
+#### 3. Award Program Support (Extensible Plugin Architecture)
+
+**Built-in Supported Awards (Launch):**
+
+1. **DXCC (DX Century Club)** - ARRL
+   - Track: 100+ DXCC entities confirmed
+   - By mode: Mixed, CW, Phone, Digital, Satellite
+   - By band: Single band DXCC (160m-10m)
+   - Endorsements in 50-entity increments
+   - Honor Roll tracking (top 10% of entity count)
+   - Challenge scoring (band-point system)
+
+2. **WAS (Worked All States)** - ARRL
+   - Track: All 50 US states confirmed
+   - By mode: Mixed, CW, Phone, Digital
+   - By band: Single band WAS
+   - Endorsement levels (25 state increments)
+
+3. **WAC (Worked All Continents)** - IARU
+   - Track: All 6 continents confirmed
+   - By mode and band variants
+
+4. **SKCC (Straight Key Century Club)**
+   - Centurion: 100 unique SKCC member QSOs
+   - Tribune levels: x1 (20 different members), x2, x4, x8 progression
+   - Senator level: 200 unique tribune+ contacts
+   - Prefix awards: Point-based (500k for Px1, 1M for Px2)
+   - QRP awards (5W or less)
+   - Triple Key award (100 QSOs each with straight key, bug, cootie)
+   - Marathon award (100 unique QSOs, 60min minimum each)
+   - Canadian Maple Leaf award
+   - WAC and WAS awards within SKCC context
+
+5. **General Extensible Framework**
+   - VUCC (VHF/UHF Century Club)
+   - IOTA (Islands on the Air)
+   - SOTA (Summits on the Air)
+   - County Hunter awards
+   - Lighthouse awards
+   - Custom user-defined awards
+
+**Award Framework Architecture:**
+- Plugin-based award engine with base `AwardProgram` abstract class
+- Each award implements: rules, validation, progress calculation, endorsement levels
+- Configuration file format (YAML or JSON) for custom awards
+- No code modification required to add new awards
+- Award progress dashboard with real-time calculation
+- Batch award verification
+- Award statistics and achievement tracking
+- Export award progress to PDF or printable format
+
+#### 4. DX Cluster Integration
+
+**Connection Management:**
+- Support multiple simultaneous Telnet cluster connections (configurable, typically 2-4)
+- Connection status monitoring with auto-reconnect
+- Cluster history and failover mechanisms
+
+**Supported Cluster Software:**
+- DX Spider (port 7300/8000)
+- AR-Cluster v6 (port 23 or custom)
+- CC Cluster (port 23 or custom)
+- Web-based clusters (secondary support via JSON API)
+
+**Data Reception:**
+- Parse incoming DX spots in standard format
+- Extract: frequency, callsign, spotter, QSY (frequency skew), comment
+- Extract optional grid square (DX Spider enhanced format)
+- Parse WWV propagation data (Solar Flux, A-Index, K-Index)
+- Parse announcements and talk messages
+
+**Spot Database:**
+- In-memory spot cache with circular buffer (configurable, e.g., last 1000 spots)
+- Persistent spot logging option (database storage)
+- Timestamp all received spots
+- Real-time spot filtering (by band, CQ zone, continent, country, prefix)
+- User-definable watchlist of rare DXCCs
+- Highlights for needed entities (matching DXCC progress)
+
+**Cluster Commands:**
+- Login/logout automation
+- Spot posting capability (transmit DX spot to cluster)
+- Frequency scanning integration
+- Alert system for user-watched prefixes/entities
+
+**User Configuration:**
+- Cluster node directory (auto-updated list or user editable)
+- Cluster credentials per node
+- Auto-connect on startup option
+- Heartbeat/keep-alive settings
+- Spot filtering rules (save and load)
+- Alarm/notification rules for rare stations
+
+#### 5. GUI Framework (Modern, Responsive, Cross-Platform)
+
+- Tabbed interface for: Logging, Contacts, Awards, DX Cluster, QRZ Settings, Statistics
+- Real-time spot display with searchable/sortable grid
+- Contact entry form with auto-completion
+- Award progress dashboards with visual indicators
+- Settings management interface
+- Status bar with connection indicators
+- Menu bar with File, Edit, View, Tools, Help
+- Keyboard shortcuts for power users
+- Dark/light theme support
+
+#### 6. QRZ.com Integration
+
+**Authentication:**
+- Secure API key storage (encrypted configuration)
+- QRZ.com XML subscription requirement check
+- Token validation and refresh
+
+**Upload Functionality:**
+- Batch upload contacts to QRZ logbook
+- Single contact quick upload
+- Upload status tracking (success/failed)
+- Error message display with resolution suggestions
+- Selective upload (date range, confirmation status)
+- Duplicate prevention (track previously uploaded contacts)
+- Queue system for failed uploads with retry mechanism
+
+**Features:**
+- Automatic upload on contact save (optional)
+- Manual upload with preview
+- Upload history logging
+- Sync status in contact record
+
+#### 7. Data Import/Export Beyond ADIF
+
+- CSV import/export (comma-separated, tab-separated)
+- JSON export for data interchange
+- Backup/restore functionality
+- LoTW file support (TQSL format integration)
+- Cabrillo format export (for contest submission)
+
+---
+
+## System Architecture
+
+### High-Level Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 GUI Layer (PyQt6/PySide6)            │
+├─────────────────────────────────────────────────────┤
+│  - Main Window                                        │
+│  - Dialogs/Widgets                                    │
+│  - Signal/Slot Connections                           │
+├─────────────────────────────────────────────────────┤
+│          Business Logic / Service Layer               │
+├─────────────────────────────────────────────────────┤
+│  - Contact Manager      - Award Calculator           │
+│  - ADIF Handler         - QRZ Sync Service           │
+│  - DX Cluster Client    - Data Validator             │
+├─────────────────────────────────────────────────────┤
+│           Data Access Layer (Repositories)            │
+├─────────────────────────────────────────────────────┤
+│  - Contact Repository   - Award Repository           │
+│  - Cluster Spot Store   - QSL Record Store           │
+├─────────────────────────────────────────────────────┤
+│            Persistence Layer (SQLite)                 │
+├─────────────────────────────────────────────────────┤
+│  Local SQLite Database                                │
+│  Configuration Files (YAML)                           │
+│  Export Temporary Files                               │
+└─────────────────────────────────────────────────────┘
+```
+
+### Component Responsibility Matrix
+
+| Component | Responsibility | Technology |
+|-----------|-----------------|-----------|
+| GUI | User interface, event handling | PyQt6/PySide6 |
+| Contact Manager | CRUD for contacts, validation | Python business logic |
+| ADIF Handler | Import/export ADIF files | Custom parser + library (adif_io or similar) |
+| Award Engine | Award rule evaluation, progress calc | Plugin architecture, Python |
+| DX Cluster Client | Telnet connection, spot parsing | asyncio, threading |
+| QRZ Service | API communication, authentication | requests library, REST client |
+| Database | Persistence, transactions | SQLite3, SQLAlchemy ORM |
+| Config Manager | Settings persistence | YAML/JSON configuration files |
+
+---
+
+## Database Design
+
+### Entity-Relationship Model
+
+```
+┌──────────────┐         ┌──────────────┐
+│   Contacts   │────────→│  QSLRecords  │
+└──────────────┘         └──────────────┘
+       ↑
+       │
+       └──────────┬──────────┐
+                  │          │
+            ┌─────────┐  ┌──────────────┐
+            │ Awards  │  │ ClusterSpots │
+            └─────────┘  └──────────────┘
+
+┌──────────────────┐
+│ Configuration    │
+└──────────────────┘
+```
+
+### Core Tables
+
+**Table: contacts**
+```sql
+CREATE TABLE contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    callsign TEXT NOT NULL,
+    qso_date TEXT NOT NULL,  -- YYYYMMDD format
+    time_on TEXT NOT NULL,   -- HHMM format
+    time_off TEXT,
+    band TEXT NOT NULL,      -- 160m, 80m, 40m, etc.
+    frequency REAL,          -- MHz
+    mode TEXT NOT NULL,      -- CW, SSB, FM, RTTY, etc.
+    rst_sent TEXT,           -- Signal report sent (e.g., 599)
+    rst_rcvd TEXT,           -- Signal report received
+    tx_power REAL,           -- Watts
+    rx_power REAL,           -- Watts
+    gridsquare TEXT,         -- Maidenhead grid (e.g., FN20qd)
+    name TEXT,               -- Operator name
+    qth TEXT,                -- Location
+    country TEXT,            -- Country name
+    dxcc INTEGER,            -- DXCC entity number
+    cqz INTEGER,             -- CQ Zone
+    ituz INTEGER,            -- ITU Zone
+    state TEXT,              -- US state or subdivision
+    iota TEXT,               -- IOTA reference (IS-001)
+    sota TEXT,               -- SOTA reference (G/NP-001)
+    operator TEXT,           -- Logging operator
+    station_callsign TEXT,   -- Operator's callsign
+    rig_make TEXT,
+    rig_model TEXT,
+    antenna_make TEXT,
+    antenna_model TEXT,
+    notes TEXT,
+    comment TEXT,
+    qsl_rcvd TEXT,           -- Y/N/V
+    qsl_sent TEXT,           -- Y/N/V
+    qsl_rcvd_date TEXT,      -- YYYYMMDD
+    qsl_sent_date TEXT,      -- YYYYMMDD
+    lotw_rcvd TEXT,          -- Y/N
+    lotw_sent TEXT,          -- Y/N
+    eqsl_rcvd TEXT,          -- Y/N
+    eqsl_sent TEXT,          -- Y/N
+    clublog_status TEXT,     -- Upload status to clublog
+    qrz_uploaded INTEGER,    -- Boolean: uploaded to QRZ
+    qrz_upload_date TEXT,    -- YYYYMMDD of last QRZ upload
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(callsign, qso_date, time_on, band, frequency)
+);
+```
+
+**Table: qsl_records**
+```sql
+CREATE TABLE qsl_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contact_id INTEGER NOT NULL REFERENCES contacts(id),
+    confirmation_type TEXT NOT NULL,  -- 'QSL', 'LOTW', 'EQSL', 'CLUB'
+    confirmed_date TEXT,              -- YYYYMMDD
+    confirmation_source TEXT,         -- Authority (ARRL, LoTW, etc.)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Table: awards_progress**
+```sql
+CREATE TABLE awards_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    award_program TEXT NOT NULL,  -- 'DXCC', 'WAS', 'SKCC', etc.
+    award_name TEXT NOT NULL,
+    award_mode TEXT,              -- 'MIXED', 'CW', 'PHONE', 'DIGITAL', NULL for N/A
+    award_band TEXT,              -- Specific band or NULL for all-band
+    contact_count INTEGER DEFAULT 0,
+    entity_count INTEGER DEFAULT 0,
+    points_total INTEGER DEFAULT 0,  -- For point-based awards
+    achievement_level TEXT,       -- Current tier/level
+    achieved_date TEXT,           -- YYYYMMDD when first achieved
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    UNIQUE(award_program, award_name, award_mode, award_band)
+);
+```
+
+**Table: cluster_spots** (Optional, for logging)
+```sql
+CREATE TABLE cluster_spots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    frequency REAL,
+    dx_callsign TEXT,
+    de_callsign TEXT,  -- Spotting station
+    dx_grid TEXT,      -- Grid square (if available)
+    comment TEXT,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    spotted_date TEXT,  -- YYYYMMDD
+    spotted_time TEXT   -- HHMM
+);
+```
+
+**Table: configuration**
+```sql
+CREATE TABLE configuration (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE NOT NULL,
+    value TEXT,
+    value_type TEXT,  -- 'string', 'integer', 'boolean', 'json'
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Indexing Strategy
+
+```sql
+-- Performance indexes
+CREATE INDEX idx_contacts_callsign ON contacts(callsign);
+CREATE INDEX idx_contacts_date ON contacts(qso_date);
+CREATE INDEX idx_contacts_band ON contacts(band);
+CREATE INDEX idx_contacts_mode ON contacts(mode);
+CREATE INDEX idx_contacts_dxcc ON contacts(dxcc);
+CREATE INDEX idx_contacts_state ON contacts(state);
+CREATE INDEX idx_contacts_qsl_rcvd ON contacts(qsl_rcvd);
+CREATE INDEX idx_awards_program ON awards_progress(award_program);
+CREATE INDEX idx_spots_received ON cluster_spots(received_at);
+```
+
+### Data Integrity Constraints
+
+- Foreign key relationships enforced
+- Unique constraints on composite keys (prevent duplicates)
+- Check constraints on valid enumerations (band, mode)
+- Timestamps for audit trail
+- Soft delete support (optional flag for archived contacts)
+
+---
+
+## ADIF Standard Implementation
+
+### Import Pipeline
+
+```
+ADIF File → Parser → Validator → Conflict Detection → Transaction → Database
+     ↓           ↓        ↓            ↓                  ↓
+  Read file  Extract   Check rules  Show preview    Commit or
+  (ADI/ADX)  fields    & formats    for user        Rollback
+```
+
+**Detailed Import Process:**
+
+1. **File Selection & Validation**
+   - Accept .adi, .adx, .adif extensions
+   - Check file readability and size
+   - Validate XML structure (if ADX format)
+
+2. **Parsing Phase**
+   - Create ADIF parser (leverage adif_io library or custom implementation)
+   - Extract all header records and QSO records
+   - Build data structures for each field
+   - Track parsing errors with line numbers
+
+3. **Validation Phase**
+   - Validate callsign format for each QSO
+   - Validate date/time combinations (logical consistency)
+   - Check band/frequency consistency
+   - Validate mode against standard modes list
+   - For each field, apply business rules (e.g., RST range 1-9)
+   - Generate validation report (warnings/errors with line references)
+
+4. **Conflict Detection**
+   - Identify duplicates: (callsign, qso_date, time_on, band, frequency)
+   - Flag potential duplicates with time window (±5 minutes)
+   - Check for frequency conflicts within same day
+   - Present conflicts to user with resolution options
+
+5. **Import Preview Dialog**
+   - Show number of records to import
+   - Display validation summary (errors/warnings)
+   - Option: merge with existing or replace
+   - Option: skip records with errors or attempt import with defaults
+   - Estimated record count if successful
+   - User confirmation required
+
+6. **Database Transaction**
+   - Begin transaction
+   - Insert/update records
+   - Recalculate award progress
+   - On error: rollback and report
+   - On success: commit and display summary
+
+7. **Post-Import**
+   - Refresh UI contact list
+   - Recalculate award totals
+   - Log import statistics
+
+### Export Pipeline
+
+```
+Database Query → Format Selection → Field Mapping → Serialization → File Write
+      ↓              ↓                  ↓                ↓              ↓
+   Get QSOs   ADI or ADX?      Map to ADIF fields  Encode properly  Save file
+```
+
+**Detailed Export Process:**
+
+1. **Filter Selection**
+   - Date range (start/end)
+   - Band filter
+   - Mode filter
+   - Award type filter
+   - Confirmation status filter
+   - Callsign search
+
+2. **Query Execution**
+   - Build SQL query with selected filters
+   - Retrieve matching contacts
+   - Count total records
+
+3. **Export Format Selection**
+   - ADI (text) format
+   - ADX (XML) format
+   - Include ADIF header with metadata
+
+4. **Header Generation**
+   ```
+   ADIF_VER:3.1.0
+   PROGRAMID:HamRadioLogger/1.0
+   PROGRAMVERSION:1.0.0
+   CREATED_TIMESTAMP:20251020T150000Z
+   ```
+
+5. **Record Serialization**
+   - For each contact:
+     - Map database fields to ADIF field names
+     - Format values according to ADIF spec
+     - Handle data type conversion
+     - Escape special characters
+     - Write in ADI or ADX format
+
+6. **Format Examples**
+
+   **ADI Format (Text):**
+   ```
+   <ADIF_VER:5>3.1.0
+   <PROGRAMID:14>HamRadioLogger
+   <PROGRAMVERSION:5>1.0.0
+   <EOH>
+   
+   <CALL:4>W1AW <QSO_DATE:8>20251015 <TIME_ON:4>1430 <BAND:3>20M
+   <FREQ:4>14.2 <MODE:3>CW <RST_SENT:3>599 <RST_RCVD:3>579
+   <NAME:4>John <QTH:8>Hartford <DXCC:3>291 <TX_PWR:3>100 <EOR>
+   ```
+
+   **ADX Format (XML):**
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <ADX>
+     <RECORDS>
+       <HEADER>
+         <ADIF_VER>3.1.0</ADIF_VER>
+         <PROGRAMID>HamRadioLogger</PROGRAMID>
+         <CREATED_TIMESTAMP>20251020T150000Z</CREATED_TIMESTAMP>
+       </HEADER>
+       <QSO>
+         <CALL>W1AW</CALL>
+         <QSO_DATE>20251015</QSO_DATE>
+         <TIME_ON>1430</TIME_ON>
+         <BAND>20M</BAND>
+         <FREQ>14.2</FREQ>
+         <MODE>CW</MODE>
+         <RST_SENT>599</RST_SENT>
+         <RST_RCVD>579</RST_RCVD>
+       </QSO>
+     </RECORDS>
+   </ADX>
+   ```
+
+7. **File Output**
+   - Write to selected location
+   - Show file size and record count
+   - Offer option to open file or folder
+
+### ADIF Field Mapping Table
+
+| Database Column | ADIF Field | Type | Format | Notes |
+|-----------------|-----------|------|--------|-------|
+| callsign | CALL | String | A-Z 0-9 / max 12 chars | Required |
+| qso_date | QSO_DATE | Date | YYYYMMDD | Required |
+| time_on | TIME_ON | Time | HHMM | Required |
+| band | BAND | Enum | '160M', '80M', etc. | From frequency if not present |
+| frequency | FREQ | Number | MHz decimal | N/A if BAND present |
+| mode | MODE | Enum | 'CW', 'SSB', 'FM', etc. | Required |
+| rst_sent | RST_SENT | String | 3 digits (1-9) | Optional |
+| rst_rcvd | RST_RCVD | String | 3 digits (1-9) | Optional |
+| tx_power | TX_PWR | Number | Watts | Optional |
+| gridsquare | GRIDSQUARE | String | Maidenhead 4-10 chars | Optional |
+| name | NAME | String | Operator name | Optional |
+| qth | QTH | String | Location | Optional |
+| country | COUNTRY | String | Country name | Optional |
+| state | STATE | String | 2-letter state code | Optional |
+| dxcc | DXCC | Number | DXCC entity # | Optional |
+| qsl_rcvd | QSL_RCVD | Enum | Y/N/V | Optional |
+| lotw_rcvd | LOTW_QSL_RCVD | Enum | Y/N | Optional |
+
+---
+
+## Awards System Architecture
+
+### Award Plugin Architecture
+
+**Design Pattern: Strategy + Factory**
+
+```python
+# Base abstract class
+class AwardProgram(ABC):
+    def __init__(self, name, program_id):
+        self.name = name
+        self.program_id = program_id
+    
+    @abstractmethod
+    def validate(self, contact) -> bool:
+        """Check if contact qualifies for this award"""
+    
+    @abstractmethod
+    def calculate_progress(self, contacts) -> dict:
+        """Calculate current progress toward award"""
+    
+    @abstractmethod
+    def get_requirements(self) -> dict:
+        """Return award requirements"""
+    
+    @abstractmethod
+    def get_endorsements(self) -> list:
+        """Return list of endorsement levels"""
+
+# Concrete implementation example
+class DCCCAward(AwardProgram):
+    def __init__(self):
+        super().__init__("DXCC", "DXCC_MIXED")
+        self.entity_requirement = 100
+    
+    def validate(self, contact):
+        # Check if contact has valid DXCC entity
+        return contact.dxcc is not None
+    
+    def calculate_progress(self, contacts):
+        # Count unique entities with confirmation
+        entities = set()
+        for contact in contacts:
+            if self.validate(contact) and contact.qsl_confirmed():
+                entities.add(contact.dxcc)
+        return {
+            'current': len(entities),
+            'required': self.entity_requirement,
+            'achieved': len(entities) >= self.entity_requirement
+        }
+```
+
+### Award Configuration (YAML)
+
+```yaml
+# awards.yaml
+awards:
+  - name: DXCC
+    program_id: DXCC_MIXED
+    type: entity_count
+    enabled: true
+    requirements:
+      entity_count: 100
+      confirmation: true
+      modes: [MIXED, CW, PHONE, DIGITAL]
+      bands: null  # null = all bands
+    endorsements:
+      - level: 100
+        description: "DXCC Certificate"
+      - level: 150
+        step: 50
+        description: "50-entity endorsements"
+      - level: 250
+        step: 50
+      - level: 300
+        step: 25
+    handler: dxcc_handler.py
+
+  - name: WAS
+    program_id: WAS_MIXED
+    type: entity_count
+    enabled: true
+    requirements:
+      entity_count: 50
+      entity_type: us_states
+      confirmation: true
+    endorsements:
+      - level: 50
+      - level: 75
+        step: 25
+    handler: was_handler.py
+
+  - name: SKCC_Centurion
+    program_id: SKCC_CEN
+    type: unique_contact_count
+    enabled: true
+    requirements:
+      unique_contacts: 100
+      organization: SKCC
+      mode: CW
+    endorsements:
+      - level: 100
+        description: "Centurion Award"
+    handler: skcc_handler.py
+```
+
+### Award Registry & Factory
+
+```
+┌─────────────────────────────┐
+│   Award Registry (Singleton) │
+├─────────────────────────────┤
+│ - Load from config          │
+│ - Instantiate handlers      │
+│ - Manage award programs     │
+└────────────────────────────┘
+          ↓
+    ┌──────────────────────────────────┐
+    │      Award Factory               │
+    ├──────────────────────────────────┤
+    │ - Create award instances         │
+    │ - Return by program_id           │
+    │ - List available awards          │
+    └──────────────────────────────────┘
+```
+
+### Award Calculation Engine
+
+```python
+class AwardCalculator:
+    def __init__(self, award_registry):
+        self.registry = award_registry
+    
+    def calculate_all_awards(self, contacts_db):
+        """Calculate progress for all registered awards"""
+        results = {}
+        for award_program in self.registry.get_all_awards():
+            results[award_program.program_id] = \
+                self._calculate_award(award_program, contacts_db)
+        return results
+    
+    def _calculate_award(self, award, contacts_db):
+        """Single award calculation"""
+        qualifying_contacts = self._filter_contacts(
+            contacts_db, award.get_requirements()
+        )
+        progress = award.calculate_progress(qualifying_contacts)
+        endorsements = self._calculate_endorsements(
+            progress, award.get_endorsements()
+        )
+        return {
+            'program': award.name,
+            'progress': progress,
+            'endorsements': endorsements,
+            'last_updated': datetime.now()
+        }
+    
+    def _calculate_endorsements(self, progress, levels):
+        """Determine which endorsement levels achieved"""
+        earned = []
+        for level in levels:
+            if progress['current'] >= level['requirement']:
+                earned.append(level)
+        return earned
+```
+
+### Award Dashboard UI Component
+
+**Tabular View:**
+```
+┌────────────────────────────────────────────────────────┐
+│ Award Program      │ Status  │ Progress    │ Earned    │
+├────────────────────────────────────────────────────────┤
+│ DXCC Mixed         │ In Progress │ 187/340 │ Certif. + |
+│                    │             │         │ 34 endors │
+├────────────────────────────────────────────────────────┤
+│ WAS Mixed          │ Achieved    │ 50/50   │ Certif.   │
+├────────────────────────────────────────────────────────┤
+│ SKCC Centurion     │ In Progress │ 67/100  │ None      │
+└────────────────────────────────────────────────────────┘
+```
+
+**Visual Progress Bars with Modals:**
+- Click on award row → Detail view
+- Shows required vs. achieved contacts
+- Filter button to show qualifying contacts
+- Export award summary
+
+---
+
+## DX Cluster Integration
+
+### Telnet Client Architecture
+
+```python
+class DXClusterClient:
+    def __init__(self, host, port, callsign, password=None):
+        self.host = host
+        self.port = port
+        self.callsign = callsign
+        self.password = password
+        self.connection = None
+        self.reader_task = None
+        self.spot_queue = asyncio.Queue()
+    
+    async def connect(self):
+        """Establish Telnet connection"""
+        # Use asyncio for non-blocking I/O
+        
+    async def login(self):
+        """Authenticate to cluster"""
+        
+    async def disconnect(self):
+        """Clean disconnect"""
+    
+    async def send_command(self, command):
+        """Send command to cluster"""
+    
+    async def listen_for_spots(self):
+        """Background task parsing incoming spots"""
+```
+
+### Spot Parsing Engine
+
+```python
+class SpotParser:
+    SPOT_PATTERN = re.compile(
+        r'^DX de \w+\s+(\d+\.\d+)\s+(\w+)\s+([A-Z]{2,})\s+(.+)$'
+    )
+    
+    def parse_spot(self, raw_line):
+        """
+        Parse DX Spider format:
+        DX de W1AW:  14.089  W1AW       VE  14.089 is calling CQ on 20m           1525Z
+        """
+        match = self.SPOT_PATTERN.match(raw_line)
+        if not match:
+            return None
+        
+        frequency, dx_call, spotter, comment = match.groups()
+        
+        return SpotData(
+            frequency=float(frequency),
+            dx_callsign=dx_call,
+            spotter_callsign=spotter,
+            comment=comment.strip(),
+            received_at=datetime.now()
+        )
+```
+
+### Multi-Cluster Manager
+
+```python
+class ClusterManager:
+    def __init__(self, config):
+        self.clusters = {}  # {cluster_id: DXClusterClient}
+        self.spot_processor = SpotProcessor()
+        self.config = config
+    
+    async def connect_all_configured(self):
+        """Connect to all clusters in config"""
+        for cluster_config in self.config.get_clusters():
+            await self.add_cluster(cluster_config)
+    
+    async def add_cluster(self, cluster_config):
+        """Add and connect single cluster"""
+        client = DXClusterClient(
+            host=cluster_config['host'],
+            port=cluster_config['port'],
+            callsign=cluster_config['callsign']
+        )
+        await client.connect()
+        await client.login()
+        
+        self.clusters[cluster_config['id']] = client
+        
+        # Start background listening task
+        asyncio.create_task(self._listen_cluster_loop(client))
+    
+    async def _listen_cluster_loop(self, client):
+        """Background task for cluster"""
+        while client.is_connected:
+            spot = await client.spot_queue.get()
+            processed = self.spot_processor.process(spot)
+            self._emit_spot_signal(processed)
+```
+
+### Cluster Spot Database & Cache
+
+```python
+class SpotCache:
+    def __init__(self, max_size=1000):
+        self.cache = collections.deque(maxlen=max_size)
+        self.recent_by_call = {}  # Quick lookup
+    
+    def add_spot(self, spot):
+        self.cache.append(spot)
+        self._update_quick_lookup(spot)
+    
+    def filter(self, **criteria):
+        """
+        criteria: band, mode, continent, dxcc, prefix, 
+                  frequency_range, recency_hours
+        """
+        results = []
+        for spot in self.cache:
+            if self._matches_criteria(spot, criteria):
+                results.append(spot)
+        return results
+    
+    def get_needed_entities(self, dxcc_list):
+        """Find spots for DXCCs in user's DXCC needs"""
+        needed = set(dxcc_list)
+        matching = []
+        for spot in self.cache:
+            if spot.dxcc in needed:
+                matching.append(spot)
+        return matching
+```
+
+### UI Integration
+
+**Spot Display Panel:**
+- Real-time scrolling list of spots
+- Columns: Frequency, DX Call, Spotter, Time, Comment
+- Color coding: Needed entities highlighted, LoTW participants highlighted
+- Double-click → Log contact
+- Right-click menu: Set frequency, filter, alerts
+- Search/filter bar with quick filters
+- Cluster status indicator (connected/disconnected)
+
+**Cluster Settings Dialog:**
+- Add/edit/delete cluster nodes
+- Enable/disable clusters
+- Port configuration
+- Login credentials (securely stored)
+- Auto-connect options
+- Heartbeat settings
+
+---
+
+## GUI Framework Selection
+
+### Framework: PyQt6 (or PySide6 as alternative)
+
+**Rationale:**
+- Cross-platform (Windows, macOS, Linux)
+- Mature, stable, extensive documentation
+- Rich widget library
+- Signal/slot architecture for clean event handling
+- Performance suitable for real-time data
+- Active community support
+- Native look and feel on each platform
+
+**Alternative:** PySide6 (Apache license, from Qt Company)
+
+### Main Window Structure
+
+```
+┌───────────────────────────────────────────────┐
+│  File  Edit  View  Tools  Help                │ Menu Bar
+├───────────────────────────────────────────────┤
+│ [New Contact] [Upload to QRZ] [Settings]     │ Toolbar
+├───────────────────────────────────────────────┤
+│        ┌─ Log ─┬─ Contacts ─┬─ Awards ┐     │
+│        │       │            │        │      │ Tabs
+├────────┼───────┼────────────┼────────┼──────┤
+│        │                               │     │
+│        │      Main Content Area       │     │ Central Widget
+│        │                               │     │
+├────────┴───────────────────────────────┴─────┤
+│ Status: Connected │ Spots: 142 │ QRZ: OK    │ Status Bar
+└───────────────────────────────────────────────┘
+```
+
+### Tab 1: Contact Logging
+
+**Layout:**
+- Contact form (horizontal scrollable)
+  - Callsign (with auto-complete from recent)
+  - Date (date picker or entry)
+  - Time (time picker)
+  - Band (dropdown with frequency sync)
+  - Frequency (number input)
+  - Mode (dropdown)
+  - RST Sent/Received (spinners 1-9)
+  - Power
+  - Grid Square
+  - Operator Name
+- Quick-save buttons: Save, Save & New, Cancel
+- Recent contacts sidebar (quick access)
+
+### Tab 2: Contacts List & Search
+
+**Features:**
+- Sortable, filterable table
+- Columns: Callsign, Date, Time, Band, Mode, RST, QSL Status, Country, DXCC
+- Search bar (by callsign, country, date range)
+- Checkboxes for bulk operations
+- Right-click context menu: Edit, Delete, Log QSL, Mark Confirmed
+- Export selected as ADIF
+- Double-click to edit
+
+### Tab 3: Awards Dashboard
+
+**Layout:**
+- Award selector (dropdown or list)
+- Current award details panel
+  - Name, program, requirements
+  - Progress bar (current/required)
+  - Endorsement list
+  - Achievement date
+- Qualifying contacts table (filtered by award)
+- Statistics: Total entities, modes, bands
+- Export award progress button
+
+### Tab 4: DX Cluster Spots
+
+**Layout:**
+- Top: Cluster connection status, connect/disconnect buttons
+- Left panel: Cluster selector, manual commands
+- Center: Scrolling spot list (newest at top)
+  - Frequency | DX Call | Spotter | Time | Comment
+  - Color coding for highlighted entries
+- Right panel: Search/filter controls
+  - Band selector
+  - Continent selector
+  - Prefix search
+  - "Highlight needed" checkbox
+- Bottom: Quick spot statistics
+
+### Tab 5: Settings
+
+**Sections:**
+- **General Settings**
+  - Operator callsign
+  - Home grid square
+  - Default mode/power
+  - Auto-save interval
+  
+- **Database**
+  - Database location
+  - Backup options
+  - Data retention
+  
+- **DX Cluster**
+  - Cluster nodes configuration
+  - Auto-connect options
+  
+- **QRZ Integration**
+  - API key (encrypted storage)
+  - Auto-upload toggle
+  - Subscription status check
+  
+- **Awards**
+  - Enable/disable specific awards
+  - Custom award definitions
+  
+- **GUI Preferences**
+  - Theme (dark/light)
+  - Font size
+  - Keyboard shortcuts
+
+### Tab 6: Import/Export
+
+**Sections:**
+- **ADIF Import**
+  - File selector
+  - Preview before import
+  - Merge/replace options
+  - Progress indicator
+  
+- **ADIF Export**
+  - Filter options (date, band, mode, award)
+  - Format selection (ADI/ADX)
+  - Destination selector
+  
+- **Other Imports**
+  - CSV import wizard
+  - LoTW file support
+  
+- **Backup/Restore**
+  - Backup now button
+  - Restore from backup selector
+  - Backup schedule
+
+### Dialogs
+
+**Edit Contact Dialog:**
+- All contact fields in organized sections
+- Validation with error highlighting
+- Save/Cancel buttons
+- Show related QSO (if duplicate)
+
+**Settings Dialog:**
+- Multi-panel structure
+- OK/Cancel/Apply buttons
+- Validation before save
+
+**Import Dialog:**
+- File browser
+- Preview window
+- Progress bar
+- Detailed error/warning list
+
+---
+
+## QRZ.com Integration
+
+### Authentication & Session Management
+
+```python
+class QRZAuthenticator:
+    def __init__(self, api_key, config_file):
+        self.api_key = api_key  # Encrypted storage
+        self.config_file = config_file
+    
+    def verify_subscription(self):
+        """
+        Call QRZ API to verify XML subscription level.
+        Returns: {'valid': bool, 'subscription_type': str}
+        """
+        # POST to QRZ API endpoint
+        # Check subscription level requirement
+        
+    def get_secure_api_key(self):
+        """Retrieve and decrypt API key from secure storage"""
+```
+
+### Upload Service
+
+```python
+class QRZUploadService:
+    def __init__(self, authenticator):
+        self.auth = authenticator
+        self.session = requests.Session()
+        self.upload_queue = []
+    
+    async def upload_contact(self, contact):
+        """
+        Convert contact to ADIF format
+        POST to QRZ API
+        Handle response and track upload status
+        """
+        
+    async def batch_upload(self, contacts):
+        """Queue and upload multiple contacts"""
+        for contact in contacts:
+            await self.upload_contact(contact)
+    
+    async def sync_failed_uploads(self):
+        """Retry previously failed uploads"""
+```
+
+### QRZ API Integration
+
+**Endpoint:** `https://www.qrz.com/api/logbook/`
+
+**Request Format (ADIF via HTTP POST):**
+```
+POST /api/logbook/
+Content-Type: application/x-www-form-urlencoded
+
+key=YOUR_API_KEY&
+action=INSERT&
+ADIF=<CALL:4>W1AW<QSO_DATE:8>20251015<TIME_ON:4>1430...
+```
+
+**Response Handling:**
+```python
+if response.status_code == 200:
+    result = parse_qrz_response(response.text)
+    if result['status'] == 'success':
+        mark_contact_uploaded(contact_id)
+    else:
+        log_upload_error(contact_id, result['error'])
+else:
+    handle_http_error(response.status_code)
+```
+
+### Upload Status Tracking
+
+```sql
+CREATE TABLE qrz_uploads (
+    id INTEGER PRIMARY KEY,
+    contact_id INTEGER REFERENCES contacts(id),
+    upload_timestamp TIMESTAMP,
+    upload_status TEXT,  -- 'success', 'pending', 'failed'
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0,
+    last_retry TIMESTAMP
+);
+```
+
+---
+
+## Implementation Roadmap
+
+### Phase 1: Foundation (Weeks 1-4)
+
+**Objectives:**
+- Core database schema
+- ADIF parser & serializer
+- Basic contact CRUD
+- SQLite integration with SQLAlchemy ORM
+
+**Deliverables:**
+- Functional contact database
+- ADIF import/export (basic functionality)
+- Unit tests for ADIF handling
+
+### Phase 2: GUI & Contact Logging (Weeks 5-8)
+
+**Objectives:**
+- PyQt6 main window
+- Contact logging tab
+- Contact list view
+- Basic contact search/filter
+
+**Deliverables:**
+- Working GUI for logging contacts
+- Data persistence
+- Contact editing & deletion
+
+### Phase 3: Awards System (Weeks 9-12)
+
+**Objectives:**
+- Award architecture implementation
+- DXCC award plugin (initial)
+- WAS award plugin
+- Award dashboard UI
+
+**Deliverables:**
+- Award calculation engine
+- DXCC & WAS awards fully functional
+- Award progress display
+
+### Phase 4: DX Cluster Integration (Weeks 13-16)
+
+**Objectives:**
+- DXClusterClient implementation
+- Spot parser
+- Multi-cluster manager
+- Spot display UI
+
+**Deliverables:**
+- Live DX cluster spots
+- Spot filtering
+- Integration with contact logging
+
+### Phase 5: QRZ.com Integration (Weeks 17-19)
+
+**Objectives:**
+- QRZ API authentication
+- Upload service
+- Status tracking
+
+**Deliverables:**
+- Upload contacts to QRZ.com
+- Upload history
+- Error handling & retries
+
+### Phase 6: SKCC & Additional Awards (Weeks 20-22)
+
+**Objectives:**
+- SKCC award implementation
+- IOTA, SOTA, VUCC awards
+- Custom award framework
+
+**Deliverables:**
+- Full SKCC support
+- Plugin framework for user-defined awards
+
+### Phase 7: Advanced Features (Weeks 23-26)
+
+**Objectives:**
+- Import/export enhancements
+- Settings management
+- Data backup/restore
+- Statistics & reporting
+- Theme support
+
+**Deliverables:**
+- Full-featured import/export
+- Settings persistence
+- Backup mechanism
+- Statistics dashboard
+
+### Phase 8: Testing & Optimization (Weeks 27-30)
+
+**Objectives:**
+- Comprehensive testing
+- Performance optimization
+- Bug fixes
+- Documentation
+
+**Deliverables:**
+- Production-ready application
+- User documentation
+- Developer documentation
+
+---
+
+## Design Patterns & Best Practices
+
+### Architectural Patterns
+
+1. **Model-View-Controller (MVC)**
+   - **Model:** Contact, Award, Spot classes
+   - **View:** PyQt6 widgets
+   - **Controller:** Business logic services
+
+2. **Repository Pattern**
+   - Abstract data access
+   - Testable persistence layer
+   
+3. **Factory Pattern**
+   - Award creation and registry
+   - Plugin instantiation
+
+4. **Observer Pattern**
+   - PyQt6 signals/slots
+   - Real-time spot updates to UI
+
+5. **Strategy Pattern**
+   - ADIF parsers (ADI vs ADX)
+   - Award calculation algorithms
+
+### Database Best Practices
+
+1. **ORM Usage (SQLAlchemy)**
+   - Type-safe queries
+   - Automatic migrations
+   - Relationship management
+
+2. **Transaction Management**
+   - Bulk import as single transaction
+   - Rollback on validation error
+   - Retry logic for transient failures
+
+3. **Data Validation**
+   - At input (form validation)
+   - At database layer (constraints)
+   - At business logic (award rules)
+
+### Async/Threading Strategy
+
+1. **DX Cluster Client**
+   - Use asyncio for non-blocking Telnet connections
+   - Background parsing task
+
+2. **Network Operations**
+   - QRZ uploads in background thread
+   - Don't block UI
+
+3. **Database Operations**
+   - Use connection pools
+   - Background indexing for large imports
+
+### Testing Strategy
+
+1. **Unit Tests**
+   - ADIF parser
+   - Award calculators
+   - Validators
+
+2. **Integration Tests**
+   - Database operations
+   - Import/export workflows
+   - QRZ API calls (mocked)
+
+3. **UI Tests**
+   - Contact logging workflow
+   - Award dashboard updates
+   - Settings persistence
+
+### Error Handling
+
+1. **ADIF Import Errors**
+   - Show user-friendly messages
+   - Point to specific line/field
+   - Offer recovery options
+
+2. **Network Errors**
+   - Graceful degradation
+   - Retry with exponential backoff
+   - Queue for later retry
+
+3. **Database Errors**
+   - Transaction rollback
+   - Data integrity checks
+   - Auto-repair or manual intervention
+
+### Code Organization
+
+```
+ham_radio_logger/
+├── main.py                 # Application entry point
+├── config/
+│   ├── awards.yaml        # Award definitions
+│   ├── clusters.yaml      # DX cluster nodes
+│   └── settings.py        # Default settings
+├── database/
+│   ├── models.py          # SQLAlchemy models
+│   ├── repository.py      # Data access layer
+│   └── migrations/        # Database migrations
+├── business_logic/
+│   ├── contact_manager.py
+│   ├── award_engine.py
+│   ├── cluster_manager.py
+│   └── qrz_service.py
+├── adif/
+│   ├── parser.py          # ADIF parser
+│   ├── serializer.py      # ADIF export
+│   └── validator.py       # ADIF validation
+├── awards/
+│   ├── base.py            # Abstract AwardProgram
+│   ├── dxcc.py            # DXCC plugin
+│   ├── was.py             # WAS plugin
+│   ├── skcc.py            # SKCC plugin
+│   └── registry.py        # Award registry
+├── ui/
+│   ├── main_window.py
+│   ├── tabs/
+│   │   ├── logging.py
+│   │   ├── contacts.py
+│   │   ├── awards.py
+│   │   ├── cluster.py
+│   │   └── settings.py
+│   └── dialogs/
+│       ├── import_dialog.py
+│       ├── export_dialog.py
+│       └── settings_dialog.py
+├── tests/
+│   ├── test_adif.py
+│   ├── test_awards.py
+│   ├── test_database.py
+│   └── test_ui.py
+└── utils/
+    ├── logger.py          # Logging configuration
+    ├── validators.py      # Data validators
+    └── helpers.py         # Utility functions
+```
+
+### Configuration Management
+
+```python
+class ConfigManager:
+    def __init__(self, config_dir):
+        self.config_dir = config_dir
+        self.settings = {}
+    
+    def load_default_config(self):
+        """Load default settings"""
+    
+    def load_user_config(self):
+        """Load user-customized settings"""
+    
+    def save_user_config(self):
+        """Persist user settings"""
+    
+    def get(self, key, default=None):
+        """Get config value with fallback"""
+```
+
+### Logging & Debugging
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Usage:
+logger.info(f"Imported {count} contacts from ADIF file")
+logger.warning(f"Duplicate contact detected: {callsign} on {date}")
+logger.error(f"QRZ upload failed: {error_msg}", exc_info=True)
+```
+
+---
+
+## Summary: Development Priority Checklist
+
+### Must-Have (MVP)
+
+- [x] Contact database (SQLite)
+- [x] ADIF import/export (full standard compliance)
+- [x] Basic GUI for logging
+- [x] Contact search/filter
+- [x] DXCC award tracking
+- [x] Award progress dashboard
+- [x] QRZ.com upload integration
+
+### Should-Have
+
+- [x] DX cluster integration (multiple nodes)
+- [x] WAS award
+- [x] SKCC awards
+- [x] Settings management
+- [x] Data backup/restore
+- [x] Statistics & reporting
+
+### Nice-to-Have
+
+- [x] IOTA, SOTA, VUCC awards
+- [x] Custom award framework
+- [x] Cabrillo export
+- [x] Contest mode
+- [x] Mobile companion app
+- [x] Cloud sync (optional)
+
+---
+
+## Dependencies & Libraries
+
+### Python Packages
+
+```
+PyQt6>=6.4.0              # GUI framework
+SQLAlchemy>=2.0           # ORM
+adif_io>=0.3.0            # ADIF parsing (or custom implementation)
+aiofiles>=0.8.0           # Async file I/O
+asyncio-contextmanager    # Helper utilities
+pyyaml>=6.0               # Configuration
+requests>=2.28.0          # HTTP client
+cryptography>=38.0        # Secure credential storage
+python-dateutil>=2.8.0    # Date/time parsing
+```
+
+### External APIs & Services
+
+- QRZ.com XML/REST API
+- DX Cluster Telnet Protocol
+- ADIF Specification (current version)
+
+---
+
+## Next Steps for Development
+
+1. **Finalize Database Schema** - Review ERD and constraints
+2. **Select ADIF Library** - Evaluate adif_io vs custom parser
+3. **Create Project Structure** - Set up git repo, virtual env
+4. **Implement Core Models** - SQLAlchemy contact/award models
+5. **Build ADIF Handler** - Parser and serializer modules
+6. **Create Basic GUI** - Main window and tab structure
+7. **Develop Award Engine** - Base class and DXCC plugin
+8. **Implement Database Layer** - Repository pattern
+9. **Add DX Cluster Client** - Async Telnet connection
+10. **Integrate QRZ API** - Authentication and uploads
+
+---
+
+**End of Design Document**
+
+**Document Status:** Ready for Development  
+**Last Updated:** October 20, 2025  
+**Author:** Design Document Generator  
+**Version Control:** Initial Release v1.0

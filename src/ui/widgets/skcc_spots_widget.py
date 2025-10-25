@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QComboBox, QCheckBox, QSpinBox, QHeaderView
+    QTableWidgetItem, QComboBox, QCheckBox, QSpinBox, QHeaderView,
+    QGroupBox, QGridLayout, QScrollArea
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
@@ -48,7 +49,7 @@ class SKCCSpotRow:
     def __init__(self, spot: SKCCSpot):
         self.spot = spot
         self.callsign = spot.callsign
-        self.frequency = f"{spot.frequency:.1f}"
+        self.frequency = f"{spot.frequency:.3f}"  # 3 decimal places for accurate frequency display
         self.mode = spot.mode
         self.speed = f"{spot.speed} WPM" if spot.speed else ""
         self.reporter = spot.reporter
@@ -148,23 +149,21 @@ class SKCCSpotWidget(QWidget):
         # Filter section
         filter_layout = QHBoxLayout()
 
-        # Band filter
-        filter_layout.addWidget(QLabel("Band:"))
-        self.band_combo = QComboBox()
-        self.band_combo.addItem("All Bands")
-        for band in ["160M", "80M", "60M", "40M", "30M", "20M", "17M", "15M", "12M", "10M", "6M", "2M", "70cm"]:
-            self.band_combo.addItem(band)
-        self.band_combo.currentTextChanged.connect(self._apply_filters)
-        filter_layout.addWidget(self.band_combo)
-
-        # Mode filter
-        filter_layout.addWidget(QLabel("Mode:"))
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("All Modes")
-        for mode in ["CW", "SSB", "FM", "RTTY", "PSK31", "JT65", "FT8"]:
-            self.mode_combo.addItem(mode)
-        self.mode_combo.currentTextChanged.connect(self._apply_filters)
-        filter_layout.addWidget(self.mode_combo)
+        # Band filter with checkboxes (HF only, no VHF/UHF)
+        band_group = QGroupBox("Bands")
+        band_layout = QGridLayout()
+        band_layout.setSpacing(3)
+        band_layout.setContentsMargins(5, 5, 5, 5)
+        self.band_checks: Dict[str, QCheckBox] = {}
+        bands = ["160M", "80M", "60M", "40M", "30M", "20M", "17M", "15M", "12M", "10M", "6M"]
+        for i, band in enumerate(bands):
+            check = QCheckBox(band)
+            check.setChecked(True)  # All bands selected by default
+            check.stateChanged.connect(self._apply_filters)
+            self.band_checks[band] = check
+            band_layout.addWidget(check, i // 3, i % 3)  # 3 columns
+        band_group.setLayout(band_layout)
+        filter_layout.addWidget(band_group)
 
         # Min signal strength
         filter_layout.addWidget(QLabel("Min Strength (dB):"))
@@ -212,11 +211,11 @@ class SKCCSpotWidget(QWidget):
         )
         self.spots_table.setColumnWidth(0, 80)
 
-        # Column 1: Frequency - reduced by 80% (90px → 18px)
+        # Column 1: Frequency - 50px for 3 decimal places (e.g., "21.051")
         self.spots_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents
         )
-        self.spots_table.setColumnWidth(1, 18)
+        self.spots_table.setColumnWidth(1, 50)
 
         # Column 2: Mode - reduced by 50%
         self.spots_table.horizontalHeader().setSectionResizeMode(
@@ -375,24 +374,25 @@ class SKCCSpotWidget(QWidget):
         """Apply filters to spots list"""
         self.filtered_spots = self.spots.copy()
 
-        # Band filter
-        band = self.band_combo.currentText()
-        if band != "All Bands":
-            freq_range = self._get_band_freq_range(band)
-            if freq_range:
-                low, high = freq_range
-                self.filtered_spots = [
-                    s for s in self.filtered_spots
-                    if low <= s.frequency <= high
-                ]
+        # Band filter - only include selected bands
+        selected_bands = [band for band, check in self.band_checks.items() if check.isChecked()]
+        if selected_bands:
+            filtered_by_band = []
+            for spot in self.filtered_spots:
+                for band in selected_bands:
+                    freq_range = self._get_band_freq_range(band)
+                    if freq_range:
+                        low, high = freq_range
+                        if low <= spot.frequency <= high:
+                            filtered_by_band.append(spot)
+                            break
+            self.filtered_spots = filtered_by_band
 
-        # Mode filter
-        mode = self.mode_combo.currentText()
-        if mode != "All Modes":
-            self.filtered_spots = [
-                s for s in self.filtered_spots
-                if s.mode == mode
-            ]
+        # Mode filter - only CW mode
+        self.filtered_spots = [
+            s for s in self.filtered_spots
+            if s.mode == "CW"
+        ]
 
         # Strength filter
         min_strength = self.strength_spin.value()
@@ -452,7 +452,7 @@ class SKCCSpotWidget(QWidget):
 
     @staticmethod
     def _get_band_freq_range(band: str) -> Optional[tuple]:
-        """Get frequency range for band"""
+        """Get frequency range for band (HF bands only)"""
         bands = {
             "160M": (1.8, 2.0),
             "80M": (3.5, 4.0),
@@ -465,8 +465,6 @@ class SKCCSpotWidget(QWidget):
             "12M": (24.89, 24.99),
             "10M": (28.0, 29.7),
             "6M": (50.0, 54.0),
-            "2M": (144.0, 148.0),
-            "70cm": (420.0, 450.0),
         }
         return bands.get(band)
 

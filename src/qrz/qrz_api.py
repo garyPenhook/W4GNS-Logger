@@ -303,7 +303,14 @@ class QRZAPIClient:
 
     @staticmethod
     def _get_text(elem: ET.Element, tag: str, default: str = '') -> str:
-        """Get text from element, return default if not found"""
+        """Get text from element, return default if not found
+
+        Special handling for 'qth' field: QRZ uses 'addr2' for city/QTH
+        """
+        # QRZ doesn't have a 'qth' field, it uses addr2 for city
+        if tag == 'qth':
+            tag = 'addr2'
+
         child = QRZAPIClient._find_element(elem, tag)
         return child.text if child is not None and child.text else default
 

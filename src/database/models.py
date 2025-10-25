@@ -74,6 +74,7 @@ class Contact(Base):
     # === AWARD/CLUB FIELDS ===
     skcc_number = Column(String(20))  # Straight Key Century Club member number
     key_type = Column(String(20), default="STRAIGHT")  # Key type: STRAIGHT, BUG, SIDESWIPER
+    paddle = Column(String(20))  # Paddle type: ELECTRONIC, SEMI-AUTO, IAMBIC, MECHANICAL (not valid for SKCC)
 
     # === PROPAGATION/TECHNICAL FIELDS ===
     propagation_mode = Column(String(30))  # Satellite, EME, etc.
@@ -140,9 +141,12 @@ class Contact(Base):
     )
 
     def validate_skcc(self) -> None:
-        """Validate that SKCC contacts are CW-only"""
-        if self.skcc_number and self.mode and self.mode.upper() != "CW":
-            raise ValueError(f"SKCC contacts must be CW mode only. Got mode: {self.mode}")
+        """Validate that SKCC contacts are CW-only and cannot use paddles"""
+        if self.skcc_number:
+            if self.mode and self.mode.upper() != "CW":
+                raise ValueError(f"SKCC contacts must be CW mode only. Got mode: {self.mode}")
+            if self.paddle:
+                raise ValueError(f"SKCC contacts cannot use paddles. Got paddle: {self.paddle}")
 
     # === QRP POWER TRACKING METHODS ===
 

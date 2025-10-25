@@ -18,6 +18,7 @@ from PyQt6.QtCore import Qt, QDateTime, QTimer, pyqtSignal
 
 from src.database.models import Contact
 from src.database.repository import DatabaseRepository
+from src.database.skcc_membership import SKCCMembershipManager
 from src.ui.dropdown_data import DropdownData
 from src.ui.field_manager import FieldManager
 from src.ui.resizable_field import ResizableFieldRow
@@ -69,6 +70,7 @@ class LoggingForm(QWidget):
             self.dropdown_data = DropdownData()
             self.config_manager = get_config_manager()
             self.qrz_service = get_qrz_service()
+            self.skcc_membership = SKCCMembershipManager(self.config_manager.get('database.location'))
 
             # QSO timing tracking
             self.qso_start_time: Optional[datetime] = None
@@ -253,6 +255,10 @@ class LoggingForm(QWidget):
         # Mode
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(self.dropdown_data.get_modes())
+        # Set default mode to CW
+        cw_index = self.mode_combo.findText("CW")
+        if cw_index >= 0:
+            self.mode_combo.setCurrentIndex(cw_index)
         font = self.mode_combo.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.mode_combo.setFont(font)
@@ -365,8 +371,8 @@ class LoggingForm(QWidget):
 
         # Key Type
         self.key_type_combo = QComboBox()
-        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
-        self.key_type_combo.setMaximumWidth(43)
+        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER", "NONE"])
+        self.key_type_combo.setMaximumWidth(49)
         font = self.key_type_combo.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.key_type_combo.setFont(font)
@@ -375,10 +381,22 @@ class LoggingForm(QWidget):
         row4.addWidget(self.key_type_combo, 0)
         row4.addSpacing(10)
 
+        # Paddle
+        self.paddle_combo = QComboBox()
+        self.paddle_combo.addItems(["", "ELECTRONIC", "SEMI-AUTO", "IAMBIC", "MECHANICAL"])
+        self.paddle_combo.setMaximumWidth(90)
+        font = self.paddle_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.paddle_combo.setFont(font)
+        self.paddle_combo.setMinimumHeight(35)
+        row4.addWidget(create_label("Paddle:"))
+        row4.addWidget(self.paddle_combo, 0)
+        row4.addSpacing(10)
+
         # Operator Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Operator name")
-        self.name_input.setMaximumWidth(108)
+        self.name_input.setMaximumWidth(130)
         self.name_input.setMinimumHeight(35)
         # Keep normal font size (not enlarged)
         row4.addWidget(create_label("Name:"))
@@ -571,9 +589,9 @@ class LoggingForm(QWidget):
 
         # Key Type
         self.key_type_combo = QComboBox()
-        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
+        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER", "NONE"])
         self.key_type_combo.setMaximumWidth(30)
-        self.key_type_combo.setToolTip("Type of mechanical key used (for Triple Key Award)")
+        self.key_type_combo.setToolTip("Type of mechanical key used (for Triple Key Award, or NONE if paddle used)")
         key_type_row = ResizableFieldRow("Key Type:", self.key_type_combo)
         layout.addWidget(key_type_row)
 
@@ -732,6 +750,7 @@ class LoggingForm(QWidget):
                     rx_power=self.rx_power_input.value() if self.rx_power_input.value() > 0 else None,
                     skcc_number=self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None,
                     key_type=self.key_type_combo.currentText(),
+                    paddle=self.paddle_combo.currentText() if self.paddle_combo.currentText().strip() else None,
                     name=self.name_input.text().strip() if self.name_input.text().strip() else None,
                 )
                 logger.debug(f"Contact object created: {callsign}")
@@ -804,8 +823,13 @@ class LoggingForm(QWidget):
         Clear all form fields
 
         Resets all inputs to default/empty state and sets focus to callsign field.
+        NOTE: RX power is preserved between contacts to allow operators to maintain
+              consistent RX power settings across multiple QSOs.
         """
         try:
+            # Store RX power value to preserve it
+            preserved_rx_power = self.rx_power_input.value()
+
             self.callsign_input.clear()
             self.datetime_input.setDateTime(QDateTime.currentDateTime())
             self.band_combo.setCurrentIndex(0)
@@ -818,9 +842,11 @@ class LoggingForm(QWidget):
             self.rst_sent_input.clear()
             self.rst_rcvd_input.clear()
             self.tx_power_input.setValue(0)
-            self.rx_power_input.setValue(0)
+            # Preserve RX power - restore the value instead of resetting to 0
+            self.rx_power_input.setValue(preserved_rx_power)
             self.skcc_number_input.clear()
             self.key_type_combo.setCurrentIndex(0)  # Reset to STRAIGHT
+            self.paddle_combo.setCurrentIndex(0)  # Reset to empty
             self.name_input.clear()
             self.county_input.clear()
 
@@ -831,7 +857,7 @@ class LoggingForm(QWidget):
             self.callsign_stable_timer.stop()
 
             self.callsign_input.setFocus()
-            logger.debug("Form cleared successfully - QSO timing reset")
+            logger.debug("Form cleared successfully - QSO timing reset, RX power preserved")
         except Exception as e:
             logger.error(f"Error clearing form: {e}", exc_info=True)
             raise
@@ -1221,6 +1247,22 @@ class LoggingForm(QWidget):
                     if index >= 0:
                         self.country_combo.setCurrentIndex(index)
                         logger.debug(f"Set country to {info.country}")
+
+            # Look up SKCC number from membership database if not already filled
+            if not self.skcc_number_input.text().strip():
+                try:
+                    # Get the callsign being logged
+                    callsign = self.callsign_input.text().strip().upper()
+                    if callsign:
+                        # Query SKCC membership database
+                        member = self.skcc_membership.get_member_by_callsign(callsign)
+                        if member and member.get('skcc_number'):
+                            self.skcc_number_input.setText(member['skcc_number'])
+                            logger.info(f"Filled SKCC number from membership database: {member['skcc_number']} for {callsign}")
+                        else:
+                            logger.debug(f"No SKCC membership found for {callsign}")
+                except Exception as e:
+                    logger.debug(f"Error looking up SKCC membership for {callsign}: {e}")
 
         except Exception as e:
             logger.error(f"Error populating form from QRZ info: {e}", exc_info=True)

@@ -256,11 +256,12 @@ class RBNSpotFetcher:
             if not reporter:
                 return
 
-            # Parse frequency
+            # Parse frequency (RBN sends frequencies in kHz)
             try:
-                frequency = float(parts[3])
-                if frequency < 0.1 or frequency > 300000:  # Sanity check
+                frequency_khz = float(parts[3])
+                if frequency_khz < 100 or frequency_khz > 300000:  # Sanity check (100 kHz to 300 MHz)
                     return
+                frequency = frequency_khz / 1000  # Convert kHz to MHz
             except (ValueError, IndexError):
                 return
 
@@ -278,13 +279,16 @@ class RBNSpotFetcher:
             except IndexError:
                 mode = "CW"
 
-            # Extract signal strength (e.g., "33dB" -> 33)
+            # Extract signal strength (e.g., "10 dB" where 10 is parts[6] and dB is parts[7])
             strength = 0
             try:
-                if len(parts) > 6:
-                    strength_str = parts[6]
-                    if "dB" in strength_str:
-                        strength = int(strength_str.replace("dB", "").strip())
+                # Look for "dB" in parts and extract the numeric value before it
+                for i, part in enumerate(parts[6:], start=6):
+                    if part == "dB" or part.endswith("dB"):
+                        # Found dB marker, strength is in previous part
+                        if i > 0:
+                            strength = int(parts[i-1])
+                        break
             except (ValueError, IndexError):
                 pass
 
