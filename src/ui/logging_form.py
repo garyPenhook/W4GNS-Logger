@@ -97,7 +97,7 @@ class LoggingForm(QWidget):
             # Store minimum widths for resizing
             self.min_widths = {
                 'callsign': 80,
-                'datetime': 24,  # 80% narrower (was 120, now 24)
+                'datetime': 60,  # 50% narrower, visible and usable (was 120, now 60)
                 'band': 56,  # 30% narrower (was 80, now 56)
                 'mode': 70,  # 30% narrower (was 100, now 70)
                 'frequency': 77,  # 10% wider (was 70, now 77)
@@ -237,7 +237,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.datetime_input.setFont(font)
         self.datetime_input.setMinimumHeight(35)
-        self.datetime_input.setMaximumWidth(24)  # 80% narrower
+        self.datetime_input.setMaximumWidth(60)  # 50% narrower, visible
         row1.addWidget(create_label("Time:"))
         row1.addWidget(self.datetime_input, 0)
 
