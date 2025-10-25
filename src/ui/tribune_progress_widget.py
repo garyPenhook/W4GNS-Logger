@@ -231,7 +231,8 @@ class TribuneProgressWidget(QWidget):
         try:
             progress = self.db.analyze_tribune_award_progress()
 
-            tribune_count = progress['unique_tribunes']
+            tribune_count = progress['unique_tribunes']  # Total unique Tribune members
+            tribunes_after = progress['tribunes_after_achievement']  # Tribune members after achievement date
             centurion_count = progress['centurion_count']
             is_centurion = progress['is_centurion']
             endorsement = progress['endorsement']
@@ -250,9 +251,9 @@ class TribuneProgressWidget(QWidget):
                 self.centurion_label.setText(f"✗ Need {needed} more members for Centurion")
                 self.centurion_label.setStyleSheet("color: #D32F2F;")
 
-            # Update Tribune progress bar
+            # Update Tribune progress bar with endorsement count (contacts AFTER achievement)
             self.tribune_progress.setMaximum(next_level)
-            self.tribune_progress.setValue(tribune_count)
+            self.tribune_progress.setValue(tribunes_after)
 
             # Format achievement date for display
             achievement_date = progress.get('tribune_achievement_date', '')
@@ -268,17 +269,18 @@ class TribuneProgressWidget(QWidget):
             if not is_centurion:
                 status_text = "Must achieve Centurion first to qualify for Tribune"
             elif tribune_count >= 50:
+                # Show Tribune achievement date and count AFTER achievement
                 if achievement_date:
-                    status_text = f"{endorsement} • {tribune_count} members • Achieved: {achievement_str} • {tribunes_to_next} more to {next_level}"
+                    status_text = f"{endorsement} • Achieved: {achievement_str} • {tribunes_after}/{next_level} toward next level • {tribunes_to_next} more to {next_level}"
                 else:
-                    status_text = f"{endorsement} • {tribune_count} members • {tribunes_to_next} more to {next_level}"
+                    status_text = f"{endorsement} • {tribunes_after} members after achievement • {tribunes_to_next} more to {next_level}"
             else:
                 status_text = f"Progress: {tribune_count}/50 Tribune members • {50 - tribune_count} more to Tribune"
 
             self.status_label.setText(status_text)
 
-            # Update endorsement checkboxes
-            self._update_endorsement_display(tribune_count)
+            # Update endorsement checkboxes based on contacts AFTER achievement
+            self._update_endorsement_display(tribunes_after)
 
         except Exception as e:
             logger.error(f"Error refreshing Tribune progress: {e}")

@@ -1294,9 +1294,10 @@ class DatabaseRepository:
             ).all()
 
             # Collect unique Tribune members in date order to find achievement date
-            tribune_contacts_with_dates = []
+            # Then count endorsements only from contacts made AFTER achievement date
             unique_tribunes = set()
             tribune_achievement_date = None
+            tribunes_after_achievement = set()
 
             for contact in tribune_contacts:
                 skcc_num = contact.skcc_number.strip()
@@ -1315,62 +1316,79 @@ class DatabaseRepository:
                         # Only add if not already in set
                         if base_number not in unique_tribunes:
                             unique_tribunes.add(base_number)
-                            tribune_contacts_with_dates.append((contact.qso_date, base_number))
 
                             # When we hit 50, that's the Tribune achievement date
                             if len(unique_tribunes) == 50 and tribune_achievement_date is None:
                                 tribune_achievement_date = contact.qso_date
 
-            tribune_count = len(unique_tribunes)
+                        # After achievement date, count for endorsements
+                        if tribune_achievement_date and contact.qso_date > tribune_achievement_date:
+                            tribunes_after_achievement.add(base_number)
 
-            # Calculate endorsement level
+            # For endorsement calculation, only count Tribune members contacted AFTER achievement
+            tribune_count_for_endorsement = len(tribunes_after_achievement)
+
+            # Calculate endorsement level based on Tribune contacts AFTER achievement
+            # The first 50 is the base award, everything after counts toward endorsements
+            tribune_count = len(unique_tribunes)  # Total unique Tribune members
+
             if tribune_count < 50:
                 endorsement = "Not Yet"
-            elif tribune_count < 100:
-                endorsement = "Tribune"
-            elif tribune_count < 150:
-                endorsement = "Tribune x2"
-            elif tribune_count < 200:
-                endorsement = "Tribune x3"
-            elif tribune_count < 250:
-                endorsement = "Tribune x4"
-            elif tribune_count < 300:
-                endorsement = "Tribune x5"
-            elif tribune_count < 350:
-                endorsement = "Tribune x6"
-            elif tribune_count < 400:
-                endorsement = "Tribune x7"
-            elif tribune_count < 450:
-                endorsement = "Tribune x8"
-            elif tribune_count < 500:
-                endorsement = "Tribune x9"
-            elif tribune_count < 550:
-                endorsement = "Tribune x10"
-            elif tribune_count < 750:
-                endorsement = "Tribune x10+"
-            elif tribune_count < 1000:
-                endorsement = "Tribune x15"
-            elif tribune_count < 1250:
-                endorsement = "Tribune x20"
             else:
-                endorsement = f"Tribune x{(tribune_count // 250) * 5}"
+                # Calculate endorsement based on contacts AFTER achievement (not including the first 50)
+                if tribune_count_for_endorsement < 50:
+                    endorsement = "Tribune"
+                elif tribune_count_for_endorsement < 100:
+                    endorsement = "Tribune x2"
+                elif tribune_count_for_endorsement < 150:
+                    endorsement = "Tribune x3"
+                elif tribune_count_for_endorsement < 200:
+                    endorsement = "Tribune x4"
+                elif tribune_count_for_endorsement < 250:
+                    endorsement = "Tribune x5"
+                elif tribune_count_for_endorsement < 300:
+                    endorsement = "Tribune x6"
+                elif tribune_count_for_endorsement < 350:
+                    endorsement = "Tribune x7"
+                elif tribune_count_for_endorsement < 400:
+                    endorsement = "Tribune x8"
+                elif tribune_count_for_endorsement < 450:
+                    endorsement = "Tribune x9"
+                elif tribune_count_for_endorsement < 500:
+                    endorsement = "Tribune x10"
+                elif tribune_count_for_endorsement < 750:
+                    endorsement = "Tribune x10+"
+                elif tribune_count_for_endorsement < 1000:
+                    endorsement = "Tribune x15"
+                elif tribune_count_for_endorsement < 1250:
+                    endorsement = "Tribune x20"
+                else:
+                    endorsement = f"Tribune x{(tribune_count_for_endorsement // 250) * 5}"
 
             # Calculate next endorsement target
             if tribune_count < 50:
                 next_level = 50
-            elif tribune_count < 550:
-                next_level = ((tribune_count // 50) + 1) * 50
+                tribunes_to_next = 50 - tribune_count
             else:
-                next_level = ((tribune_count // 250) + 1) * 250
+                # Next level is based on contacts AFTER achievement
+                if tribune_count_for_endorsement < 50:
+                    next_level = 50
+                elif tribune_count_for_endorsement < 550:
+                    next_level = ((tribune_count_for_endorsement // 50) + 1) * 50
+                else:
+                    next_level = ((tribune_count_for_endorsement // 250) + 1) * 250
+
+                tribunes_to_next = max(0, next_level - tribune_count_for_endorsement)
 
             return {
                 'unique_tribunes': tribune_count,
+                'tribunes_after_achievement': tribune_count_for_endorsement,
                 'required': 50,
                 'achieved': is_centurion and tribune_count >= 50,
-                'progress_pct': min(100.0, (tribune_count / 50) * 100),
+                'progress_pct': min(100.0, (max(0, tribune_count_for_endorsement) / 50) * 100) if tribune_count >= 50 else min(100.0, (tribune_count / 50) * 100),
                 'endorsement': endorsement,
                 'next_level': next_level,
-                'tribunes_to_next': max(0, next_level - tribune_count),
+                'tribunes_to_next': tribunes_to_next if tribune_count >= 50 else max(0, 50 - tribune_count),
                 'is_centurion': is_centurion,
                 'centurion_count': len(unique_centurions),
                 'total_tribune_on_record': len(session.query(TribuneeMember).all()),
@@ -1381,6 +1399,7 @@ class DatabaseRepository:
             logger.error(f"Error analyzing Tribune progress: {e}")
             return {
                 'unique_tribunes': 0,
+                'tribunes_after_achievement': 0,
                 'required': 50,
                 'achieved': False,
                 'progress_pct': 0.0,
