@@ -212,11 +212,11 @@ class SKCCSpotWidget(QWidget):
         )
         self.spots_table.setColumnWidth(0, 80)
 
-        # Column 1: Frequency - reduced by 20% (use 0.8x stretch)
+        # Column 1: Frequency - reduced by 80% (90px → 18px)
         self.spots_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+            1, QHeaderView.ResizeMode.ResizeToContents
         )
-        self.spots_table.setColumnWidth(1, 90)
+        self.spots_table.setColumnWidth(1, 18)
 
         # Column 2: Mode - reduced by 50%
         self.spots_table.horizontalHeader().setSectionResizeMode(
