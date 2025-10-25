@@ -316,8 +316,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.grid_input.setFont(font)
         self.grid_input.setMinimumHeight(35)
+        self.grid_input.setMaximumWidth(24)  # Reduced by 70%
         row3.addWidget(create_label("Grid:"))
-        row3.addWidget(self.grid_input, 1)
+        row3.addWidget(self.grid_input, 0)
 
         # QTH
         self.qth_input = QLineEdit()
@@ -524,7 +525,7 @@ class LoggingForm(QWidget):
         # Grid square
         self.grid_input = QLineEdit()
         self.grid_input.setPlaceholderText("e.g., EM87ui")
-        self.grid_input.setMaximumWidth(80)
+        self.grid_input.setMaximumWidth(24)  # Reduced by 70%
         grid_row = ResizableFieldRow("Grid Square:", self.grid_input)
         layout.addWidget(grid_row)
 
