@@ -95,37 +95,18 @@ class LoggingForm(QWidget):
             raise
 
     def _init_ui(self) -> None:
-        """Initialize UI components"""
+        """Initialize UI components with compact grid layout"""
         try:
             main_layout = QVBoxLayout()
+            main_layout.setContentsMargins(5, 5, 5, 5)
+            main_layout.setSpacing(2)
 
-            # Create form sections with error handling
+            # Create compact grid form
             try:
-                basic_section = self._create_basic_section()
-                logger.debug("Basic section created")
+                compact_section = self._create_compact_grid_section()
+                logger.debug("Compact grid section created")
             except Exception as e:
-                logger.error(f"Error creating basic section: {e}", exc_info=True)
-                raise
-
-            try:
-                frequency_section = self._create_frequency_section()
-                logger.debug("Frequency section created")
-            except Exception as e:
-                logger.error(f"Error creating frequency section: {e}", exc_info=True)
-                raise
-
-            try:
-                location_section = self._create_location_section()
-                logger.debug("Location section created")
-            except Exception as e:
-                logger.error(f"Error creating location section: {e}", exc_info=True)
-                raise
-
-            try:
-                signal_section = self._create_signal_section()
-                logger.debug("Signal section created")
-            except Exception as e:
-                logger.error(f"Error creating signal section: {e}", exc_info=True)
+                logger.error(f"Error creating compact grid section: {e}", exc_info=True)
                 raise
 
             try:
@@ -136,10 +117,7 @@ class LoggingForm(QWidget):
                 raise
 
             # Add sections to main layout
-            main_layout.addWidget(basic_section)
-            main_layout.addWidget(frequency_section)
-            main_layout.addWidget(location_section)
-            main_layout.addWidget(signal_section)
+            main_layout.addWidget(compact_section)
             main_layout.addLayout(buttons_section)
             main_layout.addStretch()
 
@@ -149,6 +127,175 @@ class LoggingForm(QWidget):
         except Exception as e:
             logger.error(f"Error initializing UI: {e}", exc_info=True)
             raise
+
+    def _create_compact_grid_section(self) -> QGroupBox:
+        """Create compact grid layout with all essential fields"""
+        group = QGroupBox("")
+        group.setStyleSheet("QGroupBox { border: none; padding: 0px; }")
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(4)
+
+        # ROW 1: Callsign, RST Sent, RST Received, Date/Time
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+
+        # Callsign
+        self.callsign_input = QLineEdit()
+        self.callsign_input.setPlaceholderText("Callsign")
+        self.callsign_input.setMaximumWidth(120)
+        self.callsign_input.textChanged.connect(self._on_callsign_changed)
+        row1.addWidget(QLabel("Call:"))
+        row1.addWidget(self.callsign_input)
+
+        # RST Sent
+        self.rst_sent_input = QLineEdit()
+        self.rst_sent_input.setPlaceholderText("59")
+        self.rst_sent_input.setMaxLength(3)
+        self.rst_sent_input.setMaximumWidth(50)
+        row1.addWidget(QLabel("Sent:"))
+        row1.addWidget(self.rst_sent_input)
+
+        # RST Received
+        self.rst_rcvd_input = QLineEdit()
+        self.rst_rcvd_input.setPlaceholderText("59")
+        self.rst_rcvd_input.setMaxLength(3)
+        self.rst_rcvd_input.setMaximumWidth(50)
+        row1.addWidget(QLabel("Rcvd:"))
+        row1.addWidget(self.rst_rcvd_input)
+
+        # Date/Time
+        self.datetime_input = QDateTimeEdit()
+        self.datetime_input.setDateTime(QDateTime.currentDateTime())
+        self.datetime_input.setDisplayFormat("MM-dd hh:mm")
+        self.datetime_input.setMaximumWidth(110)
+        self.datetime_input.focusInEvent = lambda event: self._on_datetime_focus_in()
+        self.datetime_input.focusOutEvent = lambda event: self._on_datetime_focus_out()
+        row1.addWidget(QLabel("Time:"))
+        row1.addWidget(self.datetime_input)
+        row1.addStretch()
+
+        main_layout.addLayout(row1)
+
+        # ROW 2: Band, Mode, Frequency, Country, State
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+
+        # Band
+        self.band_combo = QComboBox()
+        self.band_combo.addItems(self.dropdown_data.get_bands())
+        self.band_combo.currentTextChanged.connect(self._on_band_changed)
+        self.band_combo.setMaximumWidth(70)
+        row2.addWidget(QLabel("Band:"))
+        row2.addWidget(self.band_combo)
+
+        # Mode
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(self.dropdown_data.get_modes())
+        self.mode_combo.setMaximumWidth(80)
+        row2.addWidget(QLabel("Mode:"))
+        row2.addWidget(self.mode_combo)
+
+        # Frequency
+        self.frequency_input = QDoubleSpinBox()
+        self.frequency_input.setRange(0.1, 10000.0)
+        self.frequency_input.setDecimals(3)
+        self.frequency_input.setSingleStep(0.1)
+        self.frequency_input.setMaximumWidth(100)
+        row2.addWidget(QLabel("Freq:"))
+        row2.addWidget(self.frequency_input)
+
+        # Country
+        self.country_combo = QComboBox()
+        self.country_combo.addItems([""] + self.dropdown_data.get_countries())
+        self.country_combo.currentTextChanged.connect(self._on_country_changed)
+        self.country_combo.setMaximumWidth(100)
+        row2.addWidget(QLabel("Country:"))
+        row2.addWidget(self.country_combo)
+
+        # State
+        self.state_combo = QComboBox()
+        self.state_combo.addItems([""] + self.dropdown_data.get_us_states())
+        self.state_combo.setEnabled(False)
+        self.state_combo.setMaximumWidth(70)
+        row2.addWidget(QLabel("State:"))
+        row2.addWidget(self.state_combo)
+        row2.addStretch()
+
+        main_layout.addLayout(row2)
+
+        # ROW 3: Grid, QTH, TX Power, RX Power, SKCC
+        row3 = QHBoxLayout()
+        row3.setSpacing(8)
+
+        # Grid Square
+        self.grid_input = QLineEdit()
+        self.grid_input.setPlaceholderText("Grid")
+        self.grid_input.setMaximumWidth(70)
+        row3.addWidget(QLabel("Grid:"))
+        row3.addWidget(self.grid_input)
+
+        # QTH
+        self.qth_input = QLineEdit()
+        self.qth_input.setPlaceholderText("City")
+        self.qth_input.setMaximumWidth(90)
+        row3.addWidget(QLabel("QTH:"))
+        row3.addWidget(self.qth_input)
+
+        # TX Power
+        self.tx_power_input = QDoubleSpinBox()
+        self.tx_power_input.setRange(0, 10000)
+        self.tx_power_input.setValue(0)
+        self.tx_power_input.setDecimals(1)
+        self.tx_power_input.setSuffix("W")
+        self.tx_power_input.setMaximumWidth(70)
+        row3.addWidget(QLabel("TX:"))
+        row3.addWidget(self.tx_power_input)
+
+        # RX Power
+        self.rx_power_input = QDoubleSpinBox()
+        self.rx_power_input.setRange(0, 10000)
+        self.rx_power_input.setValue(0)
+        self.rx_power_input.setDecimals(1)
+        self.rx_power_input.setSuffix("W")
+        self.rx_power_input.setMaximumWidth(70)
+        row3.addWidget(QLabel("RX:"))
+        row3.addWidget(self.rx_power_input)
+
+        # SKCC Number
+        self.skcc_number_input = QLineEdit()
+        self.skcc_number_input.setPlaceholderText("SKCC#")
+        self.skcc_number_input.setMaxLength(20)
+        self.skcc_number_input.setMaximumWidth(80)
+        row3.addWidget(QLabel("SKCC:"))
+        row3.addWidget(self.skcc_number_input)
+        row3.addStretch()
+
+        main_layout.addLayout(row3)
+
+        # ROW 4: Key Type, Operator Name
+        row4 = QHBoxLayout()
+        row4.setSpacing(8)
+
+        # Key Type
+        self.key_type_combo = QComboBox()
+        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
+        self.key_type_combo.setMaximumWidth(90)
+        row4.addWidget(QLabel("Key Type:"))
+        row4.addWidget(self.key_type_combo)
+
+        # Operator Name
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Operator name")
+        self.name_input.setMaximumWidth(150)
+        row4.addWidget(QLabel("Name:"))
+        row4.addWidget(self.name_input)
+        row4.addStretch()
+
+        main_layout.addLayout(row4)
+
+        group.setLayout(main_layout)
+        return group
 
     def _create_basic_section(self) -> QGroupBox:
         """Create basic QSO information section"""
