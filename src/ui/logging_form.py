@@ -366,7 +366,7 @@ class LoggingForm(QWidget):
         # Key Type
         self.key_type_combo = QComboBox()
         self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
-        self.key_type_combo.setMaximumWidth(30)
+        self.key_type_combo.setMaximumWidth(39)
         font = self.key_type_combo.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.key_type_combo.setFont(font)
@@ -377,7 +377,7 @@ class LoggingForm(QWidget):
         # Operator Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Operator name")
-        self.name_input.setMaximumWidth(35)
+        self.name_input.setMaximumWidth(46)
         # Keep normal font size (not enlarged)
         row4.addWidget(create_label("Name:"))
         row4.addWidget(self.name_input, 1)
