@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QLabel, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox,
     QPushButton, QMessageBox, QDateTimeEdit, QGroupBox
 )
-from PyQt6.QtCore import Qt, QDateTime, QTimer
+from PyQt6.QtCore import Qt, QDateTime, QTimer, pyqtSignal
 
 from src.database.models import Contact
 from src.database.repository import DatabaseRepository
@@ -25,6 +25,18 @@ from src.qrz import get_qrz_service
 from src.config.settings import get_config_manager
 
 logger = logging.getLogger(__name__)
+
+
+class CallsignLineEdit(QLineEdit):
+    """Custom QLineEdit for callsign input that detects when user tabs away"""
+
+    # Signal emitted when focus is lost
+    focus_lost = pyqtSignal()
+
+    def focusOutEvent(self, event):
+        """Called when focus is lost from this field"""
+        self.focus_lost.emit()
+        super().focusOutEvent(event)
 
 
 class LoggingForm(QWidget):
@@ -157,9 +169,11 @@ class LoggingForm(QWidget):
         callsign_row = QHBoxLayout()
         callsign_row.setSpacing(5)
 
-        self.callsign_input = QLineEdit()
+        self.callsign_input = CallsignLineEdit()
         self.callsign_input.setPlaceholderText("Callsign")
         self.callsign_input.textChanged.connect(self._on_callsign_changed)
+        # Trigger QRZ lookup when user tabs away from callsign field
+        self.callsign_input.focus_lost.connect(self._on_callsign_focus_lost)
         font = self.callsign_input.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.callsign_input.setFont(font)
@@ -987,6 +1001,18 @@ class LoggingForm(QWidget):
                 # Callsign cleared
                 logger.debug("Callsign cleared, QSO start time reset")
 
+    def _on_callsign_focus_lost(self) -> None:
+        """
+        Called when user tabs away from callsign field
+
+        Immediately fetches QRZ callsign info if configured.
+        """
+        current_callsign = self.callsign_input.text().strip()
+
+        if current_callsign and self.config_manager.get("qrz.auto_fetch", False):
+            logger.debug(f"Callsign field lost focus, fetching QRZ info for: {current_callsign}")
+            self._fetch_qrz_callsign_async(current_callsign)
+
     def _on_callsign_stable(self) -> None:
         """
         Called when callsign has been stable for 5 seconds
@@ -1053,6 +1079,10 @@ class LoggingForm(QWidget):
                 pass  # Already disconnected
             try:
                 self.callsign_input.textChanged.disconnect()
+            except:
+                pass  # Already disconnected
+            try:
+                self.callsign_input.focus_lost.disconnect()
             except:
                 pass  # Already disconnected
 
