@@ -100,7 +100,7 @@ class LoggingForm(QWidget):
                 'datetime': 120,
                 'band': 56,  # 30% narrower (was 80, now 56)
                 'mode': 70,  # 30% narrower (was 100, now 70)
-                'frequency': 70,  # 30% narrower (was 100, now 70)
+                'frequency': 77,  # 10% wider (was 70, now 77)
                 'country': 84,  # 30% narrower (was 120, now 84)
                 'state': 56,  # 30% narrower (was 80, now 56)
                 'grid': 73,  # Grid square field width
@@ -280,7 +280,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.frequency_input.setFont(font)
         self.frequency_input.setMinimumHeight(35)
-        self.frequency_input.setMaximumWidth(70)  # 30% narrower
+        self.frequency_input.setMaximumWidth(77)  # 10% wider
         row2.addWidget(create_label("Freq:"))
         row2.addWidget(self.frequency_input, 0)
 
