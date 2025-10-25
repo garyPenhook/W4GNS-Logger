@@ -378,7 +378,8 @@ class LoggingForm(QWidget):
         # Operator Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Operator name")
-        self.name_input.setMaximumWidth(72)
+        self.name_input.setMaximumWidth(86)
+        self.name_input.setMinimumHeight(35)
         # Keep normal font size (not enlarged)
         row4.addWidget(create_label("Name:"))
         row4.addWidget(self.name_input, 0)
