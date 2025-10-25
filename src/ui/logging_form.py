@@ -383,6 +383,18 @@ class LoggingForm(QWidget):
         # Keep normal font size (not enlarged)
         row4.addWidget(create_label("Name:"))
         row4.addWidget(self.name_input, 0)
+        row4.addSpacing(10)
+
+        # County
+        self.county_input = QLineEdit()
+        self.county_input.setPlaceholderText("County")
+        self.county_input.setMaximumWidth(80)
+        font = self.county_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.county_input.setFont(font)
+        self.county_input.setMinimumHeight(35)
+        row4.addWidget(create_label("County:"))
+        row4.addWidget(self.county_input, 0)
 
         row4.addStretch()
 
