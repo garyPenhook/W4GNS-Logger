@@ -192,7 +192,7 @@ class LoggingForm(QWidget):
         # QRZ Lookup button (only show if QRZ is enabled)
         if self.config_manager.get("qrz.enabled", False):
             self.qrz_lookup_btn = QPushButton("QRZ↻")
-            self.qrz_lookup_btn.setMaximumWidth(55)  # Increased by 10%
+            self.qrz_lookup_btn.setMaximumWidth(60)  # Increased by 20%
             self.qrz_lookup_btn.setMinimumHeight(35)
             self.qrz_lookup_btn.clicked.connect(self._fetch_qrz_callsign)
             self.qrz_lookup_btn.setToolTip("Fetch callsign info from QRZ.com")
