@@ -186,7 +186,8 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.callsign_input.setFont(font)
         self.callsign_input.setMinimumHeight(35)
-        callsign_row.addWidget(self.callsign_input, 2)
+        self.callsign_input.setMaximumWidth(70)  # Reduced by 80%
+        callsign_row.addWidget(self.callsign_input, 0)
 
         # QRZ Lookup button (only show if QRZ is enabled)
         if self.config_manager.get("qrz.enabled", False):
@@ -198,7 +199,7 @@ class LoggingForm(QWidget):
             callsign_row.addWidget(self.qrz_lookup_btn)
 
         row1.addWidget(create_label("Call:"))
-        row1.addLayout(callsign_row, 2)
+        row1.addLayout(callsign_row, 0)
 
         # RST Sent
         self.rst_sent_input = QLineEdit()
@@ -208,8 +209,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.rst_sent_input.setFont(font)
         self.rst_sent_input.setMinimumHeight(35)
+        self.rst_sent_input.setMaximumWidth(40)  # Reduced by 80%
         row1.addWidget(create_label("Sent:"))
-        row1.addWidget(self.rst_sent_input, 1)
+        row1.addWidget(self.rst_sent_input, 0)
 
         # RST Received
         self.rst_rcvd_input = QLineEdit()
@@ -219,8 +221,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.rst_rcvd_input.setFont(font)
         self.rst_rcvd_input.setMinimumHeight(35)
+        self.rst_rcvd_input.setMaximumWidth(40)  # Reduced by 80%
         row1.addWidget(create_label("Rcvd:"))
-        row1.addWidget(self.rst_rcvd_input, 1)
+        row1.addWidget(self.rst_rcvd_input, 0)
 
         # Date/Time
         self.datetime_input = QDateTimeEdit()
