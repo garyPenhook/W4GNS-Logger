@@ -103,8 +103,8 @@ class LoggingForm(QWidget):
                 'frequency': 100,
                 'country': 120,
                 'state': 80,
-                'grid': 60,  # Grid square field width
-                'qth': 80,
+                'grid': 66,  # Grid square field width (increased by 10%)
+                'qth': 64,  # QTH field width (decreased by 20%)
                 'rst_sent': 50,
                 'rst_rcvd': 50,
                 'tx_power': 70,
@@ -316,7 +316,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.grid_input.setFont(font)
         self.grid_input.setMinimumHeight(35)
-        self.grid_input.setMaximumWidth(60)  # Grid square field width
+        self.grid_input.setMaximumWidth(66)  # Grid square field width (increased by 10%)
         row3.addWidget(create_label("Grid:"))
         row3.addWidget(self.grid_input, 0)
 
@@ -327,8 +327,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.qth_input.setFont(font)
         self.qth_input.setMinimumHeight(35)
+        self.qth_input.setMaximumWidth(64)  # QTH field width (decreased by 20%)
         row3.addWidget(create_label("QTH:"))
-        row3.addWidget(self.qth_input, 2)
+        row3.addWidget(self.qth_input, 0)
 
         # TX Power
         self.tx_power_input = QDoubleSpinBox()
@@ -525,14 +526,14 @@ class LoggingForm(QWidget):
         # Grid square
         self.grid_input = QLineEdit()
         self.grid_input.setPlaceholderText("e.g., EM87ui")
-        self.grid_input.setMaximumWidth(60)  # Grid square field width
+        self.grid_input.setMaximumWidth(66)  # Grid square field width (increased by 10%)
         grid_row = ResizableFieldRow("Grid Square:", self.grid_input)
         layout.addWidget(grid_row)
 
         # QTH
         self.qth_input = QLineEdit()
         self.qth_input.setPlaceholderText("City/Location")
-        self.qth_input.setMaximumWidth(100)
+        self.qth_input.setMaximumWidth(64)  # QTH field width (decreased by 20%)
         qth_row = ResizableFieldRow("QTH:", self.qth_input)
         layout.addWidget(qth_row)
 
