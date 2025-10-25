@@ -1,0 +1,96 @@
+# Award Definitions Configuration
+# Define all enabled award programs for the application
+
+awards:
+  - name: DXCC
+    program_id: DXCC_MIXED
+    type: entity_count
+    enabled: true
+    requirements:
+      entity_count: 100
+      confirmation: true
+      modes:
+        - MIXED
+        - CW
+        - PHONE
+        - DIGITAL
+      bands: null  # null = all bands
+    endorsements:
+      - level: 100
+        description: "DXCC Certificate"
+      - level: 150
+        step: 50
+        description: "50-entity endorsements"
+      - level: 250
+        step: 50
+      - level: 300
+        step: 25
+    handler: dxcc.py
+
+  - name: WAS
+    program_id: WAS_MIXED
+    type: entity_count
+    enabled: true
+    requirements:
+      entity_count: 50
+      entity_type: us_states
+      confirmation: true
+      modes:
+        - MIXED
+        - CW
+        - PHONE
+        - DIGITAL
+    endorsements:
+      - level: 50
+        description: "WAS Certificate"
+      - level: 75
+        step: 25
+    handler: was.py
+
+  - name: WAC
+    program_id: WAC_MIXED
+    type: entity_count
+    enabled: true
+    requirements:
+      entity_count: 6
+      entity_type: continents
+      confirmation: true
+    endorsements:
+      - level: 6
+        description: "WAC Certificate"
+    handler: wac.py
+
+  - name: SKCC_Centurion
+    program_id: SKCC_CEN
+    type: unique_contact_count
+    enabled: false
+    requirements:
+      unique_contacts: 100
+      organization: SKCC
+      mode: CW
+    endorsements:
+      - level: 100
+        description: "Centurion Award"
+    handler: skcc.py
+
+  - name: IOTA
+    program_id: IOTA_MIXED
+    type: entity_count
+    enabled: false
+    requirements:
+      entity_type: iota_islands
+    endorsements:
+      - level: 100
+        description: "IOTA Award"
+    handler: iota.py
+
+  - name: SOTA
+    program_id: SOTA_MIXED
+    type: entity_count
+    enabled: false
+    requirements:
+      entity_type: sota_summits
+    endorsements:
+      - level: 100
+        description: "SOTA Award"
+    handler: sota.py

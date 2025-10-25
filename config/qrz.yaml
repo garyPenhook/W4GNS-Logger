@@ -1,0 +1,46 @@
+# QRZ.com Integration Configuration
+
+qrz:
+  enabled: false  # Enable QRZ integration
+
+  # API Configuration
+  api:
+    endpoint: "https://www.qrz.com/api/logbook/"
+    key: null  # Will be set by user during first-time setup
+    timeout: 30  # seconds
+    retry_attempts: 3
+    retry_delay: 5  # seconds
+
+  # Subscription check
+  subscription:
+    required_level: "XML"  # XML or higher
+    check_interval: 86400  # seconds (24 hours)
+    last_checked: null
+    valid: false
+
+  # Upload settings
+  upload:
+    auto_upload: false  # Automatically upload new contacts
+    batch_size: 50  # Upload contacts in batches of N
+    on_contact_save: false
+    verify_duplicate: true
+    queue_failed: true  # Queue failed uploads for retry
+
+  # Sync settings
+  sync:
+    enabled: false
+    pull_interval: 3600  # seconds (1 hour)
+    last_sync: null
+    direction: "upload_only"  # upload_only, download_only, bidirectional
+
+  # Storage
+  storage:
+    track_uploads: true  # Track upload history in database
+    clear_old_uploads: false
+    keep_upload_days: 90  # Clear uploads older than N days
+
+  # Error handling
+  error_handling:
+    log_errors: true
+    user_notification: true
+    retry_failed_uploads: true

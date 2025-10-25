@@ -1,0 +1,814 @@
+"""
+Contact Logging Form
+
+PyQt6 form for logging new QSO (contact) entries with dropdown support for
+band, mode, frequency, country, and state selection.
+"""
+
+import logging
+from datetime import datetime, timedelta
+from typing import Optional
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
+    QLabel, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox,
+    QPushButton, QMessageBox, QDateTimeEdit, QGroupBox
+)
+from PyQt6.QtCore import Qt, QDateTime, QTimer
+
+from src.database.models import Contact
+from src.database.repository import DatabaseRepository
+from src.ui.dropdown_data import DropdownData
+from src.ui.field_manager import FieldManager
+from src.ui.resizable_field import ResizableFieldRow
+
+logger = logging.getLogger(__name__)
+
+
+class LoggingForm(QWidget):
+    """Contact logging form with dropdown menus"""
+
+    def __init__(self, db: DatabaseRepository, parent: Optional[QWidget] = None):
+        """
+        Initialize logging form
+
+        Args:
+            db: Database repository instance
+            parent: Parent widget
+
+        Raises:
+            TypeError: If db is not a DatabaseRepository instance
+        """
+        try:
+            super().__init__(parent)
+
+            # Validate database
+            if db is None:
+                raise TypeError("db cannot be None")
+            if not isinstance(db, DatabaseRepository):
+                raise TypeError(f"db must be DatabaseRepository, got {type(db).__name__}")
+
+            self.db = db
+            self.dropdown_data = DropdownData()
+
+            # QSO timing tracking
+            self.qso_start_time: Optional[datetime] = None
+            self.qso_end_time: Optional[datetime] = None
+            self.last_callsign = ""  # Track last callsign for 5-second stable detection
+
+            # Always-running clock timer (updates every 500ms)
+            self.clock_timer = QTimer()
+            self.clock_timer.timeout.connect(self._update_clock)
+            self.clock_timer.start(500)  # Update 2x per second for smooth display
+            logger.debug("Always-running clock timer started")
+
+            # Track if user is editing datetime to avoid overwriting their input
+            self.datetime_input_focus = False
+
+            # Callsign stability timer (detects when callsign stable for 5 seconds)
+            self.callsign_stable_timer = QTimer()  # Timer for detecting stable callsign
+            self.callsign_stable_timer.timeout.connect(self._on_callsign_stable)
+            self.callsign_stable_timer.setSingleShot(True)
+
+            # Store minimum widths for resizing
+            self.min_widths = {
+                'callsign': 80,
+                'datetime': 120,
+                'band': 80,
+                'mode': 100,
+                'frequency': 100,
+                'country': 120,
+                'state': 80,
+                'grid': 60,
+                'qth': 80,
+                'rst_sent': 50,
+                'rst_rcvd': 50,
+                'tx_power': 70,
+                'operator': 100
+            }
+
+            self._init_ui()
+            logger.info("LoggingForm initialized successfully")
+
+        except (TypeError, Exception) as e:
+            logger.error(f"Error initializing LoggingForm: {e}", exc_info=True)
+            raise
+
+    def _init_ui(self) -> None:
+        """Initialize UI components"""
+        try:
+            main_layout = QVBoxLayout()
+
+            # Create form sections with error handling
+            try:
+                basic_section = self._create_basic_section()
+                logger.debug("Basic section created")
+            except Exception as e:
+                logger.error(f"Error creating basic section: {e}", exc_info=True)
+                raise
+
+            try:
+                frequency_section = self._create_frequency_section()
+                logger.debug("Frequency section created")
+            except Exception as e:
+                logger.error(f"Error creating frequency section: {e}", exc_info=True)
+                raise
+
+            try:
+                location_section = self._create_location_section()
+                logger.debug("Location section created")
+            except Exception as e:
+                logger.error(f"Error creating location section: {e}", exc_info=True)
+                raise
+
+            try:
+                signal_section = self._create_signal_section()
+                logger.debug("Signal section created")
+            except Exception as e:
+                logger.error(f"Error creating signal section: {e}", exc_info=True)
+                raise
+
+            try:
+                buttons_section = self._create_buttons_section()
+                logger.debug("Buttons section created")
+            except Exception as e:
+                logger.error(f"Error creating buttons section: {e}", exc_info=True)
+                raise
+
+            # Add sections to main layout
+            main_layout.addWidget(basic_section)
+            main_layout.addWidget(frequency_section)
+            main_layout.addWidget(location_section)
+            main_layout.addWidget(signal_section)
+            main_layout.addLayout(buttons_section)
+            main_layout.addStretch()
+
+            self.setLayout(main_layout)
+            logger.debug("UI initialization complete")
+
+        except Exception as e:
+            logger.error(f"Error initializing UI: {e}", exc_info=True)
+            raise
+
+    def _create_basic_section(self) -> QGroupBox:
+        """Create basic QSO information section"""
+        group = QGroupBox("Basic QSO Information")
+        layout = QVBoxLayout()
+        layout.setSpacing(3)
+
+        # Callsign
+        self.callsign_input = QLineEdit()
+        self.callsign_input.setPlaceholderText("Enter remote station callsign")
+        self.callsign_input.setMaximumWidth(150)
+        self.callsign_input.textChanged.connect(self._on_callsign_changed)
+        callsign_row = ResizableFieldRow("Callsign:", self.callsign_input)
+        layout.addWidget(callsign_row)
+
+        # Date/Time (with always-running clock)
+        self.datetime_input = QDateTimeEdit()
+        self.datetime_input.setDateTime(QDateTime.currentDateTime())
+        self.datetime_input.setDisplayFormat("yyyy-MM-dd hh:mm")
+        self.datetime_input.setMaximumWidth(180)
+        # Track focus to avoid overwriting user input
+        self.datetime_input.focusInEvent = lambda event: self._on_datetime_focus_in()
+        self.datetime_input.focusOutEvent = lambda event: self._on_datetime_focus_out()
+        datetime_row = ResizableFieldRow("Date & Time:", self.datetime_input)
+        layout.addWidget(datetime_row)
+
+        # Band dropdown
+        self.band_combo = QComboBox()
+        self.band_combo.addItems(self.dropdown_data.get_bands())
+        self.band_combo.currentTextChanged.connect(self._on_band_changed)
+        self.band_combo.setMaximumWidth(80)
+        band_row = ResizableFieldRow("Band:", self.band_combo)
+        layout.addWidget(band_row)
+
+        # Mode dropdown
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(self.dropdown_data.get_modes())
+        self.mode_combo.setMaximumWidth(100)
+        mode_row = ResizableFieldRow("Mode:", self.mode_combo)
+        layout.addWidget(mode_row)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_frequency_section(self) -> QGroupBox:
+        """Create frequency information section"""
+        group = QGroupBox("Frequency")
+        layout = QVBoxLayout()
+        layout.setSpacing(3)
+
+        # Frequency input with button
+        freq_container = QWidget()
+        freq_layout = QHBoxLayout()
+        freq_layout.setContentsMargins(0, 0, 0, 0)
+        freq_layout.setSpacing(2)
+
+        self.frequency_input = QDoubleSpinBox()
+        self.frequency_input.setRange(0.1, 10000.0)
+        self.frequency_input.setDecimals(3)
+        self.frequency_input.setSingleStep(0.1)
+        self.frequency_input.setMaximumWidth(120)
+        freq_layout.addWidget(self.frequency_input)
+
+        # Auto-frequency button
+        auto_freq_btn = QPushButton("Auto Fill")
+        auto_freq_btn.clicked.connect(self._auto_fill_frequency)
+        freq_layout.addWidget(auto_freq_btn)
+        freq_layout.addStretch()
+        freq_container.setLayout(freq_layout)
+
+        freq_row = ResizableFieldRow("Frequency (MHz):", freq_container)
+        layout.addWidget(freq_row)
+        group.setLayout(layout)
+        return group
+
+    def _create_location_section(self) -> QGroupBox:
+        """Create location information section"""
+        group = QGroupBox("Location")
+        layout = QVBoxLayout()
+        layout.setSpacing(3)
+
+        # Country dropdown
+        self.country_combo = QComboBox()
+        self.country_combo.addItems([""] + self.dropdown_data.get_countries())
+        self.country_combo.currentTextChanged.connect(self._on_country_changed)
+        self.country_combo.setMaximumWidth(120)
+        self.country_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        country_row = ResizableFieldRow("Country:", self.country_combo)
+        layout.addWidget(country_row)
+
+        # State dropdown (initially disabled)
+        self.state_combo = QComboBox()
+        self.state_combo.addItems([""] + self.dropdown_data.get_us_states())
+        self.state_combo.setEnabled(False)
+        self.state_combo.setMaximumWidth(80)
+        state_row = ResizableFieldRow("State:", self.state_combo)
+        layout.addWidget(state_row)
+
+        # Grid square
+        self.grid_input = QLineEdit()
+        self.grid_input.setPlaceholderText("e.g., EM87ui")
+        self.grid_input.setMaximumWidth(80)
+        grid_row = ResizableFieldRow("Grid Square:", self.grid_input)
+        layout.addWidget(grid_row)
+
+        # QTH
+        self.qth_input = QLineEdit()
+        self.qth_input.setPlaceholderText("City/Location")
+        self.qth_input.setMaximumWidth(100)
+        qth_row = ResizableFieldRow("QTH:", self.qth_input)
+        layout.addWidget(qth_row)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_signal_section(self) -> QGroupBox:
+        """Create signal report section"""
+        group = QGroupBox("Signal Reports & Power")
+        layout = QVBoxLayout()
+        layout.setSpacing(3)
+
+        # RST Sent
+        self.rst_sent_input = QLineEdit()
+        self.rst_sent_input.setPlaceholderText("e.g., 59")
+        self.rst_sent_input.setMaxLength(3)
+        self.rst_sent_input.setMaximumWidth(60)
+        rst_sent_row = ResizableFieldRow("RST Sent:", self.rst_sent_input)
+        layout.addWidget(rst_sent_row)
+
+        # RST Received
+        self.rst_rcvd_input = QLineEdit()
+        self.rst_rcvd_input.setPlaceholderText("e.g., 59")
+        self.rst_rcvd_input.setMaxLength(3)
+        self.rst_rcvd_input.setMaximumWidth(60)
+        rst_rcvd_row = ResizableFieldRow("RST Received:", self.rst_rcvd_input)
+        layout.addWidget(rst_rcvd_row)
+
+        # TX Power (enhanced with decimal support)
+        self.tx_power_input = QDoubleSpinBox()
+        self.tx_power_input.setRange(0, 10000)
+        self.tx_power_input.setValue(0)
+        self.tx_power_input.setDecimals(1)
+        self.tx_power_input.setSuffix(" W")
+        self.tx_power_input.setMaximumWidth(80)
+        tx_power_row = ResizableFieldRow("TX Power:", self.tx_power_input)
+        layout.addWidget(tx_power_row)
+
+        # RX Power (new field for 2-way QRP tracking)
+        self.rx_power_input = QDoubleSpinBox()
+        self.rx_power_input.setRange(0, 10000)
+        self.rx_power_input.setValue(0)
+        self.rx_power_input.setDecimals(1)
+        self.rx_power_input.setSuffix(" W")
+        self.rx_power_input.setMaximumWidth(80)
+        self.rx_power_input.setToolTip("Other station's transmit power (for 2-way QRP tracking)")
+        rx_power_row = ResizableFieldRow("RX Power:", self.rx_power_input)
+        layout.addWidget(rx_power_row)
+
+        # SKCC Number
+        self.skcc_number_input = QLineEdit()
+        self.skcc_number_input.setPlaceholderText("e.g., 12345")
+        self.skcc_number_input.setMaxLength(20)
+        self.skcc_number_input.setMaximumWidth(100)
+        self.skcc_number_input.setToolTip("Straight Key Century Club member number")
+        skcc_row = ResizableFieldRow("SKCC Number:", self.skcc_number_input)
+        layout.addWidget(skcc_row)
+
+        # Key Type
+        self.key_type_combo = QComboBox()
+        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
+        self.key_type_combo.setMaximumWidth(100)
+        self.key_type_combo.setToolTip("Type of mechanical key used (for Triple Key Award)")
+        key_type_row = ResizableFieldRow("Key Type:", self.key_type_combo)
+        layout.addWidget(key_type_row)
+
+        # Name
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Remote operator name")
+        self.name_input.setMaximumWidth(120)
+        name_row = ResizableFieldRow("Operator Name:", self.name_input)
+        layout.addWidget(name_row)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_buttons_section(self) -> QHBoxLayout:
+        """Create action buttons section"""
+        layout = QHBoxLayout()
+        layout.addStretch()
+
+        # Clear button
+        clear_btn = QPushButton("Clear")
+        clear_btn.clicked.connect(self.clear_form)
+        layout.addWidget(clear_btn)
+
+        # Save button
+        save_btn = QPushButton("Save Contact")
+        save_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        save_btn.clicked.connect(self.save_contact)
+        layout.addWidget(save_btn)
+
+        return layout
+
+    def _on_band_changed(self, band: str) -> None:
+        """Handle band selection change"""
+        if band:
+            center_freq = self.dropdown_data.get_band_center_frequency(band)
+            self.frequency_input.setValue(center_freq)
+            logger.debug(f"Band changed to {band}, frequency set to {center_freq} MHz")
+
+    def _on_country_changed(self, country: str) -> None:
+        """Handle country selection change"""
+        # Enable state dropdown only for United States
+        is_us = country == "United States"
+        self.state_combo.setEnabled(is_us)
+        if not is_us:
+            self.state_combo.setCurrentIndex(0)
+
+    def _auto_fill_frequency(self) -> None:
+        """Auto-fill frequency from band selection"""
+        band = self.band_combo.currentText()
+        if band:
+            center_freq = self.dropdown_data.get_band_center_frequency(band)
+            self.frequency_input.setValue(center_freq)
+            logger.debug(f"Auto-filled frequency: {center_freq} MHz for band {band}")
+
+    def _validate_form(self) -> bool:
+        """Validate form inputs"""
+        errors = []
+
+        # Required fields
+        if not self.callsign_input.text().strip():
+            errors.append("Callsign is required")
+
+        if not self.band_combo.currentText():
+            errors.append("Band is required")
+
+        if not self.mode_combo.currentText():
+            errors.append("Mode is required")
+
+        if self.frequency_input.value() <= 0:
+            errors.append("Frequency must be greater than 0")
+
+        # Validate RST if provided
+        rst_sent = self.rst_sent_input.text().strip()
+        if rst_sent and not self._is_valid_rst(rst_sent):
+            errors.append("RST Sent must be numeric (e.g., 59)")
+
+        rst_rcvd = self.rst_rcvd_input.text().strip()
+        if rst_rcvd and not self._is_valid_rst(rst_rcvd):
+            errors.append("RST Received must be numeric (e.g., 59)")
+
+        if errors:
+            QMessageBox.warning(self, "Validation Error", "\n".join(errors))
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_valid_rst(rst: str) -> bool:
+        """Check if RST string is valid"""
+        return rst.isdigit() and 1 <= len(rst) <= 3
+
+    def save_contact(self) -> None:
+        """
+        Save contact to database
+
+        Handles all validation, parsing, and database operations with comprehensive
+        error handling and user feedback.
+        """
+        try:
+            # Validate form first
+            if not self._validate_form():
+                logger.debug("Form validation failed, save cancelled")
+                return
+
+            logger.debug("Form validation passed, proceeding with save")
+
+            try:
+                # Parse datetime
+                datetime_edit = self.datetime_input.dateTime()
+                if datetime_edit is None:
+                    raise ValueError("Invalid datetime value")
+
+                qso_datetime = datetime_edit.toPython()
+                if qso_datetime is None:
+                    raise ValueError("Failed to convert QDateTime to Python datetime")
+
+                qso_date = qso_datetime.strftime("%Y%m%d")
+
+                # Get QSO start time (time_on) and end time (time_off)
+                time_on, time_off = self._get_qso_times()
+                logger.debug(f"Parsed datetime: {qso_date} | QSO: {time_on}-{time_off}")
+
+            except Exception as e:
+                logger.error(f"Error parsing datetime: {e}", exc_info=True)
+                raise ValueError(f"Failed to parse date/time: {str(e)}")
+
+            try:
+                # Create contact object
+                callsign = self.callsign_input.text().strip().upper()
+                if not callsign:
+                    raise ValueError("Callsign is empty after stripping")
+
+                contact = Contact(
+                    callsign=callsign,
+                    qso_date=qso_date,
+                    time_on=time_on,
+                    time_off=time_off,
+                    band=self.band_combo.currentText(),
+                    mode=self.mode_combo.currentText(),
+                    frequency=self.frequency_input.value(),
+                    country=self.country_combo.currentText() if self.country_combo.currentText() else None,
+                    state=self.state_combo.currentText() if self.state_combo.currentText() else None,
+                    gridsquare=self.grid_input.text().strip() if self.grid_input.text().strip() else None,
+                    qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
+                    rst_sent=self.rst_sent_input.text().strip() if self.rst_sent_input.text().strip() else None,
+                    rst_rcvd=self.rst_rcvd_input.text().strip() if self.rst_rcvd_input.text().strip() else None,
+                    tx_power=self.tx_power_input.value() if self.tx_power_input.value() > 0 else None,
+                    rx_power=self.rx_power_input.value() if self.rx_power_input.value() > 0 else None,
+                    skcc_number=self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None,
+                    key_type=self.key_type_combo.currentText(),
+                    name=self.name_input.text().strip() if self.name_input.text().strip() else None,
+                )
+                logger.debug(f"Contact object created: {callsign}")
+
+            except Exception as e:
+                logger.error(f"Error creating contact object: {e}", exc_info=True)
+                raise ValueError(f"Failed to create contact: {str(e)}")
+
+            try:
+                # Save to database
+                if self.db is None:
+                    raise RuntimeError("Database connection is None")
+
+                self.db.add_contact(contact)
+                logger.info(f"Contact saved successfully: {contact.callsign} on {contact.band} {contact.mode}")
+
+            except Exception as e:
+                logger.error(f"Error saving to database: {e}", exc_info=True)
+                raise RuntimeError(f"Database error: {str(e)}")
+
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Contact with {contact.callsign} saved successfully!"
+            )
+
+            # Clear form
+            self.clear_form()
+
+        except Exception as e:
+            logger.error(f"Error in save_contact: {str(e)}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save contact: {str(e)}"
+            )
+
+    def clear_form(self) -> None:
+        """
+        Clear all form fields
+
+        Resets all inputs to default/empty state and sets focus to callsign field.
+        """
+        try:
+            self.callsign_input.clear()
+            self.datetime_input.setDateTime(QDateTime.currentDateTime())
+            self.band_combo.setCurrentIndex(0)
+            self.mode_combo.setCurrentIndex(0)
+            self.frequency_input.setValue(0.0)
+            self.country_combo.setCurrentIndex(0)
+            self.state_combo.setCurrentIndex(0)
+            self.grid_input.clear()
+            self.qth_input.clear()
+            self.rst_sent_input.clear()
+            self.rst_rcvd_input.clear()
+            self.tx_power_input.setValue(0)
+            self.rx_power_input.setValue(0)
+            self.skcc_number_input.clear()
+            self.key_type_combo.setCurrentIndex(0)  # Reset to STRAIGHT
+            self.name_input.clear()
+
+            # Reset QSO timing
+            self.qso_start_time = None
+            self.qso_end_time = None
+            self.last_callsign = ""
+            self.callsign_stable_timer.stop()
+
+            self.callsign_input.setFocus()
+            logger.debug("Form cleared successfully - QSO timing reset")
+        except Exception as e:
+            logger.error(f"Error clearing form: {e}", exc_info=True)
+            raise
+
+    def set_field_width(self, field_name: str, width: int) -> None:
+        """
+        Set width of a form field by name
+
+        Args:
+            field_name: 'callsign', 'datetime', 'band', 'mode', 'frequency',
+                       'country', 'state', 'grid', 'qth', 'rst_sent',
+                       'rst_rcvd', 'tx_power', or 'operator'
+            width: Width in pixels (minimum enforced)
+
+        Raises:
+            TypeError: If field_name is not a string or width is not an integer
+            ValueError: If field_name is not recognized
+        """
+        try:
+            # Validate inputs
+            if not isinstance(field_name, str):
+                raise TypeError(f"field_name must be str, got {type(field_name).__name__}")
+            if not isinstance(width, int):
+                raise TypeError(f"width must be int, got {type(width).__name__}")
+            if not field_name.strip():
+                raise ValueError("field_name cannot be empty")
+
+            # Enforce minimum width
+            min_width = self.min_widths.get(field_name, 50)
+            if min_width is None:
+                raise ValueError(f"Unknown field_name: {field_name}")
+            width = max(width, min_width)
+
+            try:
+                if field_name == 'callsign':
+                    self.callsign_input.setMaximumWidth(width)
+                elif field_name == 'datetime':
+                    self.datetime_input.setMaximumWidth(width)
+                elif field_name == 'band':
+                    self.band_combo.setMaximumWidth(width)
+                elif field_name == 'mode':
+                    self.mode_combo.setMaximumWidth(width)
+                elif field_name == 'frequency':
+                    self.frequency_input.setMaximumWidth(width)
+                elif field_name == 'country':
+                    self.country_combo.setMaximumWidth(width)
+                elif field_name == 'state':
+                    self.state_combo.setMaximumWidth(width)
+                elif field_name == 'grid':
+                    self.grid_input.setMaximumWidth(width)
+                elif field_name == 'qth':
+                    self.qth_input.setMaximumWidth(width)
+                elif field_name == 'rst_sent':
+                    self.rst_sent_input.setMaximumWidth(width)
+                elif field_name == 'rst_rcvd':
+                    self.rst_rcvd_input.setMaximumWidth(width)
+                elif field_name == 'tx_power':
+                    self.tx_power_input.setMaximumWidth(width)
+                elif field_name == 'operator':
+                    self.name_input.setMaximumWidth(width)
+                else:
+                    raise ValueError(f"Unknown field_name: {field_name}")
+
+                logger.debug(f"Set {field_name} field width to {width}px")
+
+            except Exception as e:
+                logger.error(f"Error setting field width for {field_name}: {e}", exc_info=True)
+                raise
+
+        except (TypeError, ValueError) as e:
+            logger.error(f"Error in set_field_width: {e}", exc_info=True)
+            raise
+
+    def set_dropdown_width(self, dropdown_name: str, width: int) -> None:
+        """
+        DEPRECATED: Use set_field_width() instead
+        Set width of a dropdown by name
+
+        Args:
+            dropdown_name: 'band', 'mode', 'country', or 'state'
+            width: Width in pixels (minimum enforced)
+        """
+        self.set_field_width(dropdown_name, width)
+
+    def get_field_width(self, field_name: str) -> int:
+        """
+        Get current width of a form field
+
+        Args:
+            field_name: 'callsign', 'datetime', 'band', 'mode', 'frequency',
+                       'country', 'state', 'grid', 'qth', 'rst_sent',
+                       'rst_rcvd', 'tx_power', or 'operator'
+
+        Returns:
+            Width in pixels
+        """
+        if field_name == 'callsign':
+            return self.callsign_input.width()
+        elif field_name == 'datetime':
+            return self.datetime_input.width()
+        elif field_name == 'band':
+            return self.band_combo.width()
+        elif field_name == 'mode':
+            return self.mode_combo.width()
+        elif field_name == 'frequency':
+            return self.frequency_input.width()
+        elif field_name == 'country':
+            return self.country_combo.width()
+        elif field_name == 'state':
+            return self.state_combo.width()
+        elif field_name == 'grid':
+            return self.grid_input.width()
+        elif field_name == 'qth':
+            return self.qth_input.width()
+        elif field_name == 'rst_sent':
+            return self.rst_sent_input.width()
+        elif field_name == 'rst_rcvd':
+            return self.rst_rcvd_input.width()
+        elif field_name == 'tx_power':
+            return self.tx_power_input.width()
+        elif field_name == 'operator':
+            return self.name_input.width()
+        return 0
+
+    def get_dropdown_width(self, dropdown_name: str) -> int:
+        """
+        DEPRECATED: Use get_field_width() instead
+        Get current width of a dropdown
+
+        Args:
+            dropdown_name: 'band', 'mode', 'country', or 'state'
+
+        Returns:
+            Width in pixels
+        """
+        return self.get_field_width(dropdown_name)
+
+    def reset_field_widths(self) -> None:
+        """Reset all form field widths to defaults"""
+        for field_name in self.min_widths.keys():
+            self.set_field_width(field_name, self.min_widths[field_name])
+        logger.debug("Reset all form field widths to defaults")
+
+    def reset_dropdown_widths(self) -> None:
+        """DEPRECATED: Use reset_field_widths() instead"""
+        self.reset_field_widths()
+
+    # ==================== Clock Display Methods ====================
+
+    def _on_datetime_focus_in(self) -> None:
+        """Called when user clicks on datetime field to edit it"""
+        self.datetime_input_focus = True
+        logger.debug("DateTime field focus in - stopping clock updates")
+
+    def _on_datetime_focus_out(self) -> None:
+        """Called when user leaves datetime field"""
+        self.datetime_input_focus = False
+        logger.debug("DateTime field focus out - resuming clock updates")
+
+    def _update_clock(self) -> None:
+        """
+        Update datetime display to show current time (always-running clock)
+
+        Called by clock_timer every 500ms to keep datetime display current.
+        Respects user focus - stops updating when user is actively editing the time.
+        """
+        try:
+            # Only update if user is not actively editing the datetime field
+            if not self.datetime_input_focus:
+                current_datetime = QDateTime.currentDateTime()
+                self.datetime_input.setDateTime(current_datetime)
+        except Exception as e:
+            logger.error(f"Error updating clock: {e}", exc_info=True)
+
+    # ==================== QSO Timing Methods ====================
+
+    def _on_callsign_changed(self, text: str) -> None:
+        """
+        Handle callsign input changes
+
+        When callsign is entered and remains stable for 5 seconds,
+        record the QSO start time.
+
+        Args:
+            text: Current callsign input text
+        """
+        # Stop existing timer
+        self.callsign_stable_timer.stop()
+
+        # If callsign changed, restart the 5-second timer
+        if text != self.last_callsign:
+            self.last_callsign = text
+            if text.strip():  # Only start timer if not empty
+                self.callsign_stable_timer.start(5000)  # 5 seconds
+                logger.debug(f"Callsign changed to '{text}', waiting 5 seconds...")
+            else:
+                # Callsign cleared
+                logger.debug("Callsign cleared, QSO start time reset")
+
+    def _on_callsign_stable(self) -> None:
+        """
+        Called when callsign has been stable for 5 seconds
+
+        Records the QSO start time.
+        """
+        current_callsign = self.callsign_input.text().strip()
+
+        if current_callsign:
+            self.qso_start_time = datetime.now()
+            logger.info(f"QSO start time recorded: {self.qso_start_time.strftime('%H:%M:%S')} for {current_callsign}")
+        else:
+            self.qso_start_time = None
+            logger.debug("QSO start time cleared (callsign empty)")
+
+    def _get_qso_times(self) -> tuple[Optional[str], Optional[str]]:
+        """
+        Get QSO start and end times in ADIF format (HHMM)
+
+        Returns:
+            Tuple of (time_on, time_off) in HHMM format or None if not available
+        """
+        # time_on: Use qso_start_time if available, else use current time from form
+        if self.qso_start_time:
+            time_on = self.qso_start_time.strftime("%H%M")
+        else:
+            # Fallback to datetime_input time
+            time_on = self.datetime_input.dateTime().toString("hhmm")
+
+        # time_off: Record when Save is clicked (now)
+        time_off = datetime.now().strftime("%H%M")
+
+        return time_on, time_off
+
+    def closeEvent(self, event) -> None:
+        """
+        Clean up resources when form is closed
+
+        Ensures all timers are stopped and all signals are disconnected.
+        """
+        try:
+            # Stop clock timer if active
+            if self.clock_timer.isActive():
+                self.clock_timer.stop()
+                logger.debug("Always-running clock timer stopped on form close")
+
+            # Stop callsign stability timer if active
+            if self.callsign_stable_timer.isActive():
+                self.callsign_stable_timer.stop()
+                logger.debug("QSO timing timer stopped on form close")
+
+            # Disconnect all signals to prevent orphaned connections
+            try:
+                self.clock_timer.timeout.disconnect()
+            except:
+                pass  # Already disconnected
+            try:
+                self.callsign_stable_timer.timeout.disconnect()
+            except:
+                pass  # Already disconnected
+            try:
+                self.callsign_input.textChanged.disconnect()
+            except:
+                pass  # Already disconnected
+
+            logger.info("LoggingForm closed and resources cleaned up")
+            event.accept()
+
+        except Exception as e:
+            logger.error(f"Error cleaning up LoggingForm: {e}", exc_info=True)
+            # Accept event anyway to allow exit
+            event.accept()

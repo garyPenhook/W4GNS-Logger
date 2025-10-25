@@ -1,0 +1,68 @@
+# DX Cluster Configuration
+# Define cluster nodes for real-time DX spot reception
+
+clusters:
+  - id: dx_spider_1
+    name: "DX Spider - N0ARK"
+    host: "dxspider.n0ark.net"
+    port: 7300
+    enabled: true
+    auto_connect: false
+    callsign: "MYCALL"  # Your callsign for cluster login
+    password: null  # Leave null if no password required
+    heartbeat_interval: 60  # seconds
+    software: "DXSpider"
+
+  - id: dx_spider_2
+    name: "DX Spider - G3TUX"
+    host: "dxspider.g3tux.net"
+    port: 7300
+    enabled: false
+    auto_connect: false
+    callsign: "MYCALL"
+    password: null
+    heartbeat_interval: 60
+    software: "DXSpider"
+
+  - id: ar_cluster
+    name: "AR Cluster"
+    host: "ar-cluster.example.com"
+    port: 23
+    enabled: false
+    auto_connect: false
+    callsign: "MYCALL"
+    password: null
+    heartbeat_interval: 60
+    software: "ARCluster"
+
+  - id: cc_cluster
+    name: "CC Cluster"
+    host: "cc-cluster.example.com"
+    port: 23
+    enabled: false
+    auto_connect: false
+    callsign: "MYCALL"
+    password: null
+    heartbeat_interval: 60
+    software: "CCCluster"
+
+# Cluster settings
+settings:
+  max_simultaneous_connections: 2
+  cache_size: 1000  # Number of spots to keep in memory
+  spot_persistence: false  # Save spots to database
+  auto_reconnect: true
+  reconnect_delay: 30  # seconds
+  connection_timeout: 30  # seconds
+
+  # Alert settings
+  alert_rare_dxcc: true
+  alert_new_band: true
+  alert_new_mode: true
+  alert_needed_only: false  # Only alert for needed entities
+
+  # Filtering
+  filter_band: null  # null = all bands, or list specific bands
+  filter_continent: null  # null = all continents
+  filter_mode: null  # null = all modes
+  highlight_needed: true

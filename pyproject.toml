@@ -1,0 +1,130 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "w4gns-ham-radio-logger"
+version = "1.0.0"
+description = "Comprehensive ham radio contact logging application with ADIF support, award tracking, and DX cluster integration"
+readme = "README.md"
+requires-python = ">=3.14"
+license = {text = "MIT"}
+authors = [
+    {name = "W4GNS", email = ""}
+]
+keywords = [
+    "ham-radio",
+    "logging",
+    "adif",
+    "awards",
+    "dxcc",
+    "pyqt6"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Communications :: Ham Radio",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "PyQt6>=6.4.0",
+    "SQLAlchemy>=2.0",
+    "adif_io>=0.3.0",
+    "aiofiles>=0.8.0",
+    "asyncio-contextmanager>=1.0.0",
+    "PyYAML>=6.0",
+    "requests>=2.28.0",
+    "cryptography>=38.0",
+    "python-dateutil>=2.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-qt>=4.2.0",
+    "black>=22.0",
+    "flake8>=5.0",
+    "mypy>=0.990",
+    "ipython>=8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/w4gns/ham-radio-logger"
+Documentation = "https://github.com/w4gns/ham-radio-logger/wiki"
+Repository = "https://github.com/w4gns/ham-radio-logger.git"
+Issues = "https://github.com/w4gns/ham-radio-logger/issues"
+
+[project.scripts]
+w4gns-logger = "src.main:main"
+
+[tool.uv]
+python-version = "3.14"
+dev-dependencies = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-qt>=4.2.0",
+    "black>=22.0",
+    "flake8>=5.0",
+    "mypy>=0.990",
+    "ipython>=8.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py314']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["src/tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*Protocol.*:",
+    "@abstractmethod",
+]
