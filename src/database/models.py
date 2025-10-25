@@ -337,6 +337,35 @@ class CenturionMember(Base):
         return f"<CenturionMember(rank={self.rank}, call={self.callsign}, skcc={self.skcc_number})>"
 
 
+class TribuneeMember(Base):
+    """SKCC Tribune Award Member List - Updated Daily from SKCC"""
+
+    __tablename__ = "tribune_members"
+
+    id = Column(Integer, primary_key=True)
+    rank = Column(Integer, nullable=False, index=True)  # Ranking number (1-based)
+    callsign = Column(String(12), nullable=False, unique=True, index=True)  # Callsign
+    skcc_number = Column(String(20), nullable=False, index=True)  # SKCC member number
+    name = Column(String(100))  # Operator name
+    city = Column(String(100))
+    state = Column(String(2))
+    country = Column(String(50))
+    tribune_date = Column(String(8))  # Date achieved YYYYMMDD
+    endorsements = Column(String(500))  # Multi-band/single-band endorsement details
+
+    # Metadata
+    last_list_update = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # When this list was fetched
+
+    __table_args__ = (
+        Index("idx_skcc_number_tribune", "skcc_number"),
+        Index("idx_callsign_tribune", "callsign"),
+        Index("idx_tribune_date", "tribune_date"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<TribuneeMember(rank={self.rank}, call={self.callsign}, skcc={self.skcc_number})>"
+
+
 class Configuration(Base):
     """Application Configuration Storage"""
 

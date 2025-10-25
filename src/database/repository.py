@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, CenturionMember
+from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, CenturionMember, TribuneeMember
 from .skcc_membership import SKCCMembershipManager
 
 logger = logging.getLogger(__name__)
@@ -1245,6 +1245,139 @@ class DatabaseRepository:
                 'endorsement': 'Error',
                 'next_level': 100,
                 'members_to_next': 100
+            }
+        finally:
+            session.close()
+
+    def analyze_tribune_award_progress(self) -> Dict[str, Any]:
+        """Analyze Tribune award progress
+
+        Tracks unique Tribune/Senator members contacted via CW.
+        Requires user to be a Centurion first (100+ unique SKCC members).
+        Endorsements available in 50-contact increments up to Tx10,
+        then in 250-contact increments (Tx15, Tx20, etc.).
+
+        Returns:
+            Dict with Tribune progress analysis
+        """
+        session = self.get_session()
+        try:
+            from src.services.tribune_fetcher import TribuneFetcher
+
+            # First check if user is a Centurion
+            centurion_contacts = session.query(Contact).filter(
+                Contact.mode == "CW",
+                Contact.skcc_number.isnot(None)
+            ).all()
+
+            unique_centurions = set()
+            for contact in centurion_contacts:
+                skcc_num = contact.skcc_number.strip()
+                if skcc_num:
+                    base_number = skcc_num.split()[0]
+                    if base_number and base_number[-1] in 'CTS':
+                        base_number = base_number[:-1]
+                    if base_number and 'x' in base_number:
+                        base_number = base_number.split('x')[0]
+                    if base_number and base_number.isdigit():
+                        unique_centurions.add(base_number)
+
+            is_centurion = len(unique_centurions) >= 100
+
+            # Get all Tribune-eligible contacts (CW + valid date + Tribune/Senator)
+            tribune_eligible_date = "20070301"  # March 1, 2007
+
+            tribune_contacts = session.query(Contact).filter(
+                Contact.mode == "CW",
+                Contact.skcc_number.isnot(None),
+                Contact.qso_date >= tribune_eligible_date
+            ).all()
+
+            # Collect unique Tribune members
+            unique_tribunes = set()
+            for contact in tribune_contacts:
+                skcc_num = contact.skcc_number.strip()
+                if not skcc_num:
+                    continue
+
+                # Check if this is a Tribune/Senator member
+                is_tribune = TribuneFetcher.is_tribune_member(session, skcc_num)
+                if is_tribune:
+                    base_number = skcc_num.split()[0]
+                    if base_number and base_number[-1] in 'CTS':
+                        base_number = base_number[:-1]
+                    if base_number and 'x' in base_number:
+                        base_number = base_number.split('x')[0]
+                    if base_number and base_number.isdigit():
+                        unique_tribunes.add(base_number)
+
+            tribune_count = len(unique_tribunes)
+
+            # Calculate endorsement level
+            if tribune_count < 50:
+                endorsement = "Not Yet"
+            elif tribune_count < 100:
+                endorsement = "Tribune"
+            elif tribune_count < 150:
+                endorsement = "Tribune x2"
+            elif tribune_count < 200:
+                endorsement = "Tribune x3"
+            elif tribune_count < 250:
+                endorsement = "Tribune x4"
+            elif tribune_count < 300:
+                endorsement = "Tribune x5"
+            elif tribune_count < 350:
+                endorsement = "Tribune x6"
+            elif tribune_count < 400:
+                endorsement = "Tribune x7"
+            elif tribune_count < 450:
+                endorsement = "Tribune x8"
+            elif tribune_count < 500:
+                endorsement = "Tribune x9"
+            elif tribune_count < 550:
+                endorsement = "Tribune x10"
+            elif tribune_count < 750:
+                endorsement = "Tribune x10+"
+            elif tribune_count < 1000:
+                endorsement = "Tribune x15"
+            elif tribune_count < 1250:
+                endorsement = "Tribune x20"
+            else:
+                endorsement = f"Tribune x{(tribune_count // 250) * 5}"
+
+            # Calculate next endorsement target
+            if tribune_count < 50:
+                next_level = 50
+            elif tribune_count < 550:
+                next_level = ((tribune_count // 50) + 1) * 50
+            else:
+                next_level = ((tribune_count // 250) + 1) * 250
+
+            return {
+                'unique_tribunes': tribune_count,
+                'required': 50,
+                'achieved': is_centurion and tribune_count >= 50,
+                'progress_pct': min(100.0, (tribune_count / 50) * 100),
+                'endorsement': endorsement,
+                'next_level': next_level,
+                'tribunes_to_next': max(0, next_level - tribune_count),
+                'is_centurion': is_centurion,
+                'centurion_count': len(unique_centurions),
+                'total_tribune_on_record': len(session.query(TribuneeMember).all())
+            }
+
+        except SQLAlchemyError as e:
+            logger.error(f"Error analyzing Tribune progress: {e}")
+            return {
+                'unique_tribunes': 0,
+                'required': 50,
+                'achieved': False,
+                'progress_pct': 0.0,
+                'endorsement': 'Error',
+                'next_level': 50,
+                'tribunes_to_next': 50,
+                'is_centurion': False,
+                'centurion_count': 0
             }
         finally:
             session.close()

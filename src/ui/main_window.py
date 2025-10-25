@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         """Create awards dashboard tab"""
         from PyQt6.QtWidgets import QTabWidget, QScrollArea
         from src.ui.centurion_progress_widget import CenturionProgressWidget
+        from src.ui.tribune_progress_widget import TribuneProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -249,6 +250,13 @@ class MainWindow(QMainWindow):
         centurion_widget = CenturionProgressWidget(self.db)
         centurion_scroll.setWidget(centurion_widget)
         awards_tabs.addTab(centurion_scroll, "Centurion")
+
+        # Tribune Award Tab
+        tribune_scroll = QScrollArea()
+        tribune_scroll.setWidgetResizable(True)
+        tribune_widget = TribuneProgressWidget(self.db)
+        tribune_scroll.setWidget(tribune_widget)
+        awards_tabs.addTab(tribune_scroll, "Tribune")
 
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)
