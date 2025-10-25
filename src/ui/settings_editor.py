@@ -39,6 +39,7 @@ class SettingsEditor(QWidget):
         super().__init__(parent)
         self.config_manager = get_config_manager()
         self.settings_widgets: Dict[str, Any] = {}
+        self.raw_config_initial_text = ""  # Track initial raw config for comparison
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -563,6 +564,8 @@ class SettingsEditor(QWidget):
         import yaml
         config_yaml = yaml.dump(self.config_manager.settings, default_flow_style=False)
         self.raw_config_editor.setPlainText(config_yaml)
+        # Remember initial text to detect if user modified the raw config
+        self.raw_config_initial_text = config_yaml
 
     def _browse_database(self) -> None:
         """Browse for database file"""
@@ -598,15 +601,27 @@ class SettingsEditor(QWidget):
 
                 self.config_manager.set(key, value)
 
-            # Try to save raw config if edited
-            try:
-                import yaml
-                raw_text = self.raw_config_editor.toPlainText()
-                parsed = yaml.safe_load(raw_text)
-                if parsed:
-                    self.config_manager.settings = parsed
-            except Exception:
-                pass  # Keep previous settings if raw config invalid
+            # Only try to save raw config if it was actually modified by user
+            raw_text = self.raw_config_editor.toPlainText()
+            if raw_text.strip() != self.raw_config_initial_text.strip():
+                # Raw config was edited - use it if valid
+                try:
+                    import yaml
+                    parsed = yaml.safe_load(raw_text)
+                    if parsed and isinstance(parsed, dict):
+                        logger.info("Applying changes from raw config editor")
+                        self.config_manager.settings = parsed
+                    else:
+                        logger.warning("Raw config is empty or invalid YAML")
+                except yaml.YAMLError as e:
+                    logger.error(f"Raw config contains invalid YAML: {e}")
+                    raise
+                except Exception as e:
+                    logger.error(f"Error parsing raw config: {e}")
+                    raise
+            else:
+                # Raw config not modified, just save widget changes
+                logger.debug("Raw config unchanged, saving widget changes")
 
             # Save all settings to disk
             self.config_manager.save()
