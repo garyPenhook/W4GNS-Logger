@@ -204,9 +204,19 @@ class SKCCSpotWidget(QWidget):
             "Callsign", "Frequency", "Mode", "Speed", "Reporter", "Time", "Age"
         ])
         self.spots_table.itemSelectionChanged.connect(self._on_spot_selected)
+
+        # Set column resize modes: Callsign fixed (85% smaller), others stretch
         self.spots_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
+            0, QHeaderView.ResizeMode.ResizeToContents  # Callsign: minimal width
         )
+        self.spots_table.setColumnWidth(0, 80)  # Max 80px for callsign
+
+        # Other columns expand to fill remaining space
+        for col in range(1, 7):
+            self.spots_table.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.ResizeMode.Stretch
+            )
+
         layout.addWidget(self.spots_table)
 
         self.setLayout(layout)
