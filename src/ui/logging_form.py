@@ -1150,9 +1150,20 @@ class LoggingForm(QWidget):
         """
         try:
             # Fill in name if available and not already filled
-            if info.name and not self.name_input.text().strip():
-                self.name_input.setText(info.name)
-                logger.debug(f"Filled operator name from QRZ: {info.name}")
+            # QRZ returns fname (first name) and name (last name) separately
+            # Combine them: "First Last" or just the one that's available
+            if (info.fname or info.name) and not self.name_input.text().strip():
+                full_name = ""
+                if info.fname and info.name:
+                    full_name = f"{info.fname} {info.name}"
+                elif info.fname:
+                    full_name = info.fname
+                else:
+                    full_name = info.name
+
+                if full_name:
+                    self.name_input.setText(full_name)
+                    logger.debug(f"Filled operator name from QRZ: {full_name}")
 
             # Fill in state if available
             if info.state:

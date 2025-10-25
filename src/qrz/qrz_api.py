@@ -31,7 +31,8 @@ class QRZAuthError(QRZError):
 class CallsignInfo:
     """Callsign information from QRZ database"""
     callsign: str
-    name: str = ""
+    fname: str = ""  # First name
+    name: str = ""   # Last name
     addr1: str = ""
     addr2: str = ""
     state: str = ""
@@ -61,6 +62,7 @@ class CallsignInfo:
         """Convert to dictionary"""
         return {
             'callsign': self.callsign,
+            'fname': self.fname,
             'name': self.name,
             'addr1': self.addr1,
             'addr2': self.addr2,
@@ -240,7 +242,8 @@ class QRZAPIClient:
         """Parse a Callsign XML element into CallsignInfo"""
         info = CallsignInfo(
             callsign=self._get_text(elem, 'call', ''),
-            name=self._get_text(elem, 'name', ''),
+            fname=self._get_text(elem, 'fname', ''),  # First name
+            name=self._get_text(elem, 'name', ''),    # Last name
             addr1=self._get_text(elem, 'addr1', ''),
             addr2=self._get_text(elem, 'addr2', ''),
             state=self._get_text(elem, 'state', ''),
