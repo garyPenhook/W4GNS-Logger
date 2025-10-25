@@ -554,7 +554,7 @@ class LoggingForm(QWidget):
         # Key Type
         self.key_type_combo = QComboBox()
         self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER"])
-        self.key_type_combo.setMaximumWidth(100)
+        self.key_type_combo.setMaximumWidth(30)
         self.key_type_combo.setToolTip("Type of mechanical key used (for Triple Key Award)")
         key_type_row = ResizableFieldRow("Key Type:", self.key_type_combo)
         layout.addWidget(key_type_row)
@@ -562,7 +562,7 @@ class LoggingForm(QWidget):
         # Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Remote operator name")
-        self.name_input.setMaximumWidth(120)
+        self.name_input.setMaximumWidth(35)
         name_row = ResizableFieldRow("Operator Name:", self.name_input)
         layout.addWidget(name_row)
 
