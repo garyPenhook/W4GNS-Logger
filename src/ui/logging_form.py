@@ -104,12 +104,13 @@ class LoggingForm(QWidget):
                 'country': 120,
                 'state': 80,
                 'grid': 73,  # Grid square field width
-                'qth': 101,  # QTH field width (increased by 20%)
+                'qth': 96,  # QTH field width (increased by 20%)
                 'rst_sent': 50,
                 'rst_rcvd': 50,
-                'tx_power': 20,  # TX Power field width (decreased by 80%)
-                'rx_power': 20,  # RX Power field width (decreased by 80%)
-                'operator': 100
+                'tx_power': 50,  # TX Power field width (more reasonable)
+                'rx_power': 50,  # RX Power field width (more reasonable)
+                'operator': 100,
+                'skcc_number': 60  # SKCC number field (prevent over-expansion)
             }
 
             self._init_ui()
@@ -328,7 +329,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.qth_input.setFont(font)
         self.qth_input.setMinimumHeight(35)
-        self.qth_input.setMaximumWidth(101)  # QTH field width (increased by 20%)
+        self.qth_input.setMaximumWidth(96)  # QTH field width (increased by 20%)
         row3.addWidget(create_label("QTH:"))
         row3.addWidget(self.qth_input, 0)
 
@@ -342,7 +343,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.tx_power_input.setFont(font)
         self.tx_power_input.setMinimumHeight(35)
-        self.tx_power_input.setMaximumWidth(20)  # TX Power field width (decreased by 80%)
+        self.tx_power_input.setMaximumWidth(50)  # TX Power field width (compact)
         row3.addWidget(create_label("TX:"))
         row3.addWidget(self.tx_power_input, 0)
 
@@ -356,7 +357,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.rx_power_input.setFont(font)
         self.rx_power_input.setMinimumHeight(35)
-        self.rx_power_input.setMaximumWidth(20)  # RX Power field width (decreased by 80%)
+        self.rx_power_input.setMaximumWidth(50)  # RX Power field width (compact)
         row3.addWidget(create_label("RX:"))
         row3.addWidget(self.rx_power_input, 0)
 
@@ -368,8 +369,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.skcc_number_input.setFont(font)
         self.skcc_number_input.setMinimumHeight(35)
+        self.skcc_number_input.setMaximumWidth(60)  # SKCC number field (prevent over-expansion)
         row3.addWidget(create_label("SKCC:"))
-        row3.addWidget(self.skcc_number_input, 1)
+        row3.addWidget(self.skcc_number_input, 0)
 
         # Add stretch to prevent Grid/QTH width changes from affecting other fields
         row3.addStretch()
@@ -539,7 +541,7 @@ class LoggingForm(QWidget):
         # QTH
         self.qth_input = QLineEdit()
         self.qth_input.setPlaceholderText("City/Location")
-        self.qth_input.setMaximumWidth(101)  # QTH field width (increased by 20%)
+        self.qth_input.setMaximumWidth(96)  # QTH field width (increased by 20%)
         qth_row = ResizableFieldRow("QTH:", self.qth_input)
         layout.addWidget(qth_row)
 
@@ -574,7 +576,7 @@ class LoggingForm(QWidget):
         self.tx_power_input.setValue(0)
         self.tx_power_input.setDecimals(1)
         self.tx_power_input.setSuffix(" W")
-        self.tx_power_input.setMaximumWidth(20)  # TX Power field width (decreased by 80%)
+        self.tx_power_input.setMaximumWidth(50)  # TX Power field width (compact)
         tx_power_row = ResizableFieldRow("TX Power:", self.tx_power_input)
         layout.addWidget(tx_power_row)
 
@@ -584,7 +586,7 @@ class LoggingForm(QWidget):
         self.rx_power_input.setValue(0)
         self.rx_power_input.setDecimals(1)
         self.rx_power_input.setSuffix(" W")
-        self.rx_power_input.setMaximumWidth(20)  # RX Power field width (decreased by 80%)
+        self.rx_power_input.setMaximumWidth(50)  # RX Power field width (compact)
         self.rx_power_input.setToolTip("Other station's transmit power (for 2-way QRP tracking)")
         rx_power_row = ResizableFieldRow("RX Power:", self.rx_power_input)
         layout.addWidget(rx_power_row)
@@ -593,7 +595,7 @@ class LoggingForm(QWidget):
         self.skcc_number_input = QLineEdit()
         self.skcc_number_input.setPlaceholderText("e.g., 12345")
         self.skcc_number_input.setMaxLength(20)
-        self.skcc_number_input.setMaximumWidth(100)
+        self.skcc_number_input.setMaximumWidth(60)  # SKCC number field (prevent over-expansion)
         self.skcc_number_input.setToolTip("Straight Key Century Club member number")
         skcc_row = ResizableFieldRow("SKCC Number:", self.skcc_number_input)
         layout.addWidget(skcc_row)
