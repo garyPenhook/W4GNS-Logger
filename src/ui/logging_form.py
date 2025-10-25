@@ -98,9 +98,9 @@ class LoggingForm(QWidget):
             self.min_widths = {
                 'callsign': 80,
                 'datetime': 120,
-                'band': 80,
-                'mode': 100,
-                'frequency': 100,
+                'band': 56,  # 30% narrower (was 80, now 56)
+                'mode': 70,  # 30% narrower (was 100, now 70)
+                'frequency': 70,  # 30% narrower (was 100, now 70)
                 'country': 84,  # 30% narrower (was 120, now 84)
                 'state': 56,  # 30% narrower (was 80, now 56)
                 'grid': 73,  # Grid square field width
@@ -252,8 +252,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.band_combo.setFont(font)
         self.band_combo.setMinimumHeight(35)
+        self.band_combo.setMaximumWidth(56)  # 30% narrower
         row2.addWidget(create_label("Band:"))
-        row2.addWidget(self.band_combo, 1)
+        row2.addWidget(self.band_combo, 0)
 
         # Mode
         self.mode_combo = QComboBox()
@@ -266,8 +267,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.mode_combo.setFont(font)
         self.mode_combo.setMinimumHeight(35)
+        self.mode_combo.setMaximumWidth(70)  # 30% narrower
         row2.addWidget(create_label("Mode:"))
-        row2.addWidget(self.mode_combo, 1)
+        row2.addWidget(self.mode_combo, 0)
 
         # Frequency
         self.frequency_input = QDoubleSpinBox()
@@ -278,8 +280,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.frequency_input.setFont(font)
         self.frequency_input.setMinimumHeight(35)
+        self.frequency_input.setMaximumWidth(70)  # 30% narrower
         row2.addWidget(create_label("Freq:"))
-        row2.addWidget(self.frequency_input, 1)
+        row2.addWidget(self.frequency_input, 0)
 
         # Country
         self.country_combo = QComboBox()
