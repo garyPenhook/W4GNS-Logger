@@ -103,7 +103,7 @@ class LoggingForm(QWidget):
                 'frequency': 100,
                 'country': 120,
                 'state': 80,
-                'grid': 60,
+                'grid': 31,  # Grid square field width
                 'qth': 80,
                 'rst_sent': 50,
                 'rst_rcvd': 50,
