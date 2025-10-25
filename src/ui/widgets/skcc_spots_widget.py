@@ -199,23 +199,57 @@ class SKCCSpotWidget(QWidget):
 
         # Spots table
         self.spots_table = QTableWidget()
-        self.spots_table.setColumnCount(7)
+        self.spots_table.setColumnCount(8)
         self.spots_table.setHorizontalHeaderLabels([
-            "Callsign", "Frequency", "Mode", "Speed", "Reporter", "Time", "Age"
+            "Callsign", "Frequency", "Mode", "Speed", "SKCC#", "Reporter", "Time", "Age"
         ])
         self.spots_table.itemSelectionChanged.connect(self._on_spot_selected)
 
-        # Set column resize modes: Callsign fixed (85% smaller), others stretch
+        # Set column resize modes with optimized widths
+        # Column 0: Callsign - fixed at 80px
         self.spots_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents  # Callsign: minimal width
+            0, QHeaderView.ResizeMode.ResizeToContents
         )
-        self.spots_table.setColumnWidth(0, 80)  # Max 80px for callsign
+        self.spots_table.setColumnWidth(0, 80)
 
-        # Other columns expand to fill remaining space
-        for col in range(1, 7):
-            self.spots_table.horizontalHeader().setSectionResizeMode(
-                col, QHeaderView.ResizeMode.Stretch
-            )
+        # Column 1: Frequency - reduced by 20% (use 0.8x stretch)
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self.spots_table.setColumnWidth(1, 90)
+
+        # Column 2: Mode - reduced by 20% (use 0.8x stretch)
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+        self.spots_table.setColumnWidth(2, 60)
+
+        # Column 3: Speed - normal stretch
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+
+        # Column 4: SKCC# - fixed/compact
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.spots_table.setColumnWidth(4, 70)
+
+        # Column 5: Reporter - stretch
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            5, QHeaderView.ResizeMode.Stretch
+        )
+
+        # Column 6: Time - reduced by 20% (use 0.8x stretch)
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            6, QHeaderView.ResizeMode.Stretch
+        )
+        self.spots_table.setColumnWidth(6, 85)
+
+        # Column 7: Age - stretch
+        self.spots_table.horizontalHeader().setSectionResizeMode(
+            7, QHeaderView.ResizeMode.Stretch
+        )
 
         layout.addWidget(self.spots_table)
 
@@ -535,11 +569,15 @@ class SKCCSpotWidget(QWidget):
         for row, spot in enumerate(self.filtered_spots):
             row_data = SKCCSpotRow(spot)
 
+            # Build SKCC number string - show if available, empty otherwise
+            skcc_str = spot.skcc_number if spot.skcc_number else ""
+
             items = [
                 QTableWidgetItem(row_data.callsign),
                 QTableWidgetItem(row_data.frequency),
                 QTableWidgetItem(row_data.mode),
                 QTableWidgetItem(row_data.speed),
+                QTableWidgetItem(skcc_str),  # SKCC Number
                 QTableWidgetItem(row_data.reporter),
                 QTableWidgetItem(row_data.time),
                 QTableWidgetItem(row_data.get_age_string()),
