@@ -236,21 +236,23 @@ class SKCCSpotWidget(QWidget):
         )
         self.spots_table.setColumnWidth(4, 70)
 
-        # Column 5: Reporter - stretch
+        # Column 5: Reporter - reduced by 50%
         self.spots_table.horizontalHeader().setSectionResizeMode(
-            5, QHeaderView.ResizeMode.Stretch
+            5, QHeaderView.ResizeMode.ResizeToContents
         )
+        self.spots_table.setColumnWidth(5, 80)
 
-        # Column 6: Time - reduced by 20% (use 0.8x stretch)
+        # Column 6: Time - reduced by 50% (85px → 42px)
         self.spots_table.horizontalHeader().setSectionResizeMode(
-            6, QHeaderView.ResizeMode.Stretch
+            6, QHeaderView.ResizeMode.ResizeToContents
         )
-        self.spots_table.setColumnWidth(6, 85)
+        self.spots_table.setColumnWidth(6, 42)
 
-        # Column 7: Age - stretch
+        # Column 7: Age - reduced by 50%
         self.spots_table.horizontalHeader().setSectionResizeMode(
-            7, QHeaderView.ResizeMode.Stretch
+            7, QHeaderView.ResizeMode.ResizeToContents
         )
+        self.spots_table.setColumnWidth(7, 45)
 
         layout.addWidget(self.spots_table)
 
