@@ -405,9 +405,11 @@ class SettingsEditor(QWidget):
                 parsed = yaml.safe_load(raw_text)
                 if parsed:
                     self.config_manager.settings = parsed
-                    self.config_manager.save()
             except Exception:
                 pass  # Keep previous settings if raw config invalid
+
+            # Save all settings to disk
+            self.config_manager.save()
 
             QMessageBox.information(
                 self,
