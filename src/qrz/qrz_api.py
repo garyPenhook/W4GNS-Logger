@@ -191,10 +191,11 @@ class QRZAPIClient:
             return cached
 
         try:
-            self._ensure_authenticated()
-
+            # Note: QRZ.com callsign lookups require username/password directly,
+            # not the session key. The session key appears to be for other operations.
             params = urllib.parse.urlencode({
-                'session': self.session_key,
+                'username': self.username,
+                'password': self.password,
                 'callsign': callsign,
                 'agent': 'W4GNSLogger/1.0'
             })
@@ -215,7 +216,7 @@ class QRZAPIClient:
                 # Parse callsign data (handle namespaces)
                 callsign_elem = self._find_element(root, 'Callsign')
                 if callsign_elem is None:
-                    logger.warning(f"No callsign data found for {callsign}")
+                    logger.debug(f"No callsign data found for {callsign}")
                     return None
 
                 info = self._parse_callsign_element(callsign_elem)
