@@ -279,16 +279,8 @@ class SettingsEditor(QWidget):
 
         form_layout.addRow("", QLabel(""))  # Spacer
 
-        # QRZ.com
-        qrz_check = QCheckBox("Enable QRZ.com integration")
-        qrz_check.setChecked(self.config_manager.get("qrz.enabled", False))
-        self.settings_widgets["qrz.enabled"] = qrz_check
-        form_layout.addRow("", qrz_check)
-
-        qrz_auto_check = QCheckBox("Auto-upload contacts to QRZ")
-        qrz_auto_check.setChecked(self.config_manager.get("qrz.auto_upload", False))
-        self.settings_widgets["qrz.auto_upload"] = qrz_auto_check
-        form_layout.addRow("", qrz_auto_check)
+        # Note: QRZ.com settings are in the dedicated QRZ.com tab
+        form_layout.addRow("", QLabel("QRZ.com settings are in the QRZ.com tab"))
 
         form_layout.addRow("", QLabel(""))  # Spacer
 
