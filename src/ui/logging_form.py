@@ -272,8 +272,8 @@ class LoggingForm(QWidget):
         # Frequency
         self.frequency_input = QDoubleSpinBox()
         self.frequency_input.setRange(0.1, 10000.0)
-        self.frequency_input.setDecimals(3)
-        self.frequency_input.setSingleStep(0.1)
+        self.frequency_input.setDecimals(5)  # 5 decimal places for accurate frequency (e.g., 14.05500 MHz)
+        self.frequency_input.setSingleStep(0.001)  # Step by 1 kHz increments
         font = self.frequency_input.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.frequency_input.setFont(font)
@@ -481,9 +481,9 @@ class LoggingForm(QWidget):
 
         self.frequency_input = QDoubleSpinBox()
         self.frequency_input.setRange(0.1, 10000.0)
-        self.frequency_input.setDecimals(3)
-        self.frequency_input.setSingleStep(0.1)
-        self.frequency_input.setMaximumWidth(120)
+        self.frequency_input.setDecimals(5)  # 5 decimal places for accurate frequency (e.g., 14.05500 MHz)
+        self.frequency_input.setSingleStep(0.001)  # Step by 1 kHz increments
+        self.frequency_input.setMaximumWidth(140)  # Increased for 5 decimal display
         freq_layout.addWidget(self.frequency_input)
 
         # Auto-frequency button
