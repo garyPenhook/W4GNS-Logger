@@ -158,7 +158,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._create_power_stats_tab(), "Power Stats")
         self.tabs.addTab(self._create_contacts_tab(), "Contacts")
         self.tabs.addTab(self._create_awards_tab(), "Awards")
-        self.tabs.addTab(self._create_cluster_tab(), "DX Cluster")
         self.tabs.addTab(self._create_settings_tab(), "Settings")
 
         layout.addWidget(self.tabs)
@@ -166,13 +165,41 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def _create_logging_tab(self) -> QWidget:
-        """Create contact logging tab"""
+        """Create contact logging tab with logging form and DX cluster spots"""
         from src.ui.logging_form import LoggingForm
+        from src.skcc import SKCCSpotManager
+        from src.ui.widgets.skcc_spots_widget import SKCCSpotWidget
+
         widget = QWidget()
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Add logging form (top ~30%)
         self.logging_form = LoggingForm(self.db)
-        layout.addWidget(self.logging_form)
+        layout.addWidget(self.logging_form, 0)
+
+        # Add separator
+        separator = QWidget()
+        separator.setFixedHeight(5)
+        separator.setStyleSheet("background-color: #cccccc;")
+        layout.addWidget(separator)
+
+        # Add DX Cluster spots (bottom ~70%)
+        spot_manager = SKCCSpotManager(self.db)
+        spots_widget = SKCCSpotWidget(spot_manager)
+
+        # Connect spot selection to logging form
+        spots_widget.spot_selected.connect(self._on_spot_selected)
+
+        layout.addWidget(spots_widget, 1)
+
         widget.setLayout(layout)
+
+        # Store references for cleanup
+        self.spot_manager = spot_manager
+        self.spots_widget = spots_widget
+
         return widget
 
     def _create_qrp_progress_tab(self) -> QWidget:
@@ -208,31 +235,6 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addWidget(self._create_placeholder("Awards Dashboard"))
         widget.setLayout(layout)
-        return widget
-
-    def _create_cluster_tab(self) -> QWidget:
-        """Create DX cluster tab with SKCC spots monitoring"""
-        from src.skcc import SKCCSpotManager
-        from src.ui.widgets.skcc_spots_widget import SKCCSpotWidget
-
-        widget = QWidget()
-        layout = QVBoxLayout()
-
-        # Initialize spot manager and widget
-        spot_manager = SKCCSpotManager(self.db)
-        spots_widget = SKCCSpotWidget(spot_manager)
-
-        # Connect spot selection to logging form - connect after tabs are created
-        # The connection is deferred via slot to ensure logging_form exists
-        spots_widget.spot_selected.connect(self._on_spot_selected)
-
-        layout.addWidget(spots_widget)
-        widget.setLayout(layout)
-
-        # Store reference for cleanup
-        self.spot_manager = spot_manager
-        self.spots_widget = spots_widget
-
         return widget
 
     def _create_settings_tab(self) -> QWidget:
