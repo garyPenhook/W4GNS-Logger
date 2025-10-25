@@ -28,6 +28,8 @@ class ConfigManager:
             "location": str(Path.home() / ".w4gns_logger" / "contacts.db"),
             "backup_enabled": True,
             "backup_interval": 24,  # hours
+            "backup_destination": "",  # Path to backup destination (USB drive, external drive, etc.)
+            "auto_backup_on_shutdown": True,  # Automatically backup when application closes
         },
         "adif": {
             "my_skcc_number": "",  # Operator's SKCC number (e.g., "14276T")

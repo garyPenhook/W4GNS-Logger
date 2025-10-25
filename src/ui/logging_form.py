@@ -12,7 +12,7 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
     QLabel, QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox,
-    QPushButton, QMessageBox, QDateTimeEdit, QGroupBox
+    QPushButton, QMessageBox, QDateTimeEdit, QGroupBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDateTime, QTimer, pyqtSignal
 
@@ -104,13 +104,11 @@ class LoggingForm(QWidget):
                 'country': 120,
                 'state': 80,
                 'grid': 73,  # Grid square field width
-                'qth': 96,  # QTH field width (increased by 20%)
+                'qth': 96,  # QTH field width
                 'rst_sent': 50,
                 'rst_rcvd': 50,
-                'tx_power': 50,  # TX Power field width (more reasonable)
-                'rx_power': 50,  # RX Power field width (more reasonable)
                 'operator': 100,
-                'skcc_number': 60  # SKCC number field (prevent over-expansion)
+                'skcc_number': 60  # SKCC number field
             }
 
             self._init_ui()
@@ -329,37 +327,9 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.qth_input.setFont(font)
         self.qth_input.setMinimumHeight(35)
-        self.qth_input.setMaximumWidth(96)  # QTH field width (increased by 20%)
+        self.qth_input.setMaximumWidth(96)  # QTH field width
         row3.addWidget(create_label("QTH:"))
         row3.addWidget(self.qth_input, 0)
-
-        # TX Power
-        self.tx_power_input = QDoubleSpinBox()
-        self.tx_power_input.setRange(0, 10000)
-        self.tx_power_input.setValue(0)
-        self.tx_power_input.setDecimals(1)
-        self.tx_power_input.setSuffix("W")
-        font = self.tx_power_input.font()
-        font.setPointSize(int(font.pointSize() * 1.15))
-        self.tx_power_input.setFont(font)
-        self.tx_power_input.setMinimumHeight(35)
-        self.tx_power_input.setMaximumWidth(50)  # TX Power field width (compact)
-        row3.addWidget(create_label("TX:"))
-        row3.addWidget(self.tx_power_input, 0)
-
-        # RX Power
-        self.rx_power_input = QDoubleSpinBox()
-        self.rx_power_input.setRange(0, 10000)
-        self.rx_power_input.setValue(0)
-        self.rx_power_input.setDecimals(1)
-        self.rx_power_input.setSuffix("W")
-        font = self.rx_power_input.font()
-        font.setPointSize(int(font.pointSize() * 1.15))
-        self.rx_power_input.setFont(font)
-        self.rx_power_input.setMinimumHeight(35)
-        self.rx_power_input.setMaximumWidth(50)  # RX Power field width (compact)
-        row3.addWidget(create_label("RX:"))
-        row3.addWidget(self.rx_power_input, 0)
 
         # SKCC Number
         self.skcc_number_input = QLineEdit()
@@ -426,6 +396,31 @@ class LoggingForm(QWidget):
         self.county_input.setMinimumHeight(35)
         row4.addWidget(create_label("County:"))
         row4.addWidget(self.county_input, 0)
+        row4.addSpacing(10)
+
+        # QRP Checkbox
+        self.qrp_checkbox = QCheckBox("QRP")
+        self.qrp_checkbox.setMinimumHeight(35)
+        self.qrp_checkbox.setToolTip("Check if this is a QRP contact (≤5 watts)")
+        font = self.qrp_checkbox.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.qrp_checkbox.setFont(font)
+        row4.addWidget(self.qrp_checkbox, 0)
+        row4.addSpacing(10)
+
+        # Power (Watts)
+        self.power_input = QSpinBox()
+        self.power_input.setRange(0, 1000)
+        self.power_input.setValue(0)
+        self.power_input.setSuffix(" W")
+        self.power_input.setMaximumWidth(90)
+        self.power_input.setMinimumHeight(35)
+        self.power_input.setToolTip("Transmit power in watts")
+        font = self.power_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.power_input.setFont(font)
+        row4.addWidget(create_label("Power:"))
+        row4.addWidget(self.power_input, 0)
 
         row4.addStretch()
 
@@ -569,27 +564,6 @@ class LoggingForm(QWidget):
         self.rst_rcvd_input.setMaximumWidth(60)
         rst_rcvd_row = ResizableFieldRow("RST Received:", self.rst_rcvd_input)
         layout.addWidget(rst_rcvd_row)
-
-        # TX Power (enhanced with decimal support)
-        self.tx_power_input = QDoubleSpinBox()
-        self.tx_power_input.setRange(0, 10000)
-        self.tx_power_input.setValue(0)
-        self.tx_power_input.setDecimals(1)
-        self.tx_power_input.setSuffix(" W")
-        self.tx_power_input.setMaximumWidth(50)  # TX Power field width (compact)
-        tx_power_row = ResizableFieldRow("TX Power:", self.tx_power_input)
-        layout.addWidget(tx_power_row)
-
-        # RX Power (new field for 2-way QRP tracking)
-        self.rx_power_input = QDoubleSpinBox()
-        self.rx_power_input.setRange(0, 10000)
-        self.rx_power_input.setValue(0)
-        self.rx_power_input.setDecimals(1)
-        self.rx_power_input.setSuffix(" W")
-        self.rx_power_input.setMaximumWidth(50)  # RX Power field width (compact)
-        self.rx_power_input.setToolTip("Other station's transmit power (for 2-way QRP tracking)")
-        rx_power_row = ResizableFieldRow("RX Power:", self.rx_power_input)
-        layout.addWidget(rx_power_row)
 
         # SKCC Number
         self.skcc_number_input = QLineEdit()
@@ -759,12 +733,11 @@ class LoggingForm(QWidget):
                     qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
                     rst_sent=self.rst_sent_input.text().strip() if self.rst_sent_input.text().strip() else None,
                     rst_rcvd=self.rst_rcvd_input.text().strip() if self.rst_rcvd_input.text().strip() else None,
-                    tx_power=self.tx_power_input.value() if self.tx_power_input.value() > 0 else None,
-                    rx_power=self.rx_power_input.value() if self.rx_power_input.value() > 0 else None,
                     skcc_number=self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None,
                     key_type=self.key_type_combo.currentText(),
                     paddle=self.paddle_combo.currentText() if self.paddle_combo.currentText().strip() else None,
                     name=self.name_input.text().strip() if self.name_input.text().strip() else None,
+                    tx_power=self.power_input.value() if self.power_input.value() > 0 else None,
                 )
                 logger.debug(f"Contact object created: {callsign}")
 
@@ -836,13 +809,8 @@ class LoggingForm(QWidget):
         Clear all form fields
 
         Resets all inputs to default/empty state and sets focus to callsign field.
-        NOTE: RX power is preserved between contacts to allow operators to maintain
-              consistent RX power settings across multiple QSOs.
         """
         try:
-            # Store RX power value to preserve it
-            preserved_rx_power = self.rx_power_input.value()
-
             self.callsign_input.clear()
             self.datetime_input.setDateTime(QDateTime.currentDateTime())
             self.band_combo.setCurrentIndex(0)
@@ -854,14 +822,13 @@ class LoggingForm(QWidget):
             self.qth_input.clear()
             self.rst_sent_input.clear()
             self.rst_rcvd_input.clear()
-            self.tx_power_input.setValue(0)
-            # Preserve RX power - restore the value instead of resetting to 0
-            self.rx_power_input.setValue(preserved_rx_power)
             self.skcc_number_input.clear()
             self.key_type_combo.setCurrentIndex(0)  # Reset to STRAIGHT
             self.paddle_combo.setCurrentIndex(0)  # Reset to empty
             self.name_input.clear()
             self.county_input.clear()
+            self.qrp_checkbox.setChecked(False)
+            self.power_input.setValue(0)
 
             # Reset QSO timing
             self.qso_start_time = None
@@ -870,7 +837,7 @@ class LoggingForm(QWidget):
             self.callsign_stable_timer.stop()
 
             self.callsign_input.setFocus()
-            logger.debug("Form cleared successfully - QSO timing reset, RX power preserved")
+            logger.debug("Form cleared successfully - QSO timing reset")
         except Exception as e:
             logger.error(f"Error clearing form: {e}", exc_info=True)
             raise
@@ -882,7 +849,7 @@ class LoggingForm(QWidget):
         Args:
             field_name: 'callsign', 'datetime', 'band', 'mode', 'frequency',
                        'country', 'state', 'grid', 'qth', 'rst_sent',
-                       'rst_rcvd', 'tx_power', or 'operator'
+                       'rst_rcvd', or 'operator'
             width: Width in pixels (minimum enforced)
 
         Raises:
@@ -927,8 +894,6 @@ class LoggingForm(QWidget):
                     self.rst_sent_input.setMaximumWidth(width)
                 elif field_name == 'rst_rcvd':
                     self.rst_rcvd_input.setMaximumWidth(width)
-                elif field_name == 'tx_power':
-                    self.tx_power_input.setMaximumWidth(width)
                 elif field_name == 'operator':
                     self.name_input.setMaximumWidth(width)
                 else:
@@ -962,7 +927,7 @@ class LoggingForm(QWidget):
         Args:
             field_name: 'callsign', 'datetime', 'band', 'mode', 'frequency',
                        'country', 'state', 'grid', 'qth', 'rst_sent',
-                       'rst_rcvd', 'tx_power', or 'operator'
+                       'rst_rcvd', or 'operator'
 
         Returns:
             Width in pixels
@@ -989,8 +954,6 @@ class LoggingForm(QWidget):
             return self.rst_sent_input.width()
         elif field_name == 'rst_rcvd':
             return self.rst_rcvd_input.width()
-        elif field_name == 'tx_power':
-            return self.tx_power_input.width()
         elif field_name == 'operator':
             return self.name_input.width()
         return 0

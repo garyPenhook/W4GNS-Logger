@@ -17,6 +17,7 @@ from PyQt6.QtGui import QAction, QIcon
 from src.database.repository import DatabaseRepository
 from src.config.settings import get_config_manager
 from src.ui.theme_manager import ThemeManager
+from src.backup.backup_manager import BackupManager
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +385,32 @@ class MainWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
+                # Perform automatic backup if enabled and destination is configured
+                try:
+                    auto_backup_enabled = self.config_manager.get("database.auto_backup_on_shutdown", True)
+                    backup_destination = self.config_manager.get("database.backup_destination", "")
+
+                    if auto_backup_enabled and backup_destination:
+                        backup_dest_path = Path(backup_destination)
+                        if backup_dest_path.exists():
+                            logger.info("Performing automatic backup on shutdown...")
+                            db_path = Path(self.config_manager.get("database.location"))
+
+                            backup_manager = BackupManager()
+                            result = backup_manager.backup_to_location(
+                                database_path=db_path,
+                                backup_destination=backup_dest_path
+                            )
+
+                            if result["success"]:
+                                logger.info(f"Auto-backup completed: {result['backup_dir']}")
+                            else:
+                                logger.warning(f"Auto-backup failed: {result['message']}")
+                        else:
+                            logger.warning(f"Backup destination not available: {backup_destination}")
+                except Exception as backup_error:
+                    logger.error(f"Error during auto-backup: {backup_error}", exc_info=True)
+
                 # Clean up database resources
                 try:
                     if hasattr(self, 'db') and self.db:

@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import QApplication
 
 from src.config.settings import get_config_manager
 from src.ui.theme_manager import ThemeManager
+from src.backup.backup_manager import BackupManager
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ class SettingsEditor(QWidget):
     def _create_database_tab(self) -> QWidget:
         """Create Database settings tab"""
         widget = QWidget()
+        layout = QVBoxLayout()
         form_layout = QFormLayout()
         form_layout.setSpacing(5)  # Reduce spacing between label and field
 
@@ -176,7 +178,50 @@ class SettingsEditor(QWidget):
         self.settings_widgets["database.backup_interval"] = backup_spin
         form_layout.addRow("Backup Interval:", backup_spin)
 
-        widget.setLayout(form_layout)
+        layout.addLayout(form_layout)
+        layout.addSpacing(10)
+
+        # Backup Destination section
+        backup_dest_layout = QFormLayout()
+        backup_dest_layout.setSpacing(5)
+
+        # Backup destination display and button
+        backup_dest_layout_h = QHBoxLayout()
+        backup_dest_layout_h.setSpacing(5)
+        backup_dest_input = QLineEdit()
+        backup_dest = self.config_manager.get("database.backup_destination", "")
+        backup_dest_input.setText(backup_dest if backup_dest else "(Not configured)")
+        backup_dest_input.setReadOnly(True)
+        self.settings_widgets["database.backup_destination"] = backup_dest_input
+        backup_dest_button = QPushButton("Browse...")
+        backup_dest_button.setToolTip("Select USB drive or external location for backups")
+        backup_dest_button.clicked.connect(self._browse_backup_destination)
+        backup_dest_layout_h.addWidget(backup_dest_input)
+        backup_dest_layout_h.addWidget(backup_dest_button)
+        backup_dest_layout.addRow("Backup Destination:", backup_dest_layout_h)
+
+        # Auto-backup on shutdown
+        auto_backup_check = QCheckBox("Automatically backup when closing application")
+        auto_backup_check.setChecked(self.config_manager.get("database.auto_backup_on_shutdown", True))
+        auto_backup_check.setToolTip("If enabled, database and ADIF files will be backed up to the destination when you close the program")
+        self.settings_widgets["database.auto_backup_on_shutdown"] = auto_backup_check
+        backup_dest_layout.addRow("", auto_backup_check)
+
+        layout.addLayout(backup_dest_layout)
+        layout.addSpacing(10)
+
+        # Manual Backup button section
+        backup_group = QGroupBox("Manual Backup")
+        backup_group_layout = QVBoxLayout()
+        backup_now_btn = QPushButton("Backup Now")
+        backup_now_btn.setToolTip("Create a backup to the configured destination immediately")
+        backup_now_btn.clicked.connect(self._backup_now)
+        backup_group_layout.addWidget(backup_now_btn)
+        backup_group.setLayout(backup_group_layout)
+        layout.addWidget(backup_group)
+
+        layout.addStretch()
+        widget.setLayout(layout)
         return widget
 
     def _create_adif_tab(self) -> QWidget:
@@ -579,6 +624,97 @@ class SettingsEditor(QWidget):
         )
         if file_path:
             self.settings_widgets["database.location"].setText(file_path)
+
+    def _browse_backup_destination(self) -> None:
+        """Browse for backup destination (USB drive, external drive, etc.)"""
+        backup_dest = QFileDialog.getExistingDirectory(
+            self,
+            "Select Backup Destination (USB Drive or External Location)",
+            str(Path.home()),
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        if backup_dest:
+            # Save to settings
+            self.config_manager.set("database.backup_destination", backup_dest)
+            # Update display
+            self.settings_widgets["database.backup_destination"].setText(backup_dest)
+            logger.info(f"Backup destination set to: {backup_dest}")
+            QMessageBox.information(
+                self,
+                "Backup Destination Set",
+                f"Backups will be created in:\n{backup_dest}\n\n"
+                f"Auto-backup on shutdown is enabled by default."
+            )
+
+    def _backup_now(self) -> None:
+        """Perform manual backup to configured or user-selected location"""
+        try:
+            # Check if backup destination is configured
+            backup_dest = self.config_manager.get("database.backup_destination", "")
+
+            if not backup_dest:
+                # No destination configured, prompt user
+                backup_dest = QFileDialog.getExistingDirectory(
+                    self,
+                    "Select Backup Destination",
+                    str(Path.home()),
+                    QFileDialog.Option.ShowDirsOnly
+                )
+
+                if not backup_dest:
+                    # User cancelled
+                    return
+
+            # Validate backup destination exists
+            if not Path(backup_dest).exists():
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Backup destination not found: {backup_dest}\n\n"
+                    f"Please select a valid location (USB drive, external drive, etc.)"
+                )
+                return
+
+            # Get database path
+            db_path = Path(self.config_manager.get("database.location"))
+            if not db_path.exists():
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Database file not found: {db_path}"
+                )
+                return
+
+            # Perform backup
+            backup_manager = BackupManager()
+            result = backup_manager.backup_to_location(
+                database_path=db_path,
+                backup_destination=Path(backup_dest)
+            )
+
+            if result["success"]:
+                QMessageBox.information(
+                    self,
+                    "Backup Successful",
+                    result["message"]
+                )
+                logger.info(f"Backup completed: {result['backup_dir']}")
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Backup Failed",
+                    result["message"]
+                )
+                logger.error(f"Backup failed: {result['message']}")
+
+        except Exception as e:
+            logger.error(f"Error during backup: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Backup operation failed: {str(e)}"
+            )
 
     def _save_settings(self) -> None:
         """Save all settings"""
