@@ -1293,8 +1293,11 @@ class DatabaseRepository:
                 Contact.qso_date >= tribune_eligible_date
             ).all()
 
-            # Collect unique Tribune members
+            # Collect unique Tribune members in date order to find achievement date
+            tribune_contacts_with_dates = []
             unique_tribunes = set()
+            tribune_achievement_date = None
+
             for contact in tribune_contacts:
                 skcc_num = contact.skcc_number.strip()
                 if not skcc_num:
@@ -1309,7 +1312,14 @@ class DatabaseRepository:
                     if base_number and 'x' in base_number:
                         base_number = base_number.split('x')[0]
                     if base_number and base_number.isdigit():
-                        unique_tribunes.add(base_number)
+                        # Only add if not already in set
+                        if base_number not in unique_tribunes:
+                            unique_tribunes.add(base_number)
+                            tribune_contacts_with_dates.append((contact.qso_date, base_number))
+
+                            # When we hit 50, that's the Tribune achievement date
+                            if len(unique_tribunes) == 50 and tribune_achievement_date is None:
+                                tribune_achievement_date = contact.qso_date
 
             tribune_count = len(unique_tribunes)
 
@@ -1363,7 +1373,8 @@ class DatabaseRepository:
                 'tribunes_to_next': max(0, next_level - tribune_count),
                 'is_centurion': is_centurion,
                 'centurion_count': len(unique_centurions),
-                'total_tribune_on_record': len(session.query(TribuneeMember).all())
+                'total_tribune_on_record': len(session.query(TribuneeMember).all()),
+                'tribune_achievement_date': tribune_achievement_date  # Date when 50th Tribune contacted
             }
 
         except SQLAlchemyError as e:
@@ -1377,7 +1388,8 @@ class DatabaseRepository:
                 'next_level': 50,
                 'tribunes_to_next': 50,
                 'is_centurion': False,
-                'centurion_count': 0
+                'centurion_count': 0,
+                'tribune_achievement_date': None
             }
         finally:
             session.close()

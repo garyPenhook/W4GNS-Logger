@@ -254,11 +254,24 @@ class TribuneProgressWidget(QWidget):
             self.tribune_progress.setMaximum(next_level)
             self.tribune_progress.setValue(tribune_count)
 
+            # Format achievement date for display
+            achievement_date = progress.get('tribune_achievement_date', '')
+            if achievement_date:
+                from datetime import datetime
+                try:
+                    date_obj = datetime.strptime(achievement_date, "%Y%m%d")
+                    achievement_str = date_obj.strftime("%b %d, %Y")
+                except:
+                    achievement_str = achievement_date
+
             # Update status label
             if not is_centurion:
                 status_text = "Must achieve Centurion first to qualify for Tribune"
             elif tribune_count >= 50:
-                status_text = f"{endorsement} • {tribune_count} members • {tribunes_to_next} more to {next_level}"
+                if achievement_date:
+                    status_text = f"{endorsement} • {tribune_count} members • Achieved: {achievement_str} • {tribunes_to_next} more to {next_level}"
+                else:
+                    status_text = f"{endorsement} • {tribune_count} members • {tribunes_to_next} more to {next_level}"
             else:
                 status_text = f"Progress: {tribune_count}/50 Tribune members • {50 - tribune_count} more to Tribune"
 
