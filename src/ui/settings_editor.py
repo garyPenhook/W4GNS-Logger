@@ -447,49 +447,101 @@ class SettingsEditor(QWidget):
             })
 
             # Test authentication
-            with urllib.request.urlopen(f"{qrz_url}?{params}", timeout=5) as response:
+            with urllib.request.urlopen(f"{qrz_url}?{params}", timeout=10) as response:
                 data = response.read()
                 root = ET.fromstring(data)
 
-                # Check for error
-                if root.find('Error') is not None:
-                    error_msg = root.find('Error').text
+                # Helper function to find elements (handles namespaces)
+                def find_elem(parent, tag):
+                    # Try direct find first
+                    result = parent.find(tag)
+                    if result is not None:
+                        return result
+                    # Try with any namespace
+                    for child in parent:
+                        child_tag = child.tag
+                        if '}' in child_tag:
+                            child_tag = child_tag.split('}')[1]
+                        if child_tag == tag:
+                            return child
+                    return None
+
+                # Check for error element
+                error_elem = find_elem(root, 'Error')
+                if error_elem is not None:
+                    error_msg = error_elem.text or "Unknown error"
                     QMessageBox.critical(
                         self,
                         "Connection Failed",
                         f"QRZ.com authentication failed:\n{error_msg}"
                     )
+                    logger.error(f"QRZ authentication error: {error_msg}")
                     return
 
-                # Check for session key
-                if root.find('Session/Key') is not None:
-                    QMessageBox.information(
-                        self,
-                        "Connection Successful",
-                        "QRZ.com credentials are valid!\nYour session key has been obtained."
-                    )
-                    logger.info("QRZ.com connection test successful")
-                else:
-                    QMessageBox.warning(
-                        self,
-                        "Unexpected Response",
-                        "QRZ.com response did not contain expected session information."
-                    )
+                # Check for session element with key
+                session_elem = find_elem(root, 'Session')
+                if session_elem is not None:
+                    key_elem = find_elem(session_elem, 'Key')
+                    if key_elem is not None and key_elem.text:
+                        QMessageBox.information(
+                            self,
+                            "Connection Successful",
+                            "QRZ.com credentials are valid!\n"
+                            "Session key obtained successfully."
+                        )
+                        logger.info("QRZ.com connection test successful")
+                        return
 
+                # If we get here, response was unexpected
+                logger.warning("Unexpected QRZ response structure")
+                QMessageBox.warning(
+                    self,
+                    "Unexpected Response",
+                    "QRZ.com returned an unexpected response.\n"
+                    "Please verify your username and password are correct.\n\n"
+                    "If the issue persists, check:\n"
+                    "• Your internet connection\n"
+                    "• QRZ.com service status\n"
+                    "• Your account status at qrz.com"
+                )
+
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                QMessageBox.critical(
+                    self,
+                    "Authentication Failed",
+                    "Invalid username or password.\n\n"
+                    "Please check your QRZ.com credentials."
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Connection Error",
+                    f"QRZ.com returned HTTP {e.code}:\n{str(e)}"
+                )
+            logger.error(f"QRZ.com HTTP error {e.code}: {e}")
         except urllib.error.URLError as e:
             QMessageBox.critical(
                 self,
                 "Connection Error",
-                f"Failed to connect to QRZ.com:\n{str(e)}"
+                f"Failed to connect to QRZ.com:\n{str(e)}\n\n"
+                "Please check your internet connection."
             )
             logger.error(f"QRZ.com connection error: {e}")
+        except ET.ParseError as e:
+            QMessageBox.critical(
+                self,
+                "Parse Error",
+                f"Failed to parse QRZ.com response:\n{str(e)}"
+            )
+            logger.error(f"QRZ.com XML parse error: {e}")
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Error",
                 f"Error testing QRZ.com connection:\n{str(e)}"
             )
-            logger.error(f"QRZ.com test error: {e}")
+            logger.error(f"QRZ.com test error: {e}", exc_info=True)
 
     def _create_raw_config_tab(self) -> QWidget:
         """Create raw config editor tab"""
