@@ -38,6 +38,7 @@ class CallsignInfo:
     state: str = ""
     zip: str = ""
     country: str = ""
+    county: str = ""  # County
     grid: str = ""
     lat: str = ""
     lon: str = ""
@@ -69,6 +70,7 @@ class CallsignInfo:
             'state': self.state,
             'zip': self.zip,
             'country': self.country,
+            'county': self.county,
             'grid': self.grid,
             'lat': self.lat,
             'lon': self.lon,
@@ -249,6 +251,7 @@ class QRZAPIClient:
             state=self._get_text(elem, 'state', ''),
             zip=self._get_text(elem, 'zip', ''),
             country=self._get_text(elem, 'country', ''),
+            county=self._get_text(elem, 'county', ''),  # County
             grid=self._get_text(elem, 'grid', ''),
             lat=self._get_text(elem, 'lat', ''),
             lon=self._get_text(elem, 'lon', ''),

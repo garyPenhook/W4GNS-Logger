@@ -566,6 +566,13 @@ class LoggingForm(QWidget):
         name_row = ResizableFieldRow("Operator Name:", self.name_input)
         layout.addWidget(name_row)
 
+        # County
+        self.county_input = QLineEdit()
+        self.county_input.setPlaceholderText("County")
+        self.county_input.setMaximumWidth(150)
+        county_row = ResizableFieldRow("County:", self.county_input)
+        layout.addWidget(county_row)
+
         group.setLayout(layout)
         return group
 
@@ -698,6 +705,7 @@ class LoggingForm(QWidget):
                     frequency=self.frequency_input.value(),
                     country=self.country_combo.currentText() if self.country_combo.currentText() else None,
                     state=self.state_combo.currentText() if self.state_combo.currentText() else None,
+                    county=self.county_input.text().strip() if self.county_input.text().strip() else None,
                     gridsquare=self.grid_input.text().strip() if self.grid_input.text().strip() else None,
                     qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
                     rst_sent=self.rst_sent_input.text().strip() if self.rst_sent_input.text().strip() else None,
@@ -796,6 +804,7 @@ class LoggingForm(QWidget):
             self.skcc_number_input.clear()
             self.key_type_combo.setCurrentIndex(0)  # Reset to STRAIGHT
             self.name_input.clear()
+            self.county_input.clear()
 
             # Reset QSO timing
             self.qso_start_time = None
@@ -1180,6 +1189,11 @@ class LoggingForm(QWidget):
             if info.qth and not self.qth_input.text().strip():
                 self.qth_input.setText(info.qth)
                 logger.debug(f"Filled QTH from QRZ: {info.qth}")
+
+            # Fill in county if available
+            if info.county and not self.county_input.text().strip():
+                self.county_input.setText(info.county)
+                logger.debug(f"Filled county from QRZ: {info.county}")
 
             # Fill in country if available
             if info.country:
