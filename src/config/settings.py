@@ -42,8 +42,9 @@ class ConfigManager:
         },
         "qrz": {
             "enabled": False,
-            "username": "",  # QRZ.com username
-            "password": "",  # QRZ.com password (stored in config)
+            "username": "",  # QRZ.com username (for callsign lookups)
+            "password": "",  # QRZ.com password (for callsign lookups)
+            "api_key": "",  # QRZ.com API Key (for logbook uploads)
             "auto_upload": False,  # Auto-upload contacts to QRZ logbook
             "auto_fetch": False,  # Auto-fetch callsign info from QRZ
         },

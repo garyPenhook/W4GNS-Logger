@@ -366,9 +366,18 @@ class SettingsEditor(QWidget):
         password_input.setText(self.config_manager.get("qrz.password", ""))
         password_input.setPlaceholderText("Your QRZ.com password")
         password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        password_input.setToolTip("QRZ.com account password (encrypted in config)")
+        password_input.setToolTip("QRZ.com account password for callsign lookups")
         self.settings_widgets["qrz.password"] = password_input
         form_layout.addRow("QRZ.com Password:", password_input)
+
+        # QRZ.com API Key
+        api_key_input = QLineEdit()
+        api_key_input.setText(self.config_manager.get("qrz.api_key", ""))
+        api_key_input.setPlaceholderText("Your QRZ.com API Key")
+        api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        api_key_input.setToolTip("QRZ.com API Key for logbook uploads (get from https://www.qrz.com)")
+        self.settings_widgets["qrz.api_key"] = api_key_input
+        form_layout.addRow("QRZ.com API Key:", api_key_input)
 
         form_layout.addRow("", QLabel(""))  # Spacer
 
@@ -389,9 +398,9 @@ class SettingsEditor(QWidget):
         form_layout.addRow("", QLabel(""))  # Spacer
 
         # Test connection button
-        test_btn = QPushButton("Test Connection")
+        test_btn = QPushButton("Test Callsign Lookup")
         test_btn.clicked.connect(self._test_qrz_connection)
-        test_btn.setToolTip("Test QRZ.com credentials and connection")
+        test_btn.setToolTip("Test QRZ.com callsign lookup credentials (username/password)")
         form_layout.addRow("", test_btn)
 
         form_layout.addRow("", QLabel(""))  # Spacer
@@ -399,9 +408,10 @@ class SettingsEditor(QWidget):
         # Info label
         info_label = QLabel(
             "QRZ.com Integration:\n"
-            "• Look up callsign information in the QRZ database\n"
-            "• Upload your contacts to your QRZ logbook\n"
-            "• Requires a QRZ.com account\n"
+            "• Username/Password: Required for callsign lookups\n"
+            "• API Key: Optional, required for logbook uploads\n"
+            "• Get API Key from: Settings → Account → API → Logbook API Key\n"
+            "• Click 'Test Callsign Lookup' to verify credentials\n"
             "• Visit https://www.qrz.com for account info"
         )
         info_label.setStyleSheet("color: #666; font-size: 9pt;")

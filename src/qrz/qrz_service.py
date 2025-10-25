@@ -40,13 +40,16 @@ class QRZService:
 
         username = self.config_manager.get("qrz.username", "")
         password = self.config_manager.get("qrz.password", "")
+        api_key = self.config_manager.get("qrz.api_key", "")
 
         if not username or not password:
-            logger.warning("QRZ credentials not configured")
+            logger.warning("QRZ callsign lookup credentials not configured")
             return False
 
         try:
-            self.api_client = QRZAPIClient(username, password)
+            # API key is optional - only needed for logbook uploads
+            self.api_client = QRZAPIClient(username, password, api_key)
+            logger.debug(f"QRZ client initialized with callsign lookup credentials{' and logbook API key' if api_key else ''}")
             return True
         except Exception as e:
             logger.error(f"Failed to initialize QRZ client: {e}")

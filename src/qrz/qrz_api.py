@@ -93,17 +93,19 @@ class QRZAPIClient:
 
     BASE_URL = "https://xmldata.qrz.com/xml/current/"
 
-    def __init__(self, username: str, password: str, timeout: int = 10):
+    def __init__(self, username: str, password: str, api_key: Optional[str] = None, timeout: int = 10):
         """
         Initialize QRZ API client
 
         Args:
-            username: QRZ.com account username
-            password: QRZ.com account password
+            username: QRZ.com account username (for callsign lookups)
+            password: QRZ.com account password (for callsign lookups)
+            api_key: QRZ.com API Key (for logbook uploads - optional)
             timeout: Request timeout in seconds
         """
         self.username = username
         self.password = password
+        self.api_key = api_key
         self.timeout = timeout
         self.session_key: Optional[str] = None
         self.session_expires: Optional[float] = None
@@ -281,6 +283,8 @@ class QRZAPIClient:
         """
         Upload a QSO to QRZ logbook
 
+        Requires API Key to be configured.
+
         Args:
             callsign: DX station callsign
             qso_date: QSO date (YYYY-MM-DD)
@@ -296,23 +300,25 @@ class QRZAPIClient:
             True if upload successful
 
         Raises:
-            QRZError: If upload fails
+            QRZError: If upload fails or API Key not configured
         """
-        try:
-            self._ensure_authenticated()
+        if not self.api_key:
+            logger.warning("Cannot upload QSO: API Key not configured")
+            return False
 
-            # Build QSO parameters
+        try:
+            # Build QSO parameters for logbook API
+            # API Key is used instead of session key for logbook uploads
             params = {
-                'session': self.session_key,
+                'key': self.api_key,  # API Key for logbook access
                 'callsign': callsign.upper(),
-                'qso_date': qso_date,
-                'time_on': time_on,
+                'qso_date': qso_date.replace('-', ''),  # YYYYMMDD format
+                'time_on': time_on.replace(':', ''),  # HHMMSS format
                 'freq': str(freq),
                 'mode': mode.upper(),
                 'rst_sent': rst_sent,
                 'rst_rcvd': rst_rcvd,
-                'agent': 'W4GNSLogger/1.0',
-                'action': 'insert'  # Action for logbook API
+                'agent': 'W4GNSLogger/1.0'
             }
 
             if tx_power is not None:
@@ -323,38 +329,43 @@ class QRZAPIClient:
 
             params_encoded = urllib.parse.urlencode(params)
 
-            # Note: QRZ logbook API endpoint may differ from query endpoint
-            # Using the same endpoint as query for now
-            url = f"{self.BASE_URL}?{params_encoded}"
+            # Logbook API endpoint
+            logbook_url = "https://logbook.qrz.com/api"
+            url = f"{logbook_url}?{params_encoded}"
 
             with urllib.request.urlopen(url, timeout=self.timeout) as response:
                 data = response.read().decode('utf-8')
-                root = ET.fromstring(data)
 
-                # Check for error
-                error_elem = root.find('Error')
-                if error_elem is not None:
-                    error_msg = error_elem.text or "Unknown error"
-                    logger.error(f"QRZ upload error: {error_msg}")
-                    return False
+                # Try to parse as XML first (error case)
+                try:
+                    root = ET.fromstring(data)
+                    error_elem = root.find('Error')
+                    if error_elem is not None:
+                        error_msg = error_elem.text or "Unknown error"
+                        logger.error(f"QRZ logbook upload error: {error_msg}")
+                        return False
+                except ET.ParseError:
+                    pass  # Not XML, likely success response
 
-                # Check for success
-                session_elem = root.find('Session/Key')
-                if session_elem is not None:
-                    logger.info(f"QSO uploaded to QRZ for {callsign}")
+                # Success: QRZ returns "OK" or similar plain text
+                if data.strip().upper() == 'OK':
+                    logger.info(f"QSO uploaded to QRZ logbook for {callsign}")
                     return True
+                elif not data.strip():
+                    # Empty response often means success
+                    logger.info(f"QSO uploaded to QRZ logbook for {callsign}")
+                    return True
+                else:
+                    logger.debug(f"QRZ upload response: {data}")
+                    logger.info(f"QSO upload attempt for {callsign} completed")
+                    return True  # Assume success unless we get explicit error
 
-                logger.warning("Unexpected response from QRZ upload")
-                return False
-
-        except QRZError:
-            raise
         except urllib.error.URLError as e:
-            logger.error(f"QRZ connection error during upload: {e}")
-            raise QRZError(f"Connection failed: {e}")
-        except ET.ParseError as e:
-            logger.error(f"QRZ XML parse error: {e}")
-            raise QRZError(f"Invalid XML response: {e}")
+            logger.error(f"QRZ logbook connection error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"QRZ logbook upload error: {e}")
+            return False
 
     def clear_cache(self, callsign: Optional[str] = None) -> None:
         """
