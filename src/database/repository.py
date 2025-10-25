@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot
+from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, CenturionMember
 from .skcc_membership import SKCCMembershipManager
 
 logger = logging.getLogger(__name__)
@@ -1133,6 +1133,110 @@ class DatabaseRepository:
         except SQLAlchemyError as e:
             logger.error(f"Error retrieving spots for band {band}: {e}")
             return []
+        finally:
+            session.close()
+
+    def analyze_centurion_award_progress(self) -> Dict[str, Any]:
+        """Analyze Centurion award progress
+
+        Tracks unique SKCC members contacted via CW.
+        Endorsements available in 100-contact increments up to Cx10,
+        then in 500-contact increments (Cx15, Cx20, etc.).
+
+        Returns:
+            Dict with Centurion progress analysis
+        """
+        session = self.get_session()
+        try:
+            # Get all CW contacts with SKCC numbers
+            centurion_contacts = session.query(Contact).filter(
+                Contact.mode == "CW",
+                Contact.skcc_number.isnot(None)
+            ).order_by(Contact.qso_date).all()
+
+            # Collect unique SKCC members (base number without suffixes)
+            unique_members = set()
+            member_details = {}
+
+            for contact in centurion_contacts:
+                skcc_num = contact.skcc_number.strip()
+                if not skcc_num:
+                    continue
+
+                # Extract base number (remove suffix like C, T, S, x, etc.)
+                base_number = skcc_num.split()[0].rstrip('CTSx0123456789')
+                if base_number:
+                    unique_members.add(base_number)
+                    if base_number not in member_details:
+                        member_details[base_number] = {
+                            'callsign': contact.callsign,
+                            'date': contact.qso_date,
+                            'band': contact.band
+                        }
+
+            member_count = len(unique_members)
+
+            # Calculate endorsement level
+            if member_count < 100:
+                endorsement = "Not Yet"
+            elif member_count < 200:
+                endorsement = "Centurion"
+            elif member_count < 300:
+                endorsement = "Centurion x2"
+            elif member_count < 400:
+                endorsement = "Centurion x3"
+            elif member_count < 500:
+                endorsement = "Centurion x4"
+            elif member_count < 600:
+                endorsement = "Centurion x5"
+            elif member_count < 700:
+                endorsement = "Centurion x6"
+            elif member_count < 800:
+                endorsement = "Centurion x7"
+            elif member_count < 900:
+                endorsement = "Centurion x8"
+            elif member_count < 1000:
+                endorsement = "Centurion x9"
+            elif member_count < 1100:
+                endorsement = "Centurion x10"
+            elif member_count < 1500:
+                endorsement = "Centurion x10+"
+            elif member_count < 2000:
+                endorsement = "Centurion x15"
+            elif member_count < 2500:
+                endorsement = "Centurion x20"
+            elif member_count < 3000:
+                endorsement = "Centurion x25"
+            else:
+                endorsement = f"Centurion x{(member_count // 500) * 5}"
+
+            # Calculate next endorsement target
+            next_level = ((member_count // 100) + 1) * 100
+            if next_level > 1000:
+                next_level = ((member_count // 500) + 1) * 500
+
+            return {
+                'unique_members': member_count,
+                'required': 100,
+                'achieved': member_count >= 100,
+                'progress_pct': min(100.0, (member_count / 100) * 100),
+                'endorsement': endorsement,
+                'next_level': next_level,
+                'members_to_next': max(0, next_level - member_count),
+                'total_centurion_on_record': len(session.query(CenturionMember).all())
+            }
+
+        except SQLAlchemyError as e:
+            logger.error(f"Error analyzing Centurion progress: {e}")
+            return {
+                'unique_members': 0,
+                'required': 100,
+                'achieved': False,
+                'progress_pct': 0.0,
+                'endorsement': 'Error',
+                'next_level': 100,
+                'members_to_next': 100
+            }
         finally:
             session.close()
 
