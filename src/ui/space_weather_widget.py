@@ -343,6 +343,26 @@ class SpaceWeatherWidget(QWidget):
         self.sfi_condition_label.setFont(QFont("Arial", 9))
         layout.addWidget(self.sfi_condition_label)
 
+        # Sunspot Count
+        sunspot_layout = QHBoxLayout()
+        sunspot_layout.addWidget(QLabel("Sunspot Count:"))
+        self.sunspot_count_label = QLabel("--")
+        self.sunspot_count_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        sunspot_layout.addWidget(self.sunspot_count_label)
+        sunspot_layout.addWidget(QLabel("(Current observed count)"))
+        sunspot_layout.addStretch()
+        layout.addLayout(sunspot_layout)
+
+        # Smoothed Sunspot Number (SSN)
+        ssn_layout = QHBoxLayout()
+        ssn_layout.addWidget(QLabel("Smoothed Sunspot # (SSN):"))
+        self.ssn_label = QLabel("--")
+        self.ssn_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        ssn_layout.addWidget(self.ssn_label)
+        ssn_layout.addWidget(QLabel("(12-month average)"))
+        ssn_layout.addStretch()
+        layout.addLayout(ssn_layout)
+
         # X-ray Class
         xray_layout = QHBoxLayout()
         xray_layout.addWidget(QLabel("X-Ray Class:"))
@@ -404,6 +424,9 @@ class SpaceWeatherWidget(QWidget):
                 sources.append("K-index: NOAA SWPC")
             if data.get('solar_flux_index') is not None:
                 sources.append("Solar Flux: NOAA/HamQSL")
+            if data.get('sunspot_count') is not None or data.get('sunspot_ssn') is not None:
+                sunspot_source = data.get('sunspot_source', 'NOAA/HamQSL')
+                sources.append(f"Sunspots: {sunspot_source}")
             if sources:
                 self.data_source_label.setText(f"Data: {' | '.join(sources)}")
             else:
@@ -470,6 +493,37 @@ class SpaceWeatherWidget(QWidget):
                 self.sfi_condition_label.setText("Radio: Minor disturbance")
             else:
                 self.sfi_condition_label.setText("Radio: Major event - HF impact!")
+
+        # Solar Flux Index (actual value)
+        sfi = data.get('solar_flux_index')
+        if sfi is not None:
+            try:
+                sfi_val = float(sfi)
+                self.sfi_label.setText(f"{sfi_val:.0f} sfu")
+            except (ValueError, TypeError):
+                self.sfi_label.setText("-- sfu")
+
+        # Sunspot Count
+        sunspot_count = data.get('sunspot_count')
+        if sunspot_count is not None:
+            try:
+                count_val = int(sunspot_count)
+                self.sunspot_count_label.setText(str(count_val))
+            except (ValueError, TypeError):
+                self.sunspot_count_label.setText("--")
+        else:
+            self.sunspot_count_label.setText("--")
+
+        # Smoothed Sunspot Number (SSN)
+        ssn = data.get('sunspot_ssn')
+        if ssn is not None:
+            try:
+                ssn_val = float(ssn)
+                self.ssn_label.setText(f"{ssn_val:.0f}")
+            except (ValueError, TypeError):
+                self.ssn_label.setText("--")
+        else:
+            self.ssn_label.setText("--")
 
         # Solar Radiation Scale
         s_scale = data.get('solar_radiation_scale')

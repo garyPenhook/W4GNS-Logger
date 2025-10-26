@@ -16,10 +16,13 @@ logger = logging.getLogger(__name__)
 NOAA_SCALES = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 NOAA_KP_FORECAST = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
 NOAA_F107_FLUX = "https://services.swpc.noaa.gov/json/f107_cm_flux.json"  # Solar Flux (F10.7)
+NOAA_SUNSPOTS = "https://services.swpc.noaa.gov/json/sunspots.json"  # Sunspot counts
+NOAA_SUNSPOT_AREA = "https://services.swpc.noaa.gov/json/solar_sunspot_areas.json"  # Sunspot areas
 
-# Fallback data source for Solar Flux Index
+# Fallback data source for Solar Flux Index and Sunspots
 # HamQSL aggregates various data sources for propagation data
 HAMQSL_SOLAR_DATA = "https://www.hamqsl.com/solar.json"
+HAMQSL_SOLAR_XML = "https://www.hamqsl.com/solarxml.php"  # XML version with more detailed data
 
 # Default timeout for HTTP requests
 HTTP_TIMEOUT = 10
@@ -254,12 +257,97 @@ class SpaceWeatherFetcher:
         logger.info(f"Estimated SFI: {estimated_sfi:.0f} (G:{g_scale}, R:{r_scale}, Kp:{kp_index})")
         return estimated_sfi
 
-    def get_solar_data(self) -> Dict[str, Any]:
+    def get_sunspot_data(self) -> Dict[str, Any]:
         """
-        Get solar data from NOAA scales (R-scale and S-scale data) and Solar Flux Index.
+        Get sunspot count and Smoothed Sunspot Number (SSN) from NOAA SWPC.
 
         Returns:
-            Dict with solar radiation, radio blackout information, and Solar Flux Index
+            Dict with:
+            - sunspot_count: Current daily sunspot count
+            - ssn: Smoothed Sunspot Number (12-month average)
+            - timestamp: Data timestamp
+            - source: Data source (NOAA SWPC or HamQSL)
+        """
+        try:
+            # Try NOAA sunspot data (current daily count)
+            logger.debug("Fetching sunspot data from NOAA SWPC...")
+            response = self.session.get(NOAA_SUNSPOTS, timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+
+            sunspot_data = {}
+
+            if isinstance(data, list) and len(data) > 0:
+                # Get most recent entry
+                latest = data[-1]
+                if isinstance(latest, dict):
+                    sunspot_count = latest.get('sunspot_count')
+                    if sunspot_count is not None:
+                        try:
+                            sunspot_data['sunspot_count'] = int(sunspot_count)
+                            sunspot_data['timestamp'] = latest.get('time_tag', datetime.now().isoformat())
+                            sunspot_data['source'] = 'NOAA SWPC'
+                            logger.info(f"Retrieved sunspot count from NOAA: {sunspot_data['sunspot_count']}")
+                        except (ValueError, TypeError):
+                            logger.debug(f"Invalid sunspot count value: {sunspot_count}")
+
+            # Now try to get SSN from HamQSL (contains 12-month smoothed average)
+            ssn = self._get_smoothed_sunspot_number()
+            if ssn is not None:
+                sunspot_data['ssn'] = ssn
+
+            return sunspot_data
+
+        except requests.RequestException as e:
+            logger.debug(f"Unable to fetch NOAA sunspot data: {e}")
+            return {}
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.debug(f"Error parsing NOAA sunspot data: {e}")
+            return {}
+
+    def _get_smoothed_sunspot_number(self) -> Optional[float]:
+        """
+        Get Smoothed Sunspot Number (SSN) - 12-month running average.
+
+        Data Sources (in order of preference):
+        1. HamQSL solar data (includes 'ssn' field)
+        2. NOAA/other sources as fallback
+
+        Returns:
+            SSN value or None if unable to fetch
+        """
+        try:
+            logger.debug("Fetching Smoothed Sunspot Number (SSN) from HamQSL...")
+            response = self.session.get(HAMQSL_SOLAR_DATA, timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+
+            # HamQSL format includes 'ssn' field (Smoothed Sunspot Number)
+            if isinstance(data, dict) and 'ssn' in data:
+                try:
+                    ssn = float(data['ssn'])
+                    if ssn >= 0:  # SSN should be non-negative
+                        logger.info(f"Retrieved Smoothed Sunspot Number from HamQSL: {ssn:.0f}")
+                        return ssn
+                except (ValueError, TypeError):
+                    logger.debug(f"Invalid SSN value from HamQSL: {data.get('ssn')}")
+
+            logger.debug("SSN not found in HamQSL response")
+            return None
+
+        except requests.RequestException as e:
+            logger.debug(f"Unable to fetch SSN from HamQSL: {e}")
+            return None
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.debug(f"Error parsing SSN from HamQSL: {e}")
+            return None
+
+    def get_solar_data(self) -> Dict[str, Any]:
+        """
+        Get solar data from NOAA scales (R-scale and S-scale data), Solar Flux Index, and sunspot data.
+
+        Returns:
+            Dict with solar radiation, radio blackout information, Solar Flux Index, and sunspot data
         """
         try:
             response = self.session.get(NOAA_SCALES, timeout=HTTP_TIMEOUT)
@@ -274,6 +362,9 @@ class SpaceWeatherFetcher:
 
             # Also fetch Solar Flux Index
             solar_flux = self.get_solar_flux_index()
+
+            # Fetch sunspot data (includes both sunspot count and SSN)
+            sunspot_data = self.get_sunspot_data()
 
             # If actual SFI not available, estimate from conditions
             if solar_flux is None:
@@ -297,6 +388,9 @@ class SpaceWeatherFetcher:
             result = {
                 'timestamp': current.get('TimeStamp', datetime.now().isoformat()),
                 'solar_flux_index': solar_flux,  # Add SFI for MUF calculations
+                'sunspot_count': sunspot_data.get('sunspot_count'),  # Current daily sunspot count
+                'sunspot_ssn': sunspot_data.get('ssn'),  # Smoothed Sunspot Number (12-month average)
+                'sunspot_source': sunspot_data.get('source', 'NOAA SWPC'),  # Data source
                 'current': {
                     'radio_blackout_scale': current.get('R', {}).get('Scale'),
                     'radio_blackout_text': current.get('R', {}).get('Text'),
