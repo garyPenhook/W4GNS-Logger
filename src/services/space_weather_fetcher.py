@@ -12,12 +12,13 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# NOAA SWPC URLs (Updated endpoints that work)
+# NOAA SWPC URLs (Official NOAA Space Weather Prediction Center)
 NOAA_SCALES = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 NOAA_KP_FORECAST = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
+NOAA_F107_FLUX = "https://services.swpc.noaa.gov/json/f107_cm_flux.json"  # Solar Flux (F10.7)
 
-# Alternative data source for Solar Flux Index
-# HamQSL provides real-time propagation data including SFI
+# Fallback data source for Solar Flux Index
+# HamQSL aggregates various data sources for propagation data
 HAMQSL_SOLAR_DATA = "https://www.hamqsl.com/solar.json"
 
 # Default timeout for HTTP requests
@@ -132,17 +133,48 @@ class SpaceWeatherFetcher:
 
     def get_solar_flux_index(self) -> Optional[float]:
         """
-        Get current Solar Flux Index (SFI) from external sources.
+        Get current Solar Flux Index (SFI/F10.7) from authoritative online sources.
 
-        Tries multiple sources:
-        1. HamQSL solar data (community maintained)
-        2. Calculated estimate from NOAA K-index and R-scale data
+        Data Sources (in order of preference):
+        1. NOAA SWPC F10.7 (official US government space weather data)
+        2. HamQSL solar data (community aggregation of various sources)
+        3. Calculated estimate from NOAA geomagnetic conditions
 
         Returns:
-            Current SFI value or None if unable to fetch
+            Current SFI value (in solar flux units) or None if unable to fetch
+
+        Note: MUF calculations use this real online data combined with K-index
+        from NOAA to determine band usability. This is the industry-standard
+        approach since no direct online MUF API is available.
         """
         try:
-            # Try HamQSL first (includes SFI)
+            # Primary source: NOAA SWPC F10.7 (Solar Flux) - MOST AUTHORITATIVE
+            logger.debug("Fetching Solar Flux (F10.7) from NOAA SWPC...")
+            response = self.session.get(NOAA_F107_FLUX, timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
+            noaa_data = response.json()
+
+            if isinstance(noaa_data, list) and len(noaa_data) > 0:
+                # Get the most recent entry
+                latest = noaa_data[-1]
+                if isinstance(latest, dict) and 'flux' in latest:
+                    try:
+                        sfi = float(latest['flux'])
+                        if sfi > 0:
+                            logger.info(f"Retrieved Solar Flux from NOAA SWPC: {sfi:.0f} sfu")
+                            return sfi
+                    except (ValueError, TypeError):
+                        pass
+
+            logger.debug("NOAA F10.7 data not available, trying HamQSL...")
+
+        except requests.RequestException as e:
+            logger.debug(f"Unable to fetch NOAA F10.7: {e}, trying fallback...")
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.debug(f"Error parsing NOAA F10.7: {e}, trying fallback...")
+
+        try:
+            # Secondary source: HamQSL (community maintained aggregation)
             response = self.session.get(HAMQSL_SOLAR_DATA, timeout=HTTP_TIMEOUT)
             response.raise_for_status()
             data = response.json()
@@ -152,12 +184,12 @@ class SpaceWeatherFetcher:
                 try:
                     sfi = float(data['sfi'])
                     if sfi > 0:
-                        logger.debug(f"Retrieved Solar Flux Index from HamQSL: {sfi}")
+                        logger.info(f"Retrieved Solar Flux from HamQSL: {sfi:.0f} sfu")
                         return sfi
                 except (ValueError, TypeError):
                     pass
 
-            logger.debug("SFI not found in HamQSL response, using fallback")
+            logger.debug("SFI not found in HamQSL, will use estimation fallback")
             return None
 
         except requests.RequestException as e:

@@ -94,6 +94,12 @@ class SpaceWeatherWidget(QWidget):
         self.update_status_label.setFont(QFont("Arial", 8))
         controls_layout.addWidget(self.update_status_label)
 
+        # Data source indicator
+        self.data_source_label = QLabel("Data: NOAA SWPC")
+        self.data_source_label.setFont(QFont("Arial", 7))
+        self.data_source_label.setStyleSheet("color: #666666;")
+        controls_layout.addWidget(self.data_source_label)
+
         controls_layout.addStretch()
         main_layout.addLayout(controls_layout)
 
@@ -389,8 +395,19 @@ class SpaceWeatherWidget(QWidget):
             self._update_ui(data)
             self._update_muf_display(data)
 
-            # Update timestamp
+            # Update timestamp and data sources
             self.update_status_label.setText(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
+
+            # Show data source information
+            sources = []
+            if data.get('kp_index') is not None:
+                sources.append("K-index: NOAA SWPC")
+            if data.get('solar_flux_index') is not None:
+                sources.append("Solar Flux: NOAA/HamQSL")
+            if sources:
+                self.data_source_label.setText(f"Data: {' | '.join(sources)}")
+            else:
+                self.data_source_label.setText("Data: Calculated estimate")
 
         except Exception as e:
             logger.error(f"Error refreshing space weather: {e}")

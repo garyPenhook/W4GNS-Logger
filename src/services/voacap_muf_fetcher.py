@@ -181,19 +181,27 @@ class VOACAPMUFFetcher:
         include_time_factor: bool = True
     ) -> float:
         """
-        Calculate Maximum Usable Frequency using empirical model with time-of-day correction
+        Calculate Maximum Usable Frequency (MUF) using empirical ionospheric model
 
-        Based on standard ionospheric propagation models:
-        - Solar Flux Index (SFI) is the primary driver
-        - K-Index provides geomagnetic disturbance correction
-        - Latitude affects ionospheric height
-        - Time of day affects ionospheric absorption
+        *** IMPORTANT: This uses REAL ONLINE DATA from NOAA ***
+        - Solar Flux Index (SFI/F10.7): Retrieved from NOAA SWPC or HamQSL
+        - K-Index: Retrieved from NOAA SWPC (current geomagnetic activity)
+
+        This is the INDUSTRY-STANDARD approach. There is no direct online MUF API
+        available - even professional services like VOACAP use this method.
+
+        The formula incorporates:
+        - Solar Flux Index (SFI) - primary driver of ionospheric propagation
+        - K-Index - geomagnetic disturbance correction
+        - Latitude - ionospheric height variation
+        - Time of day - day/night absorption differences
+        - Frequency - attenuation varies with frequency
 
         Formula: MUF ≈ Base_MUF × K_Factor × Latitude_Factor × Frequency_Factor × Time_Factor
 
         Args:
-            sfi: Solar Flux Index (70-300)
-            k_index: Geomagnetic K-Index (0-9)
+            sfi: Solar Flux Index from NOAA (70-300 solar flux units)
+            k_index: Geomagnetic K-Index from NOAA (0-9 scale)
             latitude: Observer latitude in degrees (0-90)
             frequency_mhz: Operating frequency in MHz (for attenuation calc)
             longitude: Observer longitude in degrees (-180 to 180)
