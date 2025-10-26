@@ -58,7 +58,23 @@ class MainWindow(QMainWindow):
 
         # Setup UI
         self.setWindowTitle("W4GNS Ham Radio Logger")
+
+        # Set initial window size and position (allowing resizing)
         self.setGeometry(100, 100, 1400, 900)
+
+        # Set minimum size to allow resizing but maintain usability
+        self.setMinimumSize(800, 600)
+
+        # Make window resizable (restore from saved geometry if available)
+        saved_geometry = self.config_manager.get("ui.window_geometry")
+        if saved_geometry:
+            try:
+                # Geometry is stored as (x, y, width, height) tuple
+                x, y, w, h = saved_geometry
+                self.setGeometry(x, y, w, h)
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid saved window geometry: {saved_geometry}")
+                self.setGeometry(100, 100, 1400, 900)
 
         self._create_menu_bar()
         self._create_toolbar()
@@ -465,6 +481,15 @@ class MainWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
+                # Save window geometry for next session
+                try:
+                    geometry = self.geometry()
+                    geometry_tuple = (geometry.x(), geometry.y(), geometry.width(), geometry.height())
+                    self.config_manager.set("ui.window_geometry", geometry_tuple)
+                    logger.debug(f"Saved window geometry: {geometry_tuple}")
+                except Exception as geom_error:
+                    logger.warning(f"Error saving window geometry: {geom_error}")
+
                 # Stop spot manager BEFORE closing database to prevent background thread errors
                 try:
                     if hasattr(self, 'spot_manager') and self.spot_manager:
