@@ -71,8 +71,14 @@ class TribuneAward(AwardProgram):
         try:
             if not TribuneFetcher.is_tribune_member(self.db, contact.get('skcc_number', '')):
                 return False
-        except:
-            # If we can't check, require manual verification
+        except Exception as e:
+            # If we can't check, log error and require manual verification
+            logger.warning(
+                f"Failed to check Tribune membership for {contact.get('callsign', 'unknown')}: {e}. "
+                f"Contact will require manual verification.",
+                exc_info=True
+            )
+            # Return False to indicate this contact needs verification
             pass
 
         return True

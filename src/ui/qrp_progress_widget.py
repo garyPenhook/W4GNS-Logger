@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 from src.database.repository import DatabaseRepository
+from src.ui.signals import get_app_signals
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,14 @@ class QRPProgressWidget(QWidget):
         self.db = db
 
         self._init_ui()
+        self.refresh()
 
-        # Auto-refresh every 5 seconds
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh)
-        self.refresh_timer.start(5000)
+        # Connect to signals instead of using polling timer
+        signals = get_app_signals()
+        signals.contacts_changed.connect(self.refresh)
+        signals.contact_added.connect(self.refresh)
+        signals.contact_modified.connect(self.refresh)
+        signals.contact_deleted.connect(self.refresh)
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -259,8 +263,3 @@ class QRPProgressWidget(QWidget):
 
         except Exception as e:
             logger.error(f"Error refreshing QRP progress: {e}", exc_info=True)
-
-    def closeEvent(self, event) -> None:
-        """Clean up timer on close"""
-        self.refresh_timer.stop()
-        super().closeEvent(event)

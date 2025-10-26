@@ -71,8 +71,18 @@ class BackupManager:
 
             # Backup database
             db_backup_path = backup_dir / database_path.name
-            shutil.copy2(database_path, db_backup_path)
-            logger.info(f"Database backed up to: {db_backup_path}")
+            try:
+                shutil.copy2(database_path, db_backup_path)
+                logger.info(f"Database backed up to: {db_backup_path}")
+            except FileNotFoundError as e:
+                logger.error(f"Database file not found during backup: {e}")
+                raise
+            except PermissionError as e:
+                logger.error(f"Permission denied reading database: {e}")
+                raise
+            except IOError as e:
+                logger.error(f"IO error during database backup: {e}")
+                raise
 
             # Find and backup most recent ADIF file
             adif_backup_path = None
@@ -80,8 +90,18 @@ class BackupManager:
 
             if most_recent_adif:
                 adif_backup_path = backup_dir / most_recent_adif.name
-                shutil.copy2(most_recent_adif, adif_backup_path)
-                logger.info(f"ADIF file backed up to: {adif_backup_path}")
+                try:
+                    shutil.copy2(most_recent_adif, adif_backup_path)
+                    logger.info(f"ADIF file backed up to: {adif_backup_path}")
+                except FileNotFoundError as e:
+                    logger.error(f"ADIF file not found during backup: {e}")
+                    # Continue - ADIF backup is optional
+                except PermissionError as e:
+                    logger.error(f"Permission denied reading ADIF file: {e}")
+                    # Continue - ADIF backup is optional
+                except IOError as e:
+                    logger.error(f"IO error during ADIF backup: {e}")
+                    # Continue - ADIF backup is optional
             else:
                 logger.warning("No ADIF file found for backup")
 
@@ -143,19 +163,27 @@ class BackupManager:
 
         try:
             # Find all ADIF files
-            adif_files = list(adif_directory.glob("*.adif")) + list(
-                adif_directory.glob("*.adi")
-            )
+            try:
+                adif_files = list(adif_directory.glob("*.adif")) + list(
+                    adif_directory.glob("*.adi")
+                )
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Cannot access ADIF directory {adif_directory}: {e}")
+                return None
 
             if not adif_files:
                 logger.warning(f"No ADIF files found in {adif_directory}")
                 return None
 
             # Return most recently modified
-            most_recent = max(adif_files, key=lambda p: p.stat().st_mtime)
-            logger.debug(f"Found most recent ADIF file: {most_recent}")
-            return most_recent
+            try:
+                most_recent = max(adif_files, key=lambda p: p.stat().st_mtime)
+                logger.debug(f"Found most recent ADIF file: {most_recent}")
+                return most_recent
+            except (OSError, ValueError) as e:
+                logger.warning(f"Error determining most recent ADIF file: {e}")
+                return None
 
         except Exception as e:
-            logger.warning(f"Error finding ADIF file: {e}")
+            logger.warning(f"Unexpected error finding ADIF file: {e}", exc_info=True)
             return None

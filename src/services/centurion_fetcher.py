@@ -44,7 +44,7 @@ class CenturionFetcher:
             logger.error(f"Failed to fetch Centurion list: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error fetching Centurion list: {e}")
+            logger.error(f"Unexpected error fetching Centurion list: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -110,8 +110,11 @@ class CenturionFetcher:
             logger.info(f"Parsed {len(members)} Centurion members")
             return members
 
+        except (ValueError, IndexError, KeyError, AttributeError) as e:
+            logger.error(f"Error parsing Centurion list - malformed data: {e}", exc_info=True)
+            return []
         except Exception as e:
-            logger.error(f"Error parsing Centurion list: {e}")
+            logger.error(f"Unexpected error parsing Centurion list: {e}", exc_info=True)
             return []
 
     @staticmethod
@@ -154,8 +157,12 @@ class CenturionFetcher:
             logger.info(f"Updated database with {len(members)} Centurion members")
             return True
 
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error(f"Invalid member data when updating Centurion database: {e}", exc_info=True)
+            db.rollback()
+            return False
         except Exception as e:
-            logger.error(f"Error updating Centurion database: {e}")
+            logger.error(f"Unexpected error updating Centurion database: {e}", exc_info=True)
             db.rollback()
             return False
 
@@ -188,8 +195,11 @@ class CenturionFetcher:
 
             return should_update
 
+        except TypeError as e:
+            logger.error(f"Error checking Centurion list age - invalid date format: {e}", exc_info=True)
+            return True  # Try to update on error
         except Exception as e:
-            logger.error(f"Error checking Centurion list age: {e}")
+            logger.error(f"Unexpected error checking Centurion list age: {e}", exc_info=True)
             return True  # Try to update on error
 
     @staticmethod
@@ -232,7 +242,7 @@ class CenturionFetcher:
             return success
 
         except Exception as e:
-            logger.error(f"Unexpected error during Centurion list refresh: {e}")
+            logger.error(f"Unexpected error during Centurion list refresh: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -263,8 +273,11 @@ class CenturionFetcher:
 
             return member is not None
 
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error checking Centurion status - invalid input: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error checking Centurion status: {e}")
+            logger.error(f"Unexpected error checking Centurion status: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -278,5 +291,5 @@ class CenturionFetcher:
         try:
             return db.query(CenturionMember).count()
         except Exception as e:
-            logger.error(f"Error getting Centurion member count: {e}")
+            logger.error(f"Error getting Centurion member count: {e}", exc_info=True)
             return 0

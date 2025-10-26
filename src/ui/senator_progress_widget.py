@@ -16,6 +16,7 @@ from PyQt6.QtGui import QFont, QColor
 
 from src.database.repository import DatabaseRepository
 from src.services.senator_fetcher import SenatorFetcher
+from src.ui.signals import get_app_signals
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +39,21 @@ class SenatorProgressWidget(QWidget):
         self.db = db
 
         self._init_ui()
+        self.refresh()
 
-        # Auto-refresh every 10 seconds
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh)
-        self.refresh_timer.start(10000)
+        # Connect to signals instead of polling timer for refresh
+        signals = get_app_signals()
+        signals.contacts_changed.connect(self.refresh)
+        signals.contact_added.connect(self.refresh)
+        signals.contact_modified.connect(self.refresh)
+        signals.contact_deleted.connect(self.refresh)
 
-        # Auto-update Senator list daily
+        # Auto-update Senator list daily (keep as scheduled timer)
         self.update_list_timer = QTimer()
         self.update_list_timer.timeout.connect(self._update_senator_list)
         self.update_list_timer.start(3600000)  # Every hour, check if update needed
 
-        # Initial refresh
-        self.refresh()
+        # Initial update of Senator list
         self._update_senator_list()
 
     def _init_ui(self) -> None:
@@ -260,7 +263,9 @@ class SenatorProgressWidget(QWidget):
                 try:
                     date_obj = datetime.strptime(achievement_date, "%Y%m%d")
                     achievement_str = date_obj.strftime("%b %d, %Y")
-                except:
+                except ValueError as e:
+                    # Date parsing failed, use original string
+                    logger.warning(f"Failed to parse Tribune x8 achievement date '{achievement_date}': {e}")
                     achievement_str = achievement_date
 
             # Update status label
@@ -341,6 +346,5 @@ class SenatorProgressWidget(QWidget):
 
     def closeEvent(self, event):
         """Cleanup timers on close"""
-        self.refresh_timer.stop()
         self.update_list_timer.stop()
         super().closeEvent(event)

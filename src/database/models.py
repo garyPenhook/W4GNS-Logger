@@ -16,7 +16,16 @@ Base = declarative_base()
 
 
 class Contact(Base):
-    """Contact/QSO Record - Supports all ADIF 3.1.5 fields with configurable GUI display"""
+    """
+    Contact/QSO Record - Supports all ADIF 3.1.5 fields with configurable GUI display.
+
+    IMPORTANT: All times and dates MUST be in UTC format for consistent logging across timezones.
+    - qso_date: UTC date in YYYYMMDD format (ADIF standard)
+    - time_on: UTC time in HHMM format (ADIF standard)
+    - time_off: UTC time in HHMM format (ADIF standard)
+    - qsl_sent_date: UTC date in YYYYMMDD format
+    - qsl_rcvd_date: UTC date in YYYYMMDD format
+    """
 
     __tablename__ = "contacts"
 
@@ -24,13 +33,13 @@ class Contact(Base):
 
     # === BASIC FIELDS (Always displayed in GUI by default) ===
     callsign = Column(String(12), nullable=False, index=True)
-    qso_date = Column(String(8), nullable=False, index=True)  # YYYYMMDD
-    time_on = Column(String(4), nullable=False)  # HHMM
+    qso_date = Column(String(8), nullable=False, index=True)  # YYYYMMDD (UTC)
+    time_on = Column(String(4), nullable=False)  # HHMM (UTC)
     band = Column(String(10), nullable=False, index=True)  # 160M, 80M, etc.
     mode = Column(String(20), nullable=False, index=True, default="CW")  # CW, SSB, FM, etc. (default: CW)
 
     # === EXTENDED QSO FIELDS ===
-    time_off = Column(String(4))
+    time_off = Column(String(4))  # HHMM (UTC)
     frequency: Column[float] = Column(Float)  # type: ignore[assignment]  # MHz
     freq_rx: Column[float] = Column(Float)  # type: ignore[assignment]  # RX frequency
     rst_sent = Column(String(3))  # Signal report sent
@@ -92,8 +101,8 @@ class Contact(Base):
     # === QSL/CONFIRMATION FIELDS ===
     qsl_rcvd = Column(String(1))  # Y/N/V
     qsl_sent = Column(String(1))  # Y/N/V
-    qsl_rcvd_date = Column(String(8))
-    qsl_sent_date = Column(String(8))
+    qsl_rcvd_date = Column(String(8))  # YYYYMMDD (UTC)
+    qsl_sent_date = Column(String(8))  # YYYYMMDD (UTC)
     qsl_via = Column(String(50))  # DIRECT, BUREAU, MANAGER
     lotw_qsl_rcvd = Column(String(1))  # Y/N
     lotw_qsl_sent = Column(String(1))  # Y/N

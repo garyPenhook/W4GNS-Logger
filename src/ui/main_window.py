@@ -38,8 +38,20 @@ class MainWindow(QMainWindow):
         self.config_manager = get_config_manager()
 
         # Initialize database
-        db_path = self.config_manager.get("database.location")
-        self.db = DatabaseRepository(db_path)
+        try:
+            db_path = self.config_manager.get("database.location")
+            self.db = DatabaseRepository(db_path)
+            logger.info(f"Database initialized at {db_path}")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Database Error",
+                f"Cannot initialize database at {db_path}:\n{str(e)}\n\n"
+                "The application will continue but may not function properly.\n"
+                "Please check database permissions and try again."
+            )
+            self.db = None  # Set to None to prevent further database access attempts
 
         # Will be set after UI is initialized
         self.status_label = None
@@ -149,6 +161,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._create_logging_tab(), "Logging")
         self.tabs.addTab(self._create_qrp_progress_tab(), "QRP Progress")
         self.tabs.addTab(self._create_power_stats_tab(), "Power Stats")
+        self.tabs.addTab(self._create_space_weather_tab(), "Space Weather")
         self.tabs.addTab(self._create_contacts_tab(), "Contacts")
         self.tabs.addTab(self._create_awards_tab(), "Awards")
         self.tabs.addTab(self._create_settings_tab(), "Settings")
@@ -210,6 +223,15 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(PowerStatsWidget(self.db))
+        widget.setLayout(layout)
+        return widget
+
+    def _create_space_weather_tab(self) -> QWidget:
+        """Create space weather tab"""
+        from src.ui.space_weather_widget import SpaceWeatherWidget
+        widget = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(SpaceWeatherWidget())
         widget.setLayout(layout)
         return widget
 
@@ -488,6 +510,7 @@ class MainWindow(QMainWindow):
             try:
                 if hasattr(self, 'db') and self.db:
                     self.db.engine.dispose()
-            except:
-                pass
+            except Exception as cleanup_error:
+                logger.warning(f"Error disposing database engine: {cleanup_error}")
+                # Continue with exit even if cleanup fails
             event.accept()

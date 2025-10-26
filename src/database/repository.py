@@ -6,12 +6,14 @@ Provides abstraction for database operations.
 
 import logging
 from typing import List, Optional, Dict, Any
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, pool
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, CenturionMember, TribuneeMember, SenatorMember
 from .skcc_membership import SKCCMembershipManager
+from src.utils.cache import AwardProgressCache
+from src.ui.signals import get_app_signals
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +27,44 @@ class DatabaseRepository:
 
         Args:
             db_path: Path to SQLite database file
+
+        Raises:
+            SQLAlchemyError: If database connection fails
         """
         self.db_path = db_path
-        self.engine = create_engine(f"sqlite:///{db_path}", echo=False)
-        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        try:
+            # Create engine with timeout protection and connection pooling
+            self.engine = create_engine(
+                f"sqlite:///{db_path}",
+                echo=False,
+                connect_args={
+                    'timeout': 10.0,  # 10 second timeout for database lock
+                    'check_same_thread': False  # Allow multi-threaded access
+                },
+                poolclass=pool.SingletonThreadPool,  # Use singleton pool for SQLite
+                pool_pre_ping=True  # Verify connections before use
+            )
+            self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
 
-        # Create tables if they don't exist
-        Base.metadata.create_all(self.engine)
+            # Create tables if they don't exist
+            Base.metadata.create_all(self.engine)
 
-        # Initialize SKCC membership manager
-        self.skcc_members = SKCCMembershipManager(db_path)
+            # Initialize SKCC membership manager
+            self.skcc_members = SKCCMembershipManager(db_path)
 
-        logger.info(f"Database initialized: {db_path}")
+            # Initialize award progress cache with 30-second TTL
+            self.award_cache = AwardProgressCache(ttl_seconds=30)
+
+            # Get global signals instance
+            self.signals = get_app_signals()
+
+            logger.info(f"Database initialized: {db_path}")
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to initialize database at {db_path}: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error initializing database: {e}", exc_info=True)
+            raise
 
     def get_session(self) -> Session:
         """Get a new database session"""
@@ -57,6 +85,12 @@ class DatabaseRepository:
             session.add(contact)
             session.commit()
             logger.info(f"Contact added: {contact.callsign}")
+
+            # Invalidate caches and emit signals
+            self.award_cache.invalidate_all_award_caches()
+            self.signals.contact_added.emit()
+            self.signals.contacts_changed.emit()
+
             return contact
         except ValueError as e:
             session.rollback()
@@ -129,6 +163,12 @@ class DatabaseRepository:
                 contact.validate_skcc()
                 session.commit()
                 logger.info(f"Contact updated: {contact_id}")
+
+                # Invalidate caches and emit signals
+                self.award_cache.invalidate_all_award_caches()
+                self.signals.contact_modified.emit()
+                self.signals.contacts_changed.emit()
+
             return contact
         except ValueError as e:
             session.rollback()
@@ -150,6 +190,12 @@ class DatabaseRepository:
                 session.delete(contact)
                 session.commit()
                 logger.info(f"Contact deleted: {contact_id}")
+
+                # Invalidate caches and emit signals
+                self.award_cache.invalidate_all_award_caches()
+                self.signals.contact_deleted.emit()
+                self.signals.contacts_changed.emit()
+
                 return True
             return False
         except SQLAlchemyError as e:
@@ -687,6 +733,12 @@ class DatabaseRepository:
         Returns:
             Dict with QRP x1 and x2 progress analysis
         """
+        # Check cache first
+        cached = self.award_cache.get_qrp_progress()
+        if cached is not None:
+            logger.debug("Returning cached QRP progress")
+            return cached
+
         session = self.get_session()
         try:
             point_map = {
@@ -732,7 +784,7 @@ class DatabaseRepository:
                     points = point_map.get(band, 0)
                     qrp_x2_points += points
 
-            return {
+            result = {
                 "qrp_x1": {
                     "points": qrp_x1_points,
                     "requirement": 300,
@@ -754,6 +806,9 @@ class DatabaseRepository:
                     "x2": {band: point_map.get(band, 0) for band in band_contacts_x2},
                 },
             }
+            # Cache the result
+            self.award_cache.set_qrp_progress(result)
+            return result
         finally:
             session.close()
 
@@ -1148,6 +1203,12 @@ class DatabaseRepository:
         Returns:
             Dict with Centurion progress analysis
         """
+        # Check cache first
+        cached = self.award_cache.get_centurion_progress()
+        if cached is not None:
+            logger.debug("Returning cached Centurion progress")
+            return cached
+
         session = self.get_session()
         try:
             from src.config.settings import get_config_manager
@@ -1244,7 +1305,7 @@ class DatabaseRepository:
             if next_level > 1000:
                 next_level = ((member_count // 500) + 1) * 500
 
-            return {
+            result = {
                 'unique_members': member_count,
                 'required': 100,
                 'achieved': member_count >= 100,
@@ -1255,6 +1316,9 @@ class DatabaseRepository:
                 'total_centurion_on_record': session.query(func.count(CenturionMember.id)).scalar() or 0,
                 'centurion_achievement_date': centurion_achievement_date  # Official Centurion achievement date from SKCC list
             }
+            # Cache the result
+            self.award_cache.set_centurion_progress(result)
+            return result
 
         except SQLAlchemyError as e:
             logger.error(f"Error analyzing Centurion progress: {e}")
@@ -1284,6 +1348,12 @@ class DatabaseRepository:
         Returns:
             Dict with Tribune progress analysis
         """
+        # Check cache first
+        cached = self.award_cache.get_tribune_progress()
+        if cached is not None:
+            logger.debug("Returning cached Tribune progress")
+            return cached
+
         session = self.get_session()
         try:
             from src.config.settings import get_config_manager
@@ -1426,7 +1496,7 @@ class DatabaseRepository:
 
                 tribunes_to_next = max(0, next_level - tribune_count_for_endorsement)
 
-            return {
+            result = {
                 'unique_tribunes': tribune_count,
                 'tribunes_after_achievement': tribune_count_for_endorsement,
                 'required': 50,
@@ -1440,6 +1510,9 @@ class DatabaseRepository:
                 'total_tribune_on_record': session.query(func.count(TribuneeMember.id)).scalar() or 0,
                 'tribune_achievement_date': tribune_achievement_date  # Official Tribune achievement date from SKCC list
             }
+            # Cache the result
+            self.award_cache.set_tribune_progress(result)
+            return result
 
         except SQLAlchemyError as e:
             logger.error(f"Error analyzing Tribune progress: {e}")
@@ -1471,6 +1544,12 @@ class DatabaseRepository:
         Returns:
             Dict with Senator progress analysis
         """
+        # Check cache first
+        cached = self.award_cache.get_senator_progress()
+        if cached is not None:
+            logger.debug("Returning cached Senator progress")
+            return cached
+
         session = self.get_session()
         try:
             from src.config.settings import get_config_manager
@@ -1610,7 +1689,7 @@ class DatabaseRepository:
                 next_level = ((senator_count_for_endorsement // 200) + 1) * 200
                 senators_to_next = max(0, next_level - senator_count_for_endorsement)
 
-            return {
+            result = {
                 'unique_tribunes': len(unique_tribunes),
                 'unique_senators': senator_count_for_endorsement,
                 'required': 200,
@@ -1624,6 +1703,9 @@ class DatabaseRepository:
                 'total_senator_on_record': session.query(func.count(SenatorMember.id)).scalar() or 0,
                 'tribune_x8_achievement_date': tribune_x8_achievement_date  # Official Tribune x8 achievement date from SKCC list
             }
+            # Cache the result
+            self.award_cache.set_senator_progress(result)
+            return result
 
         except SQLAlchemyError as e:
             logger.error(f"Error analyzing Senator progress: {e}")

@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont
 
 from src.database.repository import DatabaseRepository
 from src.database.models import Contact
+from src.ui.signals import get_app_signals
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +35,20 @@ class ContactsListWidget(QWidget):
         self.db = db
         self.contacts: List[Contact] = []
 
+        # Pagination state
+        self.current_offset = 0
+        self.page_size = 100  # Load 100 contacts per page
+        self.total_contacts = 0
+
         self._init_ui()
         self.refresh()
 
-        # Auto-refresh every 5 seconds
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh)
-        self.refresh_timer.start(5000)
+        # Connect to signals instead of using polling timer
+        signals = get_app_signals()
+        signals.contacts_changed.connect(self.refresh)
+        signals.contact_added.connect(self.refresh)
+        signals.contact_modified.connect(self.refresh)
+        signals.contact_deleted.connect(self.refresh)
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -60,7 +68,7 @@ class ContactsListWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "Callsign", "Date", "Time", "Band", "Mode", "SKCC", "Power"
+            "Callsign", "Date (UTC)", "Time (UTC)", "Band", "Mode", "SKCC", "Power"
         ])
         self.table.setColumnWidth(0, 100)
         self.table.setColumnWidth(1, 90)
@@ -72,6 +80,19 @@ class ContactsListWidget(QWidget):
         self.table.setSelectionBehavior(self.table.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         main_layout.addWidget(self.table, 1)  # Give table stretch factor of 1
+
+        # Pagination controls
+        pagination_layout = QHBoxLayout()
+        self.pagination_label = QLabel("Page 1")
+        self.pagination_label.setFont(QFont("Arial", 9))
+        pagination_layout.addWidget(self.pagination_label)
+
+        self.load_more_btn = QPushButton("Load More Contacts")
+        self.load_more_btn.clicked.connect(self.load_next_page)
+        pagination_layout.addWidget(self.load_more_btn)
+
+        pagination_layout.addStretch()
+        main_layout.addLayout(pagination_layout)
 
         self.setLayout(main_layout)
 
@@ -134,21 +155,87 @@ class ContactsListWidget(QWidget):
     def refresh(self) -> None:
         """Refresh the contacts table"""
         try:
-            # Get all contacts
-            self.contacts = self.db.get_all_contacts(limit=10000)
+            # Reset to first page on refresh
+            self.current_offset = 0
+
+            try:
+                # Get contacts for current page
+                self.contacts = self.db.get_all_contacts(limit=self.page_size, offset=self.current_offset)
+
+                # Get total contact count for statistics
+                self.total_contacts = self.db.get_contact_count()
+            except Exception as db_error:
+                logger.error(f"Database error refreshing contacts: {db_error}", exc_info=True)
+                self.contacts = []
+                self.total_contacts = 0
 
             # Apply filters
             filtered = self._apply_filters()
 
             # Update statistics
-            self.total_label.setText(f"Total: {len(self.contacts)}")
+            total_pages = (self.total_contacts + self.page_size - 1) // self.page_size if self.total_contacts > 0 else 1
+            self.total_label.setText(f"Total: {self.total_contacts}")
             self.filtered_label.setText(f"Displayed: {len(filtered)}")
+            self.pagination_label.setText(f"Page 1 of {total_pages}")
 
-            # Update table
-            self._populate_table(filtered)
+            # Update table (clear and reload)
+            self._populate_table(filtered, clear_existing=True)
+
+            # Update load more button state
+            self._update_load_more_button()
 
         except Exception as e:
-            logger.error(f"Error refreshing contacts: {e}")
+            logger.error(f"Unexpected error refreshing contacts: {e}", exc_info=True)
+            # Show error to user if possible
+            self.table.setRowCount(0)
+
+    def load_next_page(self) -> None:
+        """Load the next page of contacts"""
+        try:
+            # Move to next page
+            self.current_offset += self.page_size
+
+            try:
+                # Get contacts for next page
+                next_contacts = self.db.get_all_contacts(limit=self.page_size, offset=self.current_offset)
+            except Exception as db_error:
+                logger.error(f"Database error loading next page: {db_error}", exc_info=True)
+                return
+
+            if not next_contacts:
+                logger.info("No more contacts to load")
+                return
+
+            # Add to existing contacts
+            self.contacts.extend(next_contacts)
+
+            # Apply filters to new contacts only
+            filtered = self._apply_filters()
+
+            # Update pagination label
+            current_page = (self.current_offset // self.page_size) + 1
+            total_pages = (self.total_contacts + self.page_size - 1) // self.page_size
+            self.pagination_label.setText(f"Page {current_page} of {total_pages}")
+
+            # Append to table instead of replacing
+            self._populate_table(filtered, clear_existing=False)
+
+            # Update load more button state
+            self._update_load_more_button()
+
+        except Exception as e:
+            logger.error(f"Unexpected error loading next page: {e}", exc_info=True)
+
+    def _update_load_more_button(self) -> None:
+        """Update load more button state"""
+        total_displayed = self.table.rowCount()
+        can_load_more = self.current_offset + self.page_size < self.total_contacts
+        self.load_more_btn.setEnabled(can_load_more)
+        if can_load_more:
+            remaining = self.total_contacts - total_displayed
+            self.load_more_btn.setText(f"Load More ({remaining} remaining)")
+        else:
+            self.load_more_btn.setText("All Contacts Loaded")
 
     def _apply_filters(self) -> List[Contact]:
         """Apply search and filter criteria"""
@@ -174,11 +261,23 @@ class ContactsListWidget(QWidget):
 
         return filtered
 
-    def _populate_table(self, contacts: List[Contact]) -> None:
-        """Populate the table with contacts"""
-        self.table.setRowCount(len(contacts))
+    def _populate_table(self, contacts: List[Contact], clear_existing: bool = True) -> None:
+        """
+        Populate the table with contacts.
 
-        for row, contact in enumerate(contacts):
+        Args:
+            contacts: List of contacts to display
+            clear_existing: If True, clear existing rows. If False, append new rows.
+        """
+        if clear_existing:
+            self.table.setRowCount(0)
+            start_row = 0
+        else:
+            start_row = self.table.rowCount()
+            self.table.setRowCount(start_row + len(contacts))
+
+        for offset, contact in enumerate(contacts):
+            row = start_row + offset
             # Callsign
             self.table.setItem(row, 0, QTableWidgetItem(contact.callsign))
 

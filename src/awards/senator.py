@@ -73,8 +73,14 @@ class SenatorAward(AwardProgram):
             if not (TribuneFetcher.is_tribune_member(self.db, skcc_num) or
                     SenatorFetcher.is_senator_member(self.db, skcc_num)):
                 return False
-        except:
-            # If we can't check, require manual verification
+        except Exception as e:
+            # If we can't check, log error and require manual verification
+            logger.warning(
+                f"Failed to check Tribune/Senator membership for {contact.get('callsign', 'unknown')}: {e}. "
+                f"Contact will require manual verification.",
+                exc_info=True
+            )
+            # Return False to indicate this contact needs verification
             pass
 
         return True

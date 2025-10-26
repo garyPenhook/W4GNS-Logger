@@ -110,8 +110,14 @@ class TribuneFetcher:
             logger.info(f"Parsed {len(members)} Tribune members")
             return members
 
+        except (ValueError, IndexError, KeyError, AttributeError) as e:
+            # ValueError: date parsing or int conversion
+            # IndexError/KeyError: malformed data structure
+            # AttributeError: missing attributes
+            logger.error(f"Error parsing Tribune list - malformed data: {e}", exc_info=True)
+            return []
         except Exception as e:
-            logger.error(f"Error parsing Tribune list: {e}")
+            logger.error(f"Unexpected error parsing Tribune list: {e}", exc_info=True)
             return []
 
     @staticmethod
@@ -154,8 +160,14 @@ class TribuneFetcher:
             logger.info(f"Updated database with {len(members)} Tribune members")
             return True
 
+        except (ValueError, KeyError, AttributeError) as e:
+            # Validation error in member data
+            logger.error(f"Invalid member data when updating Tribune database: {e}", exc_info=True)
+            db.rollback()
+            return False
         except Exception as e:
-            logger.error(f"Error updating Tribune database: {e}")
+            # Database or other errors
+            logger.error(f"Unexpected error updating Tribune database: {e}", exc_info=True)
             db.rollback()
             return False
 
@@ -188,8 +200,12 @@ class TribuneFetcher:
 
             return should_update
 
+        except TypeError as e:
+            # Type error in datetime comparison
+            logger.error(f"Error checking Tribune list age - invalid date format: {e}", exc_info=True)
+            return True  # Try to update on error
         except Exception as e:
-            logger.error(f"Error checking Tribune list age: {e}")
+            logger.error(f"Unexpected error checking Tribune list age: {e}", exc_info=True)
             return True  # Try to update on error
 
     @staticmethod
@@ -232,7 +248,7 @@ class TribuneFetcher:
             return success
 
         except Exception as e:
-            logger.error(f"Unexpected error during Tribune list refresh: {e}")
+            logger.error(f"Unexpected error during Tribune list refresh: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -263,8 +279,11 @@ class TribuneFetcher:
 
             return member is not None
 
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error checking Tribune status - invalid input: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error checking Tribune status: {e}")
+            logger.error(f"Unexpected error checking Tribune status: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -278,5 +297,5 @@ class TribuneFetcher:
         try:
             return db.query(TribuneeMember).count()
         except Exception as e:
-            logger.error(f"Error getting Tribune member count: {e}")
+            logger.error(f"Error getting Tribune member count: {e}", exc_info=True)
             return 0

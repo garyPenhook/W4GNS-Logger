@@ -95,13 +95,28 @@ class ConfigManager:
                 with open(self.config_file, "r") as f:
                     self.settings = yaml.safe_load(f) or {}
                 logger.info(f"Loaded configuration from {self.config_file}")
+            except FileNotFoundError as e:
+                logger.error(f"Config file not found: {e}. Using defaults.")
+                self.settings = self.DEFAULT_CONFIG.copy()
+            except PermissionError as e:
+                logger.error(f"Permission denied reading config: {e}. Using defaults.")
+                self.settings = self.DEFAULT_CONFIG.copy()
+            except yaml.YAMLError as e:
+                logger.error(f"Invalid YAML in config file: {e}. Using defaults.")
+                self.settings = self.DEFAULT_CONFIG.copy()
+            except IOError as e:
+                logger.error(f"IO error reading config: {e}. Using defaults.")
+                self.settings = self.DEFAULT_CONFIG.copy()
             except Exception as e:
-                logger.error(f"Failed to load config: {e}. Using defaults.")
+                logger.error(f"Unexpected error loading config: {e}. Using defaults.", exc_info=True)
                 self.settings = self.DEFAULT_CONFIG.copy()
         else:
             logger.info("No config file found. Using defaults.")
             self.settings = self.DEFAULT_CONFIG.copy()
-            self.save()
+            try:
+                self.save()
+            except Exception as save_error:
+                logger.warning(f"Could not save default config: {save_error}")
 
     def save(self) -> None:
         """Save current configuration to file"""
@@ -109,8 +124,18 @@ class ConfigManager:
             with open(self.config_file, "w") as f:
                 yaml.dump(self.settings, f, default_flow_style=False)
             logger.info(f"Configuration saved to {self.config_file}")
+        except PermissionError as e:
+            logger.error(f"Permission denied writing config: {e}")
+            raise
+        except IOError as e:
+            logger.error(f"IO error saving config: {e}")
+            raise
+        except yaml.YAMLError as e:
+            logger.error(f"YAML error writing config: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Failed to save config: {e}")
+            logger.error(f"Unexpected error saving config: {e}", exc_info=True)
+            raise
 
     def get(self, key: str, default: Any = None) -> Any:
         """

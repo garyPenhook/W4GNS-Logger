@@ -6,7 +6,7 @@ band, mode, frequency, country, and state selection.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from PyQt6.QtWidgets import (
@@ -24,6 +24,10 @@ from src.ui.field_manager import FieldManager
 from src.ui.resizable_field import ResizableFieldRow
 from src.qrz import get_qrz_service
 from src.config.settings import get_config_manager
+from src.utils.timezone_utils import (
+    get_utc_now, datetime_to_adif_date, datetime_to_adif_time,
+    format_utc_time_for_display
+)
 
 logger = logging.getLogger(__name__)
 
@@ -227,10 +231,13 @@ class LoggingForm(QWidget):
         row1.addWidget(create_label("Rcvd:"))
         row1.addWidget(self.rst_rcvd_input, 0)
 
-        # Date/Time
+        # Date/Time (UTC - ALL LOGGING IS IN UTC)
         self.datetime_input = QDateTimeEdit()
-        self.datetime_input.setDateTime(QDateTime.currentDateTime())
-        self.datetime_input.setDisplayFormat("MM-dd hh:mm")
+        # Convert UTC to QDateTime
+        utc_now = get_utc_now()
+        q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()))
+        self.datetime_input.setDateTime(q_datetime)
+        self.datetime_input.setDisplayFormat("MM-dd hh:mm (UTC)")  # Show UTC indicator
         self.datetime_input.focusInEvent = lambda event: self._on_datetime_focus_in()
         self.datetime_input.focusOutEvent = lambda event: self._on_datetime_focus_out()
         font = self.datetime_input.font()
@@ -698,20 +705,29 @@ class LoggingForm(QWidget):
             logger.debug("Form validation passed, proceeding with save")
 
             try:
-                # Parse datetime
+                # Parse datetime (MUST BE IN UTC)
                 datetime_edit = self.datetime_input.dateTime()
                 if datetime_edit is None:
                     raise ValueError("Invalid datetime value")
 
+                # QDateTime.toPython() returns naive datetime
+                # QDateTime stores as local system time, so we need to interpret it as UTC
                 qso_datetime = datetime_edit.toPython()
                 if qso_datetime is None:
                     raise ValueError("Failed to convert QDateTime to Python datetime")
 
-                qso_date = qso_datetime.strftime("%Y%m%d")
+                # Make datetime UTC-aware
+                # Since we're using QDateTime.fromSecsSinceEpoch (which is UTC),
+                # the toPython() result should be treated as UTC
+                if qso_datetime.tzinfo is None:
+                    qso_datetime = qso_datetime.replace(tzinfo=timezone.utc)
+
+                # Convert to ADIF format (YYYYMMDD and HHMM)
+                qso_date = datetime_to_adif_date(qso_datetime)
 
                 # Get QSO start time (time_on) and end time (time_off)
                 time_on, time_off = self._get_qso_times()
-                logger.debug(f"Parsed datetime: {qso_date} | QSO: {time_on}-{time_off}")
+                logger.debug(f"Parsed UTC datetime: {qso_date} {time_on} UTC | QSO: {time_on}-{time_off}")
 
             except Exception as e:
                 logger.error(f"Error parsing datetime: {e}", exc_info=True)
@@ -814,10 +830,14 @@ class LoggingForm(QWidget):
         Clear all form fields
 
         Resets all inputs to default/empty state and sets focus to callsign field.
+        ALL TIMES ARE IN UTC.
         """
         try:
             self.callsign_input.clear()
-            self.datetime_input.setDateTime(QDateTime.currentDateTime())
+            # Set datetime to current UTC time
+            utc_now = get_utc_now()
+            q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()))
+            self.datetime_input.setDateTime(q_datetime)
             self.band_combo.setCurrentIndex(0)
             self.mode_combo.setCurrentIndex(0)
             self.frequency_input.setValue(0.0)
@@ -842,7 +862,7 @@ class LoggingForm(QWidget):
             self.callsign_stable_timer.stop()
 
             self.callsign_input.setFocus()
-            logger.debug("Form cleared successfully - QSO timing reset")
+            logger.debug("Form cleared successfully - QSO timing reset, UTC time restored")
         except Exception as e:
             logger.error(f"Error clearing form: {e}", exc_info=True)
             raise
@@ -1000,16 +1020,19 @@ class LoggingForm(QWidget):
 
     def _update_clock(self) -> None:
         """
-        Update datetime display to show current time (always-running clock)
+        Update datetime display to show current UTC time (always-running clock)
 
         Called by clock_timer every 500ms to keep datetime display current.
         Respects user focus - stops updating when user is actively editing the time.
+        ALL TIMES ARE IN UTC.
         """
         try:
             # Only update if user is not actively editing the datetime field
             if not self.datetime_input_focus:
-                current_datetime = QDateTime.currentDateTime()
-                self.datetime_input.setDateTime(current_datetime)
+                # Use UTC time, not local time
+                utc_now = get_utc_now()
+                q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()))
+                self.datetime_input.setDateTime(q_datetime)
         except Exception as e:
             logger.error(f"Error updating clock: {e}", exc_info=True)
 
@@ -1055,12 +1078,13 @@ class LoggingForm(QWidget):
         Called when callsign has been stable for 5 seconds
 
         Records the QSO start time and optionally fetches QRZ callsign info.
+        ALL TIMES ARE IN UTC.
         """
         current_callsign = self.callsign_input.text().strip()
 
         if current_callsign:
-            self.qso_start_time = datetime.now()
-            logger.info(f"QSO start time recorded: {self.qso_start_time.strftime('%H:%M:%S')} for {current_callsign}")
+            self.qso_start_time = get_utc_now()
+            logger.info(f"QSO start time recorded (UTC): {self.qso_start_time.strftime('%H:%M:%S')} for {current_callsign}")
 
             # Auto-fetch QRZ info if enabled
             if self.config_manager.get("qrz.auto_fetch", False):
@@ -1073,19 +1097,25 @@ class LoggingForm(QWidget):
         """
         Get QSO start and end times in ADIF format (HHMM)
 
+        ALL TIMES ARE IN UTC.
+
         Returns:
             Tuple of (time_on, time_off) in HHMM format or None if not available
         """
-        # time_on: Use qso_start_time if available, else use current time from form
+        # time_on: Use qso_start_time if available (recorded when callsign was stable)
+        # qso_start_time is already in UTC
         if self.qso_start_time:
-            time_on = self.qso_start_time.strftime("%H%M")
+            time_on = datetime_to_adif_time(self.qso_start_time)
         else:
-            # Fallback to datetime_input time
-            time_on = self.datetime_input.dateTime().toString("hhmm")
+            # Fallback to current UTC time from clock display
+            utc_now = get_utc_now()
+            time_on = datetime_to_adif_time(utc_now)
 
-        # time_off: Record when Save is clicked (now)
-        time_off = datetime.now().strftime("%H%M")
+        # time_off: Record when Save is clicked (now in UTC)
+        utc_now = get_utc_now()
+        time_off = datetime_to_adif_time(utc_now)
 
+        logger.debug(f"QSO times (UTC): time_on={time_on}, time_off={time_off}")
         return time_on, time_off
 
     def closeEvent(self, event) -> None:
@@ -1108,20 +1138,24 @@ class LoggingForm(QWidget):
             # Disconnect all signals to prevent orphaned connections
             try:
                 self.clock_timer.timeout.disconnect()
-            except:
-                pass  # Already disconnected
+            except RuntimeError:
+                # Signal already disconnected, this is expected
+                pass
             try:
                 self.callsign_stable_timer.timeout.disconnect()
-            except:
-                pass  # Already disconnected
+            except RuntimeError:
+                # Signal already disconnected, this is expected
+                pass
             try:
                 self.callsign_input.textChanged.disconnect()
-            except:
-                pass  # Already disconnected
+            except RuntimeError:
+                # Signal already disconnected, this is expected
+                pass
             try:
                 self.callsign_input.focus_lost.disconnect()
-            except:
-                pass  # Already disconnected
+            except RuntimeError:
+                # Signal already disconnected, this is expected
+                pass
 
             logger.info("LoggingForm closed and resources cleaned up")
             event.accept()

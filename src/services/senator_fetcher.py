@@ -44,7 +44,7 @@ class SenatorFetcher:
             logger.error(f"Failed to fetch Senator list: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error fetching Senator list: {e}")
+            logger.error(f"Unexpected error fetching Senator list: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -114,8 +114,11 @@ class SenatorFetcher:
             logger.info(f"Parsed {len(members)} Senator members")
             return members
 
+        except (ValueError, IndexError, KeyError, AttributeError) as e:
+            logger.error(f"Error parsing Senator list - malformed data: {e}", exc_info=True)
+            return []
         except Exception as e:
-            logger.error(f"Error parsing Senator list: {e}")
+            logger.error(f"Unexpected error parsing Senator list: {e}", exc_info=True)
             return []
 
     @staticmethod
@@ -158,8 +161,12 @@ class SenatorFetcher:
             logger.info(f"Updated database with {len(members)} Senator members")
             return True
 
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error(f"Invalid member data when updating Senator database: {e}", exc_info=True)
+            db.rollback()
+            return False
         except Exception as e:
-            logger.error(f"Error updating Senator database: {e}")
+            logger.error(f"Unexpected error updating Senator database: {e}", exc_info=True)
             db.rollback()
             return False
 
@@ -203,8 +210,11 @@ class SenatorFetcher:
                 logger.info(f"Senator list refreshed: {len(members)} members")
             return success
 
+        except TypeError as e:
+            logger.error(f"Error refreshing Senator list - invalid date format: {e}", exc_info=True)
+            return False
         except Exception as e:
-            logger.error(f"Error refreshing Senator list: {e}")
+            logger.error(f"Unexpected error refreshing Senator list: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -237,8 +247,11 @@ class SenatorFetcher:
 
             return member is not None
 
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error checking if Senator member - invalid input: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Error checking if Senator member: {e}")
+            logger.error(f"Unexpected error checking if Senator member: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -255,5 +268,5 @@ class SenatorFetcher:
         try:
             return db.query(SenatorMember).count()
         except Exception as e:
-            logger.error(f"Error getting Senator member count: {e}")
+            logger.error(f"Error getting Senator member count: {e}", exc_info=True)
             return 0
