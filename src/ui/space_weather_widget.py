@@ -321,32 +321,35 @@ class SpaceWeatherWidget(QWidget):
             row = i % 2  # 2 rows instead of 3
             col = (i // 2) * 2  # Adjust column calculation for 2-row layout
 
-            # Band label
+            # Band label with value (stacked vertically for clarity)
+            band_value_layout = QVBoxLayout()
+            band_value_layout.setSpacing(5)
+
+            # Band name and MUF value on same line
+            header_layout = QHBoxLayout()
+            header_layout.setSpacing(10)
+
             band_label = QLabel(f"{band}:")
             band_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
-            grid_layout.addWidget(band_label, row, col)
+            header_layout.addWidget(band_label)
 
-            # MUF value and bar container
-            value_bar_layout = QHBoxLayout()
-
-            # MUF value label
             muf_value_label = QLabel("--")
             muf_value_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
-            muf_value_label.setMinimumWidth(50)
+            muf_value_label.setMinimumWidth(60)
             self.muf_value_labels[band] = muf_value_label
-            value_bar_layout.addWidget(muf_value_label)
+            header_layout.addWidget(muf_value_label)
+            header_layout.addStretch()
 
-            # Simplified bar representation using label with styled background
-            # We'll show this as text with indicator (using text color coding)
+            band_value_layout.addLayout(header_layout)
+
+            # Simplified bar representation on next line
             muf_bar_label = QLabel("█░░░░░░░░░░ Calculating...")
             muf_bar_label.setFont(self._get_font(self.FONT_NORMAL))
-            muf_bar_label.setMinimumWidth(120)
             self.muf_band_labels[band] = muf_bar_label
-            value_bar_layout.addWidget(muf_bar_label)
+            band_value_layout.addWidget(muf_bar_label)
 
-            value_bar_layout.addStretch()
-
-            grid_layout.addLayout(value_bar_layout, row, col + 1)
+            # Add band layout to grid (span 2 columns)
+            grid_layout.addLayout(band_value_layout, row, col, 1, 2)
 
         layout.addLayout(grid_layout)
 
