@@ -304,26 +304,29 @@ class SpaceWeatherWidget(QWidget):
         legend_label.setStyleSheet("color: gray;")
         layout.addWidget(legend_label)
 
-        # Create grid for MUF bars (2 columns per band group, 2 rows)
+        # Create grid for MUF bars (3 columns, 2 rows - one band per cell)
         grid_layout = QGridLayout()
-        grid_layout.setSpacing(20)  # Increased spacing from 8 to 20
-        grid_layout.setRowMinimumHeight(0, 40)  # Ensure minimum row height
-        grid_layout.setRowMinimumHeight(1, 40)
+        grid_layout.setSpacing(15)
+        grid_layout.setColumnStretch(0, 1)
+        grid_layout.setColumnStretch(1, 1)
+        grid_layout.setColumnStretch(2, 1)
 
         self.muf_band_labels: Dict[str, QLabel] = {}  # Band name -> label with bar
         self.muf_value_labels: Dict[str, QLabel] = {}  # Band name -> value label
 
-        # Most practical amateur HF bands (7 key bands that most hams use)
+        # Most practical amateur HF bands (6 key bands that most hams use)
         # Omitted: 60m (rare), 17m (niche), 12m (niche), 6m (requires different antenna)
         bands_to_show = ["80m", "40m", "30m", "20m", "15m", "10m"]
 
         for i, band in enumerate(bands_to_show):
-            row = i % 2  # 2 rows instead of 3
-            col = (i // 2) * 2  # Adjust column calculation for 2-row layout
+            row = i // 3  # 2 rows
+            col = i % 3   # 3 columns
 
-            # Band label with value (stacked vertically for clarity)
-            band_value_layout = QVBoxLayout()
-            band_value_layout.setSpacing(5)
+            # Band container with all elements stacked vertically
+            band_container = QWidget()
+            band_layout = QVBoxLayout()
+            band_layout.setSpacing(8)
+            band_layout.setContentsMargins(10, 10, 10, 10)
 
             # Band name and MUF value on same line
             header_layout = QHBoxLayout()
@@ -335,21 +338,20 @@ class SpaceWeatherWidget(QWidget):
 
             muf_value_label = QLabel("--")
             muf_value_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
-            muf_value_label.setMinimumWidth(60)
             self.muf_value_labels[band] = muf_value_label
             header_layout.addWidget(muf_value_label)
             header_layout.addStretch()
 
-            band_value_layout.addLayout(header_layout)
+            band_layout.addLayout(header_layout)
 
-            # Simplified bar representation on next line
+            # Bar indicator below
             muf_bar_label = QLabel("█░░░░░░░░░░ Calculating...")
             muf_bar_label.setFont(self._get_font(self.FONT_NORMAL))
             self.muf_band_labels[band] = muf_bar_label
-            band_value_layout.addWidget(muf_bar_label)
+            band_layout.addWidget(muf_bar_label)
 
-            # Add band layout to grid (span 2 columns)
-            grid_layout.addLayout(band_value_layout, row, col, 1, 2)
+            band_container.setLayout(band_layout)
+            grid_layout.addWidget(band_container, row, col)
 
         layout.addLayout(grid_layout)
 
