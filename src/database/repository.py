@@ -1773,3 +1773,119 @@ class DatabaseRepository:
             return 0
         finally:
             session.close()
+
+    # ===== CANADIAN MAPLE AWARD METHODS =====
+
+    def get_canadian_maple_progress(self) -> dict:
+        """
+        Get Canadian Maple Award progress across all four levels.
+
+        Returns:
+            {
+                'yellow': {...},      # Yellow Maple progress
+                'orange': {...},      # Orange Maple progress
+                'red': {...},         # Red Maple progress
+                'gold': {...},        # Gold Maple progress
+                'current_level': str  # Highest level achieved
+            }
+        """
+        try:
+            from src.awards.canadian_maple import CanadianMapleAward
+
+            session = self.get_session()
+            contacts = session.query(Contact).all()
+
+            # Convert to dictionaries for the award class
+            contact_dicts = [self._contact_to_dict(c) for c in contacts]
+
+            # Calculate using award class
+            award = CanadianMapleAward(session)
+            progress = award.calculate_progress(contact_dicts)
+
+            session.close()
+            return progress
+
+        except Exception as e:
+            logger.error(f"Error calculating Canadian Maple progress: {e}", exc_info=True)
+            return {
+                'yellow': {'achieved': False, 'current': 0, 'required': 10},
+                'orange': {'achieved': False, 'current': 0, 'required': 10},
+                'red': {'achieved': False, 'current': 0, 'required': 90},
+                'gold': {'achieved': False, 'current': 0, 'required': 90},
+                'current_level': 'Error'
+            }
+
+    def get_canadian_contacts(self, province: str = None) -> List[Contact]:
+        """
+        Get all contacts with Canada (optionally filtered by province).
+
+        Args:
+            province: Optional Canadian province code (BC, AB, ON, etc.)
+
+        Returns:
+            List of Contact records
+        """
+        session = self.get_session()
+        try:
+            query = session.query(Contact).filter(
+                Contact.country == 'Canada',
+                Contact.mode == 'CW'
+            )
+
+            if province:
+                query = query.filter(Contact.state == province.upper())
+
+            contacts = query.all()
+            session.close()
+            return contacts
+
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Error getting Canadian contacts: {e}")
+            session.close()
+            return []
+
+    def get_canadian_provinces_worked(self) -> Dict[str, int]:
+        """
+        Get count of contacts by Canadian province.
+
+        Returns:
+            Dictionary mapping province codes to contact counts
+        """
+        session = self.get_session()
+        try:
+            contacts = session.query(Contact).filter(
+                Contact.country == 'Canada',
+                Contact.mode == 'CW',
+                Contact.skcc_number.isnot(None)
+            ).all()
+
+            provinces = {}
+            for contact in contacts:
+                state = contact.state.upper() if contact.state else None
+                if state:
+                    provinces[state] = provinces.get(state, 0) + 1
+
+            session.close()
+            return provinces
+
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Error getting Canadian provinces worked: {e}")
+            session.close()
+            return {}
+
+    def _contact_to_dict(self, contact: Contact) -> dict:
+        """Convert Contact ORM object to dictionary for award calculations"""
+        return {
+            'callsign': contact.callsign,
+            'qso_date': contact.qso_date,
+            'time_on': contact.time_on,
+            'band': contact.band,
+            'mode': contact.mode,
+            'country': contact.country,
+            'state': contact.state,
+            'skcc_number': contact.skcc_number,
+            'tx_power': contact.tx_power,
+            'rx_power': contact.rx_power,
+        }

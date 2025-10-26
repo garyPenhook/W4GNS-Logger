@@ -292,6 +292,32 @@ KEY_TYPE_FIELD.md                       # Key type documentation
 SKCC_QUICK_REFERENCE.md                 # Quick reference
 ```
 
+### 9. CANADIAN_MAPLE_AWARD.md
+**Audience:** SKCC operators, Canadians
+**Read Time:** 20 minutes
+
+Complete guide to the Canadian Maple Award:
+- Four levels (Yellow, Orange, Red, Gold)
+- Province requirements and coverage
+- Implementation in W4GNS Logger
+- How to log Canadian contacts
+- Tips and strategies for each level
+- Province codes and band handling
+
+**Key Sections:**
+- Award Levels Overview
+- Basic Rules
+- How to Log Canadian Contacts
+- Checking Your Progress
+- Tips for Success
+- Resource Links
+
+**Best For:**
+- Understanding Canadian Maple requirements
+- Logging Canadian SKCC contacts
+- Tracking progress toward awards
+- Finding Canadian SKCC operators
+
 ---
 
 ## How to Use This Documentation
