@@ -187,7 +187,7 @@ class SpaceWeatherWidget(QWidget):
     def _create_best_band_now_section(self) -> QGroupBox:
         """Create 'Best Band NOW' recommendation section with time-aware analysis"""
         group = QGroupBox("🎯 BEST BAND FOR WORLDWIDE COMMUNICATION NOW")
-        group.setStyleSheet("QGroupBox { font-weight: bold; background-color: #f0f8ff; }")
+        group.setStyleSheet("QGroupBox { font-weight: bold; }")
         layout = QVBoxLayout()
         layout.setSpacing(10)
 
@@ -211,23 +211,23 @@ class SpaceWeatherWidget(QWidget):
         # Band name and reason
         recommendation_vbox = QVBoxLayout()
 
-        # Best band name (LARGE)
+        # Best band name (LARGE) - uses system palette, works in light and dark mode
         self.best_band_name = QLabel("--")
         self.best_band_name.setFont(QFont("Arial", 20, QFont.Weight.Bold))
-        self.best_band_name.setStyleSheet("color: #006400;")  # Dark green
+        self.best_band_name.setStyleSheet("color: #1E7D5E;")  # Medium green, readable in both modes
         recommendation_vbox.addWidget(self.best_band_name)
 
-        # Reason text
+        # Reason text - uses system palette
         self.best_band_reason = QLabel("Loading propagation data...")
         self.best_band_reason.setFont(QFont("Arial", 9))
         self.best_band_reason.setWordWrap(True)
-        self.best_band_reason.setStyleSheet("color: #333333;")
+        # No color style - uses system palette text color
         recommendation_vbox.addWidget(self.best_band_reason)
 
-        # MUF and margin info
+        # MUF and margin info - uses system palette
         self.best_band_muf_info = QLabel("MUF: -- MHz | Margin: -- MHz")
         self.best_band_muf_info.setFont(QFont("Arial", 8, QFont.Weight.Bold))
-        self.best_band_muf_info.setStyleSheet("color: #666666;")
+        # No color style - uses system palette text color
         recommendation_vbox.addWidget(self.best_band_muf_info)
 
         best_band_layout.addLayout(recommendation_vbox)
@@ -238,7 +238,8 @@ class SpaceWeatherWidget(QWidget):
         layout.addWidget(QLabel("Next best options:"))
         self.best_band_top3_label = QLabel("Loading...")
         self.best_band_top3_label.setFont(QFont("Arial", 8))
-        self.best_band_top3_label.setStyleSheet("color: #555555; background-color: #f5f5f5; padding: 5px;")
+        # Use palette-aware styling with padding only, no explicit colors
+        self.best_band_top3_label.setStyleSheet("padding: 5px;")
         self.best_band_top3_label.setWordWrap(True)
         layout.addWidget(self.best_band_top3_label)
 
