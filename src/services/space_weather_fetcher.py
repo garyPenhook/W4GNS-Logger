@@ -558,10 +558,20 @@ class SpaceWeatherFetcher:
                     station_lat = float(station_info.get('latitude', 0))
                     station_lon = float(station_info.get('longitude', 0))
 
+                    # GIRO API stores longitude as 0-360° instead of -180 to +180°
+                    # Convert if needed (> 180 means Western Hemisphere)
+                    if station_lon > 180:
+                        station_lon = station_lon - 360
+
+                    # User longitude might also need conversion
+                    user_lon = longitude
+                    if user_lon > 180:
+                        user_lon = user_lon - 360
+
                     # Simple distance calculation (Euclidean in degrees)
                     # Good enough for finding nearest station
                     lat_diff = latitude - station_lat
-                    lon_diff = longitude - station_lon
+                    lon_diff = user_lon - station_lon
                     distance_deg = (lat_diff**2 + lon_diff**2)**0.5
 
                     if distance_deg < min_distance:
