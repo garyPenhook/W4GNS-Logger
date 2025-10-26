@@ -469,18 +469,32 @@ class VOACAPMUFFetcher:
             # Rank bands by suitability based on time of day
             ranked_bands = []
             for band_name, prediction in predictions.items():
-                if prediction.usable:
-                    # Get band center frequency
-                    band_freq = (prediction.frequency_range[0] + prediction.frequency_range[1]) / 2.0
-                    # Margin above band edge
-                    margin = prediction.muf_value - prediction.frequency_range[1]
+                # Get band center frequency
+                band_freq = (prediction.frequency_range[0] + prediction.frequency_range[1]) / 2.0
+                # Margin above band edge
+                margin = prediction.muf_value - prediction.frequency_range[1]
 
+                # Include band if:
+                # 1. It's usable (margin > 0), OR
+                # 2. During daytime/terminator AND it's a high-frequency band with marginal conditions (-5 < margin < 0)
+                is_usable = prediction.usable
+                is_marginal_high_band = (
+                    time_period in ["Daytime", "Terminator (Best!)"] and
+                    band_freq > 10.0 and  # High frequency band (10m or higher)
+                    -5.0 < margin < 0.5  # Marginal conditions but not terrible
+                )
+
+                if is_usable or is_marginal_high_band:
                     # Score based on time-of-day suitability
                     if time_period == "Daytime":
                         # Daytime: prefer HIGH frequencies (20m, 15m, 10m best)
-                        # Weight frequency heavily: high freq bonus dominates margin
-                        freq_score = band_freq * 2.0  # High frequencies get major boost
-                        margin_factor = min(1.0, margin / 5.0)  # Cap margin benefit
+                        # Weight frequency VERY heavily to prioritize correct frequency over margin
+                        freq_score = band_freq * 3.0  # VERY high frequencies get huge boost for daytime
+                        # Marginal bands still get some margin penalty
+                        if margin < 0:
+                            margin_factor = -2.0  # Penalize negative margin
+                        else:
+                            margin_factor = min(1.0, margin / 5.0)
                         score = freq_score + margin_factor
                     elif time_period == "Terminator (Best!)":
                         # Terminator: all bands good, prefer moderate-high frequencies
@@ -488,40 +502,47 @@ class VOACAPMUFFetcher:
                         margin_factor = min(1.5, margin / 5.0)
                         score = freq_score + margin_factor
                     else:  # Nighttime
-                        # Nighttime: prefer LOW frequencies (80m best for practical antennas)
-                        # Weight low frequency heavily
+                        # Nighttime: prefer LOW frequencies (80m best)
+                        # Only include truly usable bands, not marginal high bands
+                        if not is_usable:
+                            continue
                         freq_score = (50.0 - band_freq) * 2.0  # Low frequencies get major boost
                         margin_factor = min(1.0, margin / 5.0)
                         score = freq_score + margin_factor
 
-                    ranked_bands.append((band_name, prediction, score, margin, band_freq))
+                    ranked_bands.append((band_name, prediction, score, margin, band_freq, is_marginal_high_band))
                     logger.debug(f"  {band_name}: freq={band_freq:.1f}MHz, MUF={prediction.muf_value:.1f}MHz, "
-                               f"margin={margin:.1f}MHz, score={score:.1f}")
+                               f"margin={margin:.1f}MHz, score={score:.1f}, marginal={is_marginal_high_band}")
 
             # Sort by score
             ranked_bands.sort(key=lambda x: x[2], reverse=True)
 
             # Get top 3 recommendations
             top_3 = []
-            for band_name, prediction, score, margin, band_freq in ranked_bands[:3]:
+            for band_name, prediction, score, margin, band_freq, is_marginal in ranked_bands[:3]:
+                margin_indicator = "⚠️ MARGINAL" if is_marginal else ""
                 top_3.append({
                     'band': band_name,
                     'muf': prediction.muf_value,
-                    'margin': round(margin, 1)
+                    'margin': round(margin, 1),
+                    'marginal': is_marginal,
+                    'margin_indicator': margin_indicator
                 })
 
             # Best band (first ranked)
             if ranked_bands:
-                best_band, best_pred, best_score, best_margin, best_freq = ranked_bands[0]
+                best_band, best_pred, best_score, best_margin, best_freq, is_best_marginal = ranked_bands[0]
 
                 # Generate reason based on time of day
                 if time_period == "Terminator (Best!)":
                     reason = f"🌅 Excellent propagation window! All frequencies work well. {best_band} recommended."
                 elif time_period == "Daytime":
-                    if best_freq > 10:
+                    if is_best_marginal:
+                        reason = f"☀️ Daytime at your location. {best_band} ({best_freq:.1f}MHz) is the best HIGH frequency option, though conditions are MARGINAL. Try it first!"
+                    elif best_freq > 10:
                         reason = f"☀️ Daytime at your location. High frequencies like {best_band} ({best_freq:.1f}MHz) work best for worldwide DX."
                     else:
-                        reason = f"☀️ Daytime, but only low frequencies usable now. {best_band} ({best_freq:.1f}MHz) is best available."
+                        reason = f"☀️ Daytime, but only mid/low frequencies usable now. {best_band} ({best_freq:.1f}MHz) is best available."
                 else:  # Nighttime
                     if best_freq < 8:
                         reason = f"🌙 Nighttime at your location. Low frequencies like {best_band} ({best_freq:.1f}MHz) excellent for worldwide."

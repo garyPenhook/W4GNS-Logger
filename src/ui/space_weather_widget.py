@@ -589,16 +589,22 @@ class SpaceWeatherWidget(QWidget):
                     band = band_info['band']
                     muf = band_info['muf']
                     margin = band_info['margin']
+                    is_marginal = band_info.get('marginal', False)
 
                     # Determine quality indicator based on margin
                     if margin > 5:
                         quality = "✓ Excellent"
                     elif margin > 2:
                         quality = "✓ Good"
-                    else:
+                    elif margin >= 0:
                         quality = "⚠ Marginal"
+                    else:
+                        quality = "⚠⚠ VERY Marginal" if margin < -2 else "⚠ Marginal"
 
-                    recommendations.append(f"{i}. {band}: {quality} (MUF margin: +{margin:.1f} MHz)")
+                    # Add warning indicator if marginal high-frequency band
+                    margin_note = " ← TRY THIS FIRST (right frequency for daytime!)" if is_marginal and margin < 0 else ""
+
+                    recommendations.append(f"{i}. {band}: {quality} (MUF margin: {margin:+.1f} MHz){margin_note}")
             else:
                 recommendations.append("\nNo bands currently usable. Wait for conditions to improve.")
 
@@ -742,10 +748,11 @@ class SpaceWeatherWidget(QWidget):
 
             # Update top 3 bands
             if best_band_data['top_3_bands']:
-                top_3_text = "  " + " | ".join([
-                    f"{b['band']} ({b['muf']:.1f}M)"
-                    for b in best_band_data['top_3_bands']
-                ])
+                top_3_items = []
+                for b in best_band_data['top_3_bands']:
+                    marginal_indicator = " ⚠" if b.get('marginal', False) else ""
+                    top_3_items.append(f"{b['band']} ({b['muf']:.1f}M, {b['margin']:+.1f}){marginal_indicator}")
+                top_3_text = "  " + " | ".join(top_3_items)
                 self.best_band_top3_label.setText(top_3_text)
             else:
                 self.best_band_top3_label.setText("(No usable bands at this time)")
