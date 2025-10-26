@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, CenturionMember, TribuneeMember
+from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, CenturionMember, TribuneeMember, SenatorMember
 from .skcc_membership import SKCCMembershipManager
 
 logger = logging.getLogger(__name__)
@@ -1143,11 +1143,29 @@ class DatabaseRepository:
         Endorsements available in 100-contact increments up to Cx10,
         then in 500-contact increments (Cx15, Cx20, etc.).
 
+        Uses the official Centurion achievement date from SKCC list when available.
+
         Returns:
             Dict with Centurion progress analysis
         """
         session = self.get_session()
         try:
+            from src.config.settings import get_config_manager
+
+            # Get user's callsign from config
+            config_manager = get_config_manager()
+            user_callsign = config_manager.get("operator_callsign", "").upper()
+
+            # Get the official Centurion achievement date from the SKCC Centurion list
+            # This is the authoritative date (if available)
+            centurion_achievement_date = None
+            if user_callsign:
+                user_centurion_entry = session.query(CenturionMember).filter(
+                    CenturionMember.callsign == user_callsign
+                ).first()
+                if user_centurion_entry and user_centurion_entry.centurion_date:
+                    centurion_achievement_date = user_centurion_entry.centurion_date
+
             # Get all CW contacts with SKCC numbers
             centurion_contacts = session.query(Contact).filter(
                 Contact.mode == "CW",
@@ -1232,7 +1250,8 @@ class DatabaseRepository:
                 'endorsement': endorsement,
                 'next_level': next_level,
                 'members_to_next': max(0, next_level - member_count),
-                'total_centurion_on_record': len(session.query(CenturionMember).all())
+                'total_centurion_on_record': len(session.query(CenturionMember).all()),
+                'centurion_achievement_date': centurion_achievement_date  # Official Centurion achievement date from SKCC list
             }
 
         except SQLAlchemyError as e:
@@ -1244,7 +1263,8 @@ class DatabaseRepository:
                 'progress_pct': 0.0,
                 'endorsement': 'Error',
                 'next_level': 100,
-                'members_to_next': 100
+                'members_to_next': 100,
+                'centurion_achievement_date': None
             }
         finally:
             session.close()
@@ -1257,12 +1277,15 @@ class DatabaseRepository:
         Endorsements available in 50-contact increments up to Tx10,
         then in 250-contact increments (Tx15, Tx20, etc.).
 
+        Uses the official Tribune achievement date from SKCC list for endorsement calculations.
+
         Returns:
             Dict with Tribune progress analysis
         """
         session = self.get_session()
         try:
             from src.services.tribune_fetcher import TribuneFetcher
+            from src.config.settings import get_config_manager
 
             # First check if user is a Centurion
             centurion_contacts = session.query(Contact).filter(
@@ -1284,6 +1307,20 @@ class DatabaseRepository:
 
             is_centurion = len(unique_centurions) >= 100
 
+            # Get user's callsign from config
+            config_manager = get_config_manager()
+            user_callsign = config_manager.get("operator_callsign", "").upper()
+
+            # Get the official Tribune achievement date from the SKCC Tribune list
+            # This is the authoritative date for endorsement calculations
+            tribune_achievement_date = None
+            if user_callsign:
+                user_tribune_entry = session.query(TribuneeMember).filter(
+                    TribuneeMember.callsign == user_callsign
+                ).first()
+                if user_tribune_entry and user_tribune_entry.tribune_date:
+                    tribune_achievement_date = user_tribune_entry.tribune_date
+
             # Get all Tribune-eligible contacts (CW + valid date + Tribune/Senator)
             tribune_eligible_date = "20070301"  # March 1, 2007
 
@@ -1293,10 +1330,8 @@ class DatabaseRepository:
                 Contact.qso_date >= tribune_eligible_date
             ).all()
 
-            # Collect unique Tribune members in date order to find achievement date
-            # Then count endorsements only from contacts made AFTER achievement date
+            # Collect unique Tribune members and count endorsements only from contacts AFTER official achievement date
             unique_tribunes = set()
-            tribune_achievement_date = None
             tribunes_after_achievement = set()
 
             for contact in tribune_contacts:
@@ -1313,15 +1348,10 @@ class DatabaseRepository:
                     if base_number and 'x' in base_number:
                         base_number = base_number.split('x')[0]
                     if base_number and base_number.isdigit():
-                        # Only add if not already in set
-                        if base_number not in unique_tribunes:
-                            unique_tribunes.add(base_number)
+                        # Add to unique tribunes
+                        unique_tribunes.add(base_number)
 
-                            # When we hit 50, that's the Tribune achievement date
-                            if len(unique_tribunes) == 50 and tribune_achievement_date is None:
-                                tribune_achievement_date = contact.qso_date
-
-                        # After achievement date, count for endorsements
+                        # After official achievement date, count for endorsements
                         if tribune_achievement_date and contact.qso_date > tribune_achievement_date:
                             tribunes_after_achievement.add(base_number)
 
@@ -1392,7 +1422,7 @@ class DatabaseRepository:
                 'is_centurion': is_centurion,
                 'centurion_count': len(unique_centurions),
                 'total_tribune_on_record': len(session.query(TribuneeMember).all()),
-                'tribune_achievement_date': tribune_achievement_date  # Date when 50th Tribune contacted
+                'tribune_achievement_date': tribune_achievement_date  # Official Tribune achievement date from SKCC list
             }
 
         except SQLAlchemyError as e:
@@ -1409,6 +1439,168 @@ class DatabaseRepository:
                 'is_centurion': False,
                 'centurion_count': 0,
                 'tribune_achievement_date': None
+            }
+        finally:
+            session.close()
+
+    def analyze_senator_award_progress(self) -> Dict[str, Any]:
+        """Analyze Senator award progress
+
+        Tracks unique Tribune/Senator members contacted via CW after Tribune x8 achievement.
+        Requires user to be Tribune x8 first (400+ unique Tribune/Senator members).
+        Endorsements available in 200-contact increments.
+
+        Uses the official Tribune x8 achievement date from SKCC list for endorsement calculations.
+
+        Returns:
+            Dict with Senator progress analysis
+        """
+        session = self.get_session()
+        try:
+            from src.services.tribune_fetcher import TribuneFetcher
+            from src.services.senator_fetcher import SenatorFetcher
+            from src.config.settings import get_config_manager
+
+            # Get user's callsign from config
+            config_manager = get_config_manager()
+            user_callsign = config_manager.get("operator_callsign", "").upper()
+
+            # Get the official Tribune x8 achievement date from the SKCC Tribune list
+            # This is the authoritative date for endorsement calculations
+            tribune_x8_achievement_date = None
+            if user_callsign:
+                user_tribune_entry = session.query(TribuneeMember).filter(
+                    TribuneeMember.callsign == user_callsign
+                ).first()
+                if user_tribune_entry and user_tribune_entry.tribune_date:
+                    tribune_x8_achievement_date = user_tribune_entry.tribune_date
+
+            # First check if user is Tribune x8 (400+ unique Tribune members)
+            tribune_contacts = session.query(Contact).filter(
+                Contact.mode == "CW",
+                Contact.skcc_number.isnot(None),
+                Contact.qso_date >= "20070301"  # After Tribune eligible date
+            ).all()
+
+            unique_tribunes = set()
+            for contact in tribune_contacts:
+                skcc_num = contact.skcc_number.strip()
+                if not skcc_num:
+                    continue
+
+                # Check if this is a Tribune/Senator member
+                is_tribune = TribuneFetcher.is_tribune_member(session, skcc_num)
+                if is_tribune:
+                    base_number = skcc_num.split()[0]
+                    if base_number and base_number[-1] in 'CTS':
+                        base_number = base_number[:-1]
+                    if base_number and 'x' in base_number:
+                        base_number = base_number.split('x')[0]
+                    if base_number and base_number.isdigit():
+                        unique_tribunes.add(base_number)
+
+            is_tribune_x8 = len(unique_tribunes) >= 400
+
+            # Get all Senator-eligible contacts (CW + valid date + Tribune/Senator)
+            senator_eligible_date = "20130801"  # August 1, 2013
+
+            senator_contacts = session.query(Contact).filter(
+                Contact.mode == "CW",
+                Contact.skcc_number.isnot(None),
+                Contact.qso_date >= senator_eligible_date
+            ).all()
+
+            # Collect unique Tribune/Senator members contacted AFTER Tribune x8 date
+            unique_senators = set()
+
+            for contact in senator_contacts:
+                skcc_num = contact.skcc_number.strip()
+                if not skcc_num:
+                    continue
+
+                # Check if this is a Tribune/Senator member
+                is_tribune_or_senator = (TribuneFetcher.is_tribune_member(session, skcc_num) or
+                                       SenatorFetcher.is_senator_member(session, skcc_num))
+                if is_tribune_or_senator:
+                    base_number = skcc_num.split()[0]
+                    if base_number and base_number[-1] in 'CTS':
+                        base_number = base_number[:-1]
+                    if base_number and 'x' in base_number:
+                        base_number = base_number.split('x')[0]
+                    if base_number and base_number.isdigit():
+                        # Only add if contacted after Tribune x8 date
+                        if tribune_x8_achievement_date and contact.qso_date > tribune_x8_achievement_date:
+                            unique_senators.add(base_number)
+
+            # For endorsement calculation, only count Tribune/Senator members contacted AFTER x8
+            senator_count_for_endorsement = len(unique_senators)
+
+            # Determine endorsement level based on Senator contacts AFTER x8
+            senator_count = len(unique_tribunes) + len(unique_senators)
+
+            if senator_count_for_endorsement < 200:
+                endorsement = "Not Yet"
+            elif senator_count_for_endorsement < 400:
+                endorsement = "Senator"
+            elif senator_count_for_endorsement < 600:
+                endorsement = "Senator x2"
+            elif senator_count_for_endorsement < 800:
+                endorsement = "Senator x3"
+            elif senator_count_for_endorsement < 1000:
+                endorsement = "Senator x4"
+            elif senator_count_for_endorsement < 1200:
+                endorsement = "Senator x5"
+            elif senator_count_for_endorsement < 1400:
+                endorsement = "Senator x6"
+            elif senator_count_for_endorsement < 1600:
+                endorsement = "Senator x7"
+            elif senator_count_for_endorsement < 1800:
+                endorsement = "Senator x8"
+            elif senator_count_for_endorsement < 2000:
+                endorsement = "Senator x9"
+            elif senator_count_for_endorsement < 2200:
+                endorsement = "Senator x10"
+            else:
+                endorsement = f"Senator x{(senator_count_for_endorsement // 200)}"
+
+            # Calculate next endorsement target
+            if senator_count_for_endorsement < 200:
+                next_level = 200
+                senators_to_next = 200 - senator_count_for_endorsement
+            else:
+                # Next level is based on contacts AFTER x8
+                next_level = ((senator_count_for_endorsement // 200) + 1) * 200
+                senators_to_next = max(0, next_level - senator_count_for_endorsement)
+
+            return {
+                'unique_tribunes': len(unique_tribunes),
+                'unique_senators': senator_count_for_endorsement,
+                'required': 200,
+                'achieved': is_tribune_x8 and senator_count_for_endorsement >= 200,
+                'progress_pct': min(100.0, (senator_count_for_endorsement / 200) * 100),
+                'endorsement': endorsement,
+                'next_level': next_level,
+                'senators_to_next': senators_to_next,
+                'is_tribune_x8': is_tribune_x8,
+                'tribune_x8_count': len(unique_tribunes),
+                'total_senator_on_record': len(session.query(SenatorMember).all()),
+                'tribune_x8_achievement_date': tribune_x8_achievement_date  # Official Tribune x8 achievement date from SKCC list
+            }
+
+        except SQLAlchemyError as e:
+            logger.error(f"Error analyzing Senator progress: {e}")
+            return {
+                'unique_tribunes': 0,
+                'unique_senators': 0,
+                'required': 200,
+                'achieved': False,
+                'progress_pct': 0.0,
+                'endorsement': 'Error',
+                'next_level': 200,
+                'senators_to_next': 200,
+                'is_tribune_x8': False,
+                'tribune_x8_count': 0,
+                'tribune_x8_achievement_date': None
             }
         finally:
             session.close()

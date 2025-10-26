@@ -84,6 +84,18 @@ class TribuneFetcher:
                 rank_str = row['tnr'].strip()
                 rank_base = int(rank_str.split()[0])
 
+                # Normalize date from "DD Mon YYYY" to YYYYMMDD format
+                tribune_date_str = row['tdate'].strip() if row.get('tdate') else ''
+                normalized_date = ''
+                if tribune_date_str:
+                    try:
+                        date_obj = datetime.strptime(tribune_date_str, '%d %b %Y')
+                        normalized_date = date_obj.strftime('%Y%m%d')
+                    except ValueError:
+                        # If parsing fails, try to keep original format
+                        normalized_date = tribune_date_str
+                        logger.warning(f"Could not parse Tribune date '{tribune_date_str}' for {row['call'].strip()}")
+
                 members.append({
                     'rank': rank_base,
                     'callsign': row['call'].strip(),
@@ -91,7 +103,7 @@ class TribuneFetcher:
                     'name': row['name'].strip() if row.get('name') else '',
                     'city': row['city'].strip() if row.get('city') else '',
                     'state': row['state'].strip() if row.get('state') else '',
-                    'tribune_date': row['tdate'].strip() if row.get('tdate') else '',
+                    'tribune_date': normalized_date,
                     'endorsements': row['tendorsements'].strip() if row.get('tendorsements') else ''
                 })
 

@@ -1,8 +1,8 @@
 """
-SKCC Tribune Award Progress Widget
+SKCC Senator Award Progress Widget
 
-Displays Tribune award progress with visual progress bars and endorsement levels.
-The Tribune list is automatically synced daily from SKCC.
+Displays Senator award progress with visual progress bars and endorsement levels.
+The Senator list is automatically synced daily from SKCC.
 """
 
 import logging
@@ -15,20 +15,20 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 from src.database.repository import DatabaseRepository
-from src.services.tribune_fetcher import TribuneFetcher
+from src.services.senator_fetcher import SenatorFetcher
 
 logger = logging.getLogger(__name__)
 
-# Tribune color (steel blue)
-TRIBUNE_COLOR = "#1E88E5"
+# Senator color (dark purple)
+SENATOR_COLOR = "#6B2C91"
 
 
-class TribuneProgressWidget(QWidget):
-    """Displays SKCC Tribune award progress with auto-updating member list"""
+class SenatorProgressWidget(QWidget):
+    """Displays SKCC Senator award progress with auto-updating member list"""
 
     def __init__(self, db: DatabaseRepository, parent: Optional[QWidget] = None):
         """
-        Initialize Tribune progress widget
+        Initialize Senator progress widget
 
         Args:
             db: Database repository instance
@@ -44,14 +44,14 @@ class TribuneProgressWidget(QWidget):
         self.refresh_timer.timeout.connect(self.refresh)
         self.refresh_timer.start(10000)
 
-        # Auto-update Tribune list daily
+        # Auto-update Senator list daily
         self.update_list_timer = QTimer()
-        self.update_list_timer.timeout.connect(self._update_tribune_list)
+        self.update_list_timer.timeout.connect(self._update_senator_list)
         self.update_list_timer.start(3600000)  # Every hour, check if update needed
 
         # Initial refresh
         self.refresh()
-        self._update_tribune_list()
+        self._update_senator_list()
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -63,9 +63,9 @@ class TribuneProgressWidget(QWidget):
         prereq_group = self._create_prerequisite_section()
         main_layout.addWidget(prereq_group)
 
-        # Tribune Progress Section
-        tribune_group = self._create_tribune_section()
-        main_layout.addWidget(tribune_group)
+        # Senator Progress Section
+        senator_group = self._create_senator_section()
+        main_layout.addWidget(senator_group)
 
         # Endorsements Section
         endorsement_group = self._create_endorsement_section()
@@ -79,17 +79,17 @@ class TribuneProgressWidget(QWidget):
         self.setLayout(main_layout)
 
     def _create_prerequisite_section(self) -> QGroupBox:
-        """Create Centurion prerequisite progress section"""
-        group = QGroupBox("Prerequisite: Centurion Award")
+        """Create Tribune x8 prerequisite progress section"""
+        group = QGroupBox("Prerequisite: Tribune x8 (400 members)")
         layout = QVBoxLayout()
 
-        # Progress bar for Centurion
-        self.centurion_progress = QProgressBar()
-        self.centurion_progress.setMaximum(100)
-        self.centurion_progress.setValue(0)
-        self.centurion_progress.setTextVisible(True)
-        self.centurion_progress.setFormat("%v / 100 members")
-        self.centurion_progress.setStyleSheet(f"""
+        # Progress bar for Tribune x8
+        self.tribune_progress = QProgressBar()
+        self.tribune_progress.setMaximum(400)
+        self.tribune_progress.setValue(0)
+        self.tribune_progress.setTextVisible(True)
+        self.tribune_progress.setFormat("%v / 400 Tribune/Senator members")
+        self.tribune_progress.setStyleSheet(f"""
             QProgressBar {{
                 border: 2px solid #cccccc;
                 border-radius: 5px;
@@ -97,33 +97,33 @@ class TribuneProgressWidget(QWidget):
                 height: 24px;
             }}
             QProgressBar::chunk {{
-                background-color: #FF6B35;
+                background-color: #1E88E5;
                 border-radius: 3px;
             }}
         """)
 
-        layout.addWidget(self.centurion_progress)
+        layout.addWidget(self.tribune_progress)
 
-        # Centurion status label
-        self.centurion_label = QLabel("Loading...")
-        self.centurion_label.setFont(QFont("Arial", 9))
-        layout.addWidget(self.centurion_label)
+        # Tribune x8 status label
+        self.tribune_label = QLabel("Loading...")
+        self.tribune_label.setFont(QFont("Arial", 9))
+        layout.addWidget(self.tribune_label)
 
         group.setLayout(layout)
         return group
 
-    def _create_tribune_section(self) -> QGroupBox:
-        """Create Tribune award progress section"""
-        group = QGroupBox("Tribune Award Progress")
+    def _create_senator_section(self) -> QGroupBox:
+        """Create Senator award progress section"""
+        group = QGroupBox("Senator Award Progress")
         layout = QVBoxLayout()
 
-        # Progress bar with Tribune blue color
-        self.tribune_progress = QProgressBar()
-        self.tribune_progress.setMaximum(50)
-        self.tribune_progress.setValue(0)
-        self.tribune_progress.setTextVisible(True)
-        self.tribune_progress.setFormat("%v / 50 Tribune/Senator members")
-        self.tribune_progress.setStyleSheet(f"""
+        # Progress bar with Senator purple color
+        self.senator_progress = QProgressBar()
+        self.senator_progress.setMaximum(200)
+        self.senator_progress.setValue(0)
+        self.senator_progress.setTextVisible(True)
+        self.senator_progress.setFormat("%v / 200 Senator members")
+        self.senator_progress.setStyleSheet(f"""
             QProgressBar {{
                 border: 2px solid #cccccc;
                 border-radius: 5px;
@@ -132,12 +132,12 @@ class TribuneProgressWidget(QWidget):
                 font-weight: bold;
             }}
             QProgressBar::chunk {{
-                background-color: {TRIBUNE_COLOR};
+                background-color: {SENATOR_COLOR};
                 border-radius: 3px;
             }}
         """)
 
-        layout.addWidget(self.tribune_progress)
+        layout.addWidget(self.senator_progress)
 
         # Status label
         self.status_label = QLabel("Loading...")
@@ -157,18 +157,16 @@ class TribuneProgressWidget(QWidget):
         self.endorsement_labels = []
 
         endorsement_levels = [
-            (50, "Tribune"),
-            (100, "Tribune x2"),
-            (150, "Tribune x3"),
-            (200, "Tribune x4"),
-            (250, "Tribune x5"),
-            (300, "Tribune x6"),
-            (350, "Tribune x7"),
-            (400, "Tribune x8"),
-            (450, "Tribune x9"),
-            (500, "Tribune x10"),
-            (750, "Tribune x15"),
-            (1000, "Tribune x20"),
+            (200, "Senator"),
+            (400, "Senator x2"),
+            (600, "Senator x3"),
+            (800, "Senator x4"),
+            (1000, "Senator x5"),
+            (1200, "Senator x6"),
+            (1400, "Senator x7"),
+            (1600, "Senator x8"),
+            (1800, "Senator x9"),
+            (2000, "Senator x10"),
         ]
 
         # Create 2-column layout for endorsements
@@ -203,7 +201,7 @@ class TribuneProgressWidget(QWidget):
         return group
 
     def _create_status_section(self) -> QGroupBox:
-        """Create Tribune list status section"""
+        """Create Senator list status section"""
         group = QGroupBox("Member List Status")
         layout = QVBoxLayout()
 
@@ -217,7 +215,7 @@ class TribuneProgressWidget(QWidget):
         # Manual refresh button
         refresh_btn = QPushButton("Update List Now")
         refresh_btn.setMaximumWidth(120)
-        refresh_btn.clicked.connect(self._manual_update_tribune_list)
+        refresh_btn.clicked.connect(self._manual_update_senator_list)
         status_layout.addWidget(refresh_btn)
 
         status_layout.addStretch()
@@ -229,34 +227,33 @@ class TribuneProgressWidget(QWidget):
     def refresh(self) -> None:
         """Refresh award progress from database"""
         try:
-            progress = self.db.analyze_tribune_award_progress()
+            progress = self.db.analyze_senator_award_progress()
 
-            tribune_count = progress['unique_tribunes']  # Total unique Tribune members
-            tribunes_after = progress['tribunes_after_achievement']  # Tribune members after achievement date
-            centurion_count = progress['centurion_count']
-            is_centurion = progress['is_centurion']
+            tribune_x8_count = progress['tribune_x8_count']  # Total unique Tribune members
+            senators_after = progress['unique_senators']  # Senator members after x8 achievement
+            is_tribune_x8 = progress['is_tribune_x8']
             endorsement = progress['endorsement']
             next_level = progress['next_level']
-            tribunes_to_next = progress['tribunes_to_next']
+            senators_to_next = progress['senators_to_next']
 
-            # Update Centurion prerequisite progress
-            self.centurion_progress.setMaximum(100)
-            self.centurion_progress.setValue(centurion_count)
+            # Update Tribune x8 prerequisite progress
+            self.tribune_progress.setMaximum(400)
+            self.tribune_progress.setValue(tribune_x8_count)
 
-            if is_centurion:
-                self.centurion_label.setText(f"✓ Centurion achieved ({centurion_count}/100)")
-                self.centurion_label.setStyleSheet("color: #FF6B35; font-weight: bold;")
+            if is_tribune_x8:
+                self.tribune_label.setText(f"✓ Tribune x8 achieved ({tribune_x8_count}/400)")
+                self.tribune_label.setStyleSheet("color: #1E88E5; font-weight: bold;")
             else:
-                needed = 100 - centurion_count
-                self.centurion_label.setText(f"✗ Need {needed} more members for Centurion")
-                self.centurion_label.setStyleSheet("color: #D32F2F;")
+                needed = 400 - tribune_x8_count
+                self.tribune_label.setText(f"✗ Need {needed} more members for Tribune x8")
+                self.tribune_label.setStyleSheet("color: #D32F2F;")
 
-            # Update Tribune progress bar with endorsement count (contacts AFTER achievement)
-            self.tribune_progress.setMaximum(next_level)
-            self.tribune_progress.setValue(tribunes_after)
+            # Update Senator progress bar with endorsement count (contacts AFTER x8)
+            self.senator_progress.setMaximum(next_level)
+            self.senator_progress.setValue(senators_after)
 
             # Format achievement date for display
-            achievement_date = progress.get('tribune_achievement_date', '')
+            achievement_date = progress.get('tribune_x8_achievement_date', '')
             achievement_str = ''
             if achievement_date:
                 from datetime import datetime
@@ -267,79 +264,79 @@ class TribuneProgressWidget(QWidget):
                     achievement_str = achievement_date
 
             # Update status label
-            if not is_centurion:
-                status_text = "Must achieve Centurion first to qualify for Tribune"
-            elif tribune_count >= 50:
-                # Show Tribune achievement date and count AFTER achievement
+            if not is_tribune_x8:
+                status_text = "Must achieve Tribune x8 first (400+ members)"
+            elif tribune_x8_count >= 400:
+                # Show Tribune x8 achievement date and count AFTER achievement
                 if achievement_date:
-                    status_text = f"{endorsement} • Achieved: {achievement_str} • {tribunes_after}/{next_level} toward next level • {tribunes_to_next} more to {next_level}"
+                    status_text = f"{endorsement} • Achieved: {achievement_str} • {senators_after}/{next_level} toward next level • {senators_to_next} more to {next_level}"
                 else:
-                    status_text = f"{endorsement} • {tribunes_after} members after achievement • {tribunes_to_next} more to {next_level}"
+                    status_text = f"{endorsement} • {senators_after} members after achievement • {senators_to_next} more to {next_level}"
             else:
-                status_text = f"Progress: {tribune_count}/50 Tribune members • {50 - tribune_count} more to Tribune"
+                status_text = f"Progress: {tribune_x8_count}/400 Tribune members • {400 - tribune_x8_count} more to Tribune x8"
 
             self.status_label.setText(status_text)
 
             # Update endorsement checkboxes based on contacts AFTER achievement
-            self._update_endorsement_display(tribunes_after)
+            self._update_endorsement_display(senators_after)
 
         except Exception as e:
-            logger.error(f"Error refreshing Tribune progress: {e}")
+            logger.error(f"Error refreshing Senator progress: {e}")
             self.status_label.setText(f"Error: {str(e)}")
 
-    def _update_endorsement_display(self, tribune_count: int) -> None:
+    def _update_endorsement_display(self, senator_count: int) -> None:
         """Update endorsement level visual indicators
 
         Args:
-            tribune_count: Current number of unique Tribune members contacted
+            senator_count: Current number of unique Senator members contacted
         """
         for level, label in self.endorsement_labels:
-            if tribune_count >= level:
+            if senator_count >= level:
                 # Achieved - show checkmark
                 label.setText(label.text().replace("☐", "☑"))
-                label.setStyleSheet(f"color: {TRIBUNE_COLOR}; font-weight: bold;")
+                label.setStyleSheet(f"color: {SENATOR_COLOR}; font-weight: bold;")
             else:
                 # Not achieved - show empty box
                 label.setText(label.text().replace("☑", "☐"))
                 label.setStyleSheet("color: #666666;")
 
-    def _update_tribune_list(self) -> None:
-        """Update Tribune member list from SKCC if needed"""
+    def _update_senator_list(self) -> None:
+        """Update Senator member list from SKCC if needed"""
         try:
             session = self.db.get_session()
-            success = TribuneFetcher.refresh_tribune_list(session, force=False)
+            success = SenatorFetcher.refresh_senator_list(session, force=False)
             session.close()
 
             if success:
-                member_count = TribuneFetcher.get_tribune_member_count(session)
+                member_count = SenatorFetcher.get_senator_member_count(session)
                 self.list_status_label.setText(f"✓ Member list updated • {member_count} on record")
-                logger.info(f"Tribune list refreshed: {member_count} members")
+                logger.info(f"Senator list refreshed: {member_count} members")
             else:
                 self.list_status_label.setText("Member list update failed")
 
         except Exception as e:
-            logger.error(f"Error updating Tribune list: {e}")
+            logger.error(f"Error updating Senator list: {e}")
             self.list_status_label.setText(f"Error updating list: {str(e)}")
 
-    def _manual_update_tribune_list(self) -> None:
-        """Manually trigger Tribune list update"""
+    def _manual_update_senator_list(self) -> None:
+        """Manually trigger Senator list update"""
         try:
             self.list_status_label.setText("Updating member list...")
 
             session = self.db.get_session()
-            success = TribuneFetcher.refresh_tribune_list(session, force=True)
+            success = SenatorFetcher.refresh_senator_list(session, force=True)
             session.close()
 
             if success:
-                member_count = TribuneFetcher.get_tribune_member_count(session)
+                member_count = SenatorFetcher.get_senator_member_count(session)
                 self.list_status_label.setText(f"✓ List updated • {member_count} members")
-                logger.info(f"Manual Tribune list update: {member_count} members")
+                logger.info(f"Manual Senator list update: {member_count} members")
                 self.refresh()  # Refresh the widget to show updated counts
             else:
                 self.list_status_label.setText("Update failed - check network connection")
 
         except Exception as e:
-            logger.error(f"Error in manual Tribune list update: {e}")
+            logger.error(f"Error in manual Senator list update: {e}")
             self.list_status_label.setText(f"Update error: {str(e)}")
 
     def closeEvent(self, event):

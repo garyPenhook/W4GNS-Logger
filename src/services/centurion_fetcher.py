@@ -84,6 +84,18 @@ class CenturionFetcher:
                 rank_str = row['cnr'].strip()
                 rank_base = int(rank_str.split()[0])
 
+                # Normalize date from "DD Mon YYYY" to YYYYMMDD format
+                centurion_date_str = row['cdate'].strip() if row.get('cdate') else ''
+                normalized_date = ''
+                if centurion_date_str:
+                    try:
+                        date_obj = datetime.strptime(centurion_date_str, '%d %b %Y')
+                        normalized_date = date_obj.strftime('%Y%m%d')
+                    except ValueError:
+                        # If parsing fails, try to keep original format
+                        normalized_date = centurion_date_str
+                        logger.warning(f"Could not parse Centurion date '{centurion_date_str}' for {row['call'].strip()}")
+
                 members.append({
                     'rank': rank_base,
                     'callsign': row['call'].strip(),
@@ -91,7 +103,7 @@ class CenturionFetcher:
                     'name': row['name'].strip() if row.get('name') else '',
                     'city': row['city'].strip() if row.get('city') else '',
                     'state': row['state'].strip() if row.get('state') else '',
-                    'centurion_date': row['cdate'].strip() if row.get('cdate') else '',
+                    'centurion_date': normalized_date,
                     'endorsements': row['cendorsements'].strip() if row.get('cendorsements') else ''
                 })
 

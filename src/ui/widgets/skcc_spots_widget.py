@@ -18,6 +18,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
 from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
+from src.config.settings import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,12 @@ class SKCCSpotWidget(QWidget):
         self.last_shown_time: Dict[str, datetime] = {}
         self.duplicate_cooldown_seconds = 180  # 3 minutes
 
+        # Config manager for persisting band selections
+        self.config_manager = get_config_manager()
+
         # Set up UI
         self._init_ui()
+        self._load_band_selections()  # Load saved band selections
         self._connect_signals()
 
         # Refresh timer
@@ -159,7 +164,7 @@ class SKCCSpotWidget(QWidget):
         for i, band in enumerate(bands):
             check = QCheckBox(band)
             check.setChecked(True)  # All bands selected by default
-            check.stateChanged.connect(self._apply_filters)
+            check.stateChanged.connect(self._on_band_selection_changed)  # Save selections when changed
             self.band_checks[band] = check
             band_layout.addWidget(check, i // 3, i % 3)  # 3 columns
         band_group.setLayout(band_layout)
@@ -263,6 +268,33 @@ class SKCCSpotWidget(QWidget):
             on_new_spot=self._on_new_spot,
             on_connection_state=self._on_connection_state_changed,
         )
+
+    def _load_band_selections(self) -> None:
+        """Load saved band selections from config and apply them"""
+        try:
+            # Get saved band selections from config
+            saved_bands_str = self.config_manager.get("dx_cluster.band_selections", "")
+            if saved_bands_str:
+                saved_bands = set(saved_bands_str.split(","))
+                # Apply saved selections to checkboxes
+                for band, check in self.band_checks.items():
+                    check.setChecked(band in saved_bands)
+            logger.debug(f"Loaded band selections from config: {saved_bands_str}")
+        except Exception as e:
+            logger.warning(f"Error loading band selections: {e}")
+
+    def _on_band_selection_changed(self) -> None:
+        """Handle band selection change - save selections and reapply filters"""
+        try:
+            # Get currently selected bands
+            selected_bands = [band for band, check in self.band_checks.items() if check.isChecked()]
+            # Save to config
+            self.config_manager.set("dx_cluster.band_selections", ",".join(selected_bands))
+            logger.debug(f"Saved band selections: {selected_bands}")
+            # Reapply filters to update displayed spots
+            self._apply_filters()
+        except Exception as e:
+            logger.error(f"Error saving band selections: {e}")
 
     def _sync_roster(self) -> None:
         """Sync SKCC membership roster - force fresh download"""

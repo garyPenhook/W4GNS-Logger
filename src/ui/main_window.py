@@ -237,6 +237,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QTabWidget, QScrollArea
         from src.ui.centurion_progress_widget import CenturionProgressWidget
         from src.ui.tribune_progress_widget import TribuneProgressWidget
+        from src.ui.senator_progress_widget import SenatorProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -257,6 +258,13 @@ class MainWindow(QMainWindow):
         tribune_widget = TribuneProgressWidget(self.db)
         tribune_scroll.setWidget(tribune_widget)
         awards_tabs.addTab(tribune_scroll, "Tribune")
+
+        # Senator Award Tab
+        senator_scroll = QScrollArea()
+        senator_scroll.setWidgetResizable(True)
+        senator_widget = SenatorProgressWidget(self.db)
+        senator_scroll.setWidget(senator_widget)
+        awards_tabs.addTab(senator_scroll, "Senator")
 
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)
