@@ -1,0 +1,523 @@
+"""
+Space Weather Widget
+
+Displays current space weather conditions and HF propagation forecasts.
+"""
+
+import logging
+from typing import Optional, Dict
+from datetime import datetime
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar,
+    QPushButton, QGridLayout
+)
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QFont
+
+from src.services.space_weather_fetcher import SpaceWeatherFetcher
+from src.services.voacap_muf_fetcher import VOACAPMUFFetcher, MUFPrediction
+from src.utils.cache import TTLCache
+from src.config.settings import ConfigManager
+
+logger = logging.getLogger(__name__)
+
+
+class SpaceWeatherWidget(QWidget):
+    """Displays current space weather conditions and HF propagation status"""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        """
+        Initialize space weather widget
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.fetcher = SpaceWeatherFetcher()
+        self.muf_fetcher = VOACAPMUFFetcher()
+        self.config = ConfigManager()
+
+        # Cache space weather data with 1-hour TTL (NOAA updates every 3 hours)
+        self.cache = TTLCache(ttl_seconds=3600)
+        # Cache MUF predictions with 30-minute TTL
+        self.muf_cache = TTLCache(ttl_seconds=1800)
+
+        # Store MUF predictions for display
+        self.current_muf_predictions: Dict[str, MUFPrediction] = {}
+
+        self._init_ui()
+        self.refresh()
+
+        # Auto-refresh every 30 minutes (space weather updates every 3 hours)
+        self.refresh_timer = QTimer()
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.start(1800000)  # 30 minutes
+
+    def _init_ui(self) -> None:
+        """Initialize UI components"""
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Current Conditions Section
+        conditions_group = self._create_current_conditions_section()
+        main_layout.addWidget(conditions_group)
+
+        # K-Index Status Section
+        kindex_group = self._create_kindex_section()
+        main_layout.addWidget(kindex_group)
+
+        # Maximum Usable Frequency (MUF) Section
+        muf_group = self._create_muf_section()
+        main_layout.addWidget(muf_group)
+
+        # Solar Activity Section
+        solar_group = self._create_solar_section()
+        main_layout.addWidget(solar_group)
+
+        # HF Propagation Recommendation Section
+        propagation_group = self._create_propagation_section()
+        main_layout.addWidget(propagation_group)
+
+        # Refresh button and status
+        controls_layout = QHBoxLayout()
+        refresh_btn = QPushButton("Refresh Now")
+        refresh_btn.clicked.connect(self.refresh)
+        controls_layout.addWidget(refresh_btn)
+
+        self.update_status_label = QLabel("Loading...")
+        self.update_status_label.setFont(QFont("Arial", 8))
+        controls_layout.addWidget(self.update_status_label)
+
+        controls_layout.addStretch()
+        main_layout.addLayout(controls_layout)
+
+        main_layout.addStretch()
+        self.setLayout(main_layout)
+
+    def _create_current_conditions_section(self) -> QGroupBox:
+        """Create current conditions display"""
+        group = QGroupBox("Current Space Weather Conditions")
+        layout = QVBoxLayout()
+
+        # Status indicator with color
+        status_layout = QHBoxLayout()
+        self.status_label_main = QLabel("Status: ")
+        self.status_label_main.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        status_layout.addWidget(self.status_label_main)
+
+        self.status_indicator = QLabel("●")
+        self.status_indicator.setFont(QFont("Arial", 24))
+        status_layout.addWidget(self.status_indicator)
+
+        self.hf_condition_label = QLabel("HF Condition: ")
+        self.hf_condition_label.setFont(QFont("Arial", 11))
+        status_layout.addWidget(self.hf_condition_label)
+
+        status_layout.addStretch()
+        layout.addLayout(status_layout)
+
+        # Description
+        self.description_label = QLabel("")
+        self.description_label.setFont(QFont("Arial", 9))
+        self.description_label.setWordWrap(True)
+        layout.addWidget(self.description_label)
+
+        # Recommendation
+        self.recommendation_label = QLabel("")
+        self.recommendation_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.recommendation_label.setWordWrap(True)
+        layout.addWidget(self.recommendation_label)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_kindex_section(self) -> QGroupBox:
+        """Create K-index display"""
+        group = QGroupBox("Geomagnetic K-Index")
+        layout = QVBoxLayout()
+
+        # K-Index value and scale
+        kindex_layout = QHBoxLayout()
+
+        kindex_label = QLabel("Kp: ")
+        kindex_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        kindex_layout.addWidget(kindex_label)
+
+        self.kp_value_label = QLabel("--")
+        self.kp_value_label.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        self.kp_value_label.setMinimumWidth(50)
+        kindex_layout.addWidget(self.kp_value_label)
+
+        kindex_layout.addWidget(QLabel("(0=Excellent, 9=Storm)"))
+        kindex_layout.addStretch()
+        layout.addLayout(kindex_layout)
+
+        # K-Index progress bar (0-9 scale)
+        self.kindex_progress = QProgressBar()
+        self.kindex_progress.setMaximum(9)
+        self.kindex_progress.setValue(0)
+        self.kindex_progress.setTextVisible(True)
+        layout.addWidget(self.kindex_progress)
+
+        # A-Index
+        aindex_layout = QHBoxLayout()
+        aindex_layout.addWidget(QLabel("Planetary A-Index:"))
+        self.aindex_label = QLabel("--")
+        self.aindex_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        aindex_layout.addWidget(self.aindex_label)
+        aindex_layout.addWidget(QLabel("(Lower is better for DX)"))
+        aindex_layout.addStretch()
+        layout.addLayout(aindex_layout)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_muf_section(self) -> QGroupBox:
+        """Create Maximum Usable Frequency (MUF) bar chart display"""
+        group = QGroupBox("Maximum Usable Frequency (MUF) - HF Band Predictions")
+        layout = QVBoxLayout()
+
+        # MUF explanation
+        info_label = QLabel("MUF is the highest frequency that will refract off the ionosphere. "
+                          "Bands above MUF require skip propagation (less reliable).")
+        info_label.setFont(QFont("Arial", 8))
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # Create grid for MUF bars (2 columns)
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(8)
+
+        self.muf_band_labels: Dict[str, QLabel] = {}  # Band name -> label with bar
+        self.muf_value_labels: Dict[str, QLabel] = {}  # Band name -> value label
+
+        # Standard HF bands to display (80m, 40m, 20m, 15m, 10m are most common)
+        bands_to_show = ["160m", "80m", "40m", "20m", "15m", "10m"]
+
+        for i, band in enumerate(bands_to_show):
+            row = i % 3
+            col = (i // 3) * 2
+
+            # Band label
+            band_label = QLabel(f"{band}:")
+            band_label.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+            grid_layout.addWidget(band_label, row, col)
+
+            # MUF value and bar container
+            value_bar_layout = QHBoxLayout()
+
+            # MUF value label
+            muf_value_label = QLabel("--")
+            muf_value_label.setFont(QFont("Courier", 10, QFont.Weight.Bold))
+            muf_value_label.setMinimumWidth(50)
+            self.muf_value_labels[band] = muf_value_label
+            value_bar_layout.addWidget(muf_value_label)
+
+            # Simplified bar representation using label with styled background
+            # We'll show this as text with indicator (using text color coding)
+            muf_bar_label = QLabel("█░░░░░░░░░░ Calculating...")
+            muf_bar_label.setFont(QFont("Courier", 8))
+            muf_bar_label.setMinimumWidth(120)
+            self.muf_band_labels[band] = muf_bar_label
+            value_bar_layout.addWidget(muf_bar_label)
+
+            value_bar_layout.addStretch()
+
+            grid_layout.addLayout(value_bar_layout, row, col + 1)
+
+        layout.addLayout(grid_layout)
+
+        # Add note about location
+        location_label = QLabel("Location: Getting grid square from settings...")
+        location_label.setFont(QFont("Arial", 8))
+        location_label.setStyleSheet("color: gray;")
+        self.muf_location_label = location_label
+        layout.addWidget(location_label)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_solar_section(self) -> QGroupBox:
+        """Create solar activity display"""
+        group = QGroupBox("Solar Activity")
+        layout = QVBoxLayout()
+
+        # Solar Flux Index
+        sfi_layout = QHBoxLayout()
+        sfi_layout.addWidget(QLabel("Solar Flux Index (SFI):"))
+        self.sfi_label = QLabel("-- sfu")
+        self.sfi_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        sfi_layout.addWidget(self.sfi_label)
+        sfi_layout.addWidget(QLabel("(Higher = Better for 10-15-20m)"))
+        sfi_layout.addStretch()
+        layout.addLayout(sfi_layout)
+
+        # SFI condition indicator
+        self.sfi_condition_label = QLabel("")
+        self.sfi_condition_label.setFont(QFont("Arial", 9))
+        layout.addWidget(self.sfi_condition_label)
+
+        # X-ray Class
+        xray_layout = QHBoxLayout()
+        xray_layout.addWidget(QLabel("X-Ray Class:"))
+        self.xray_class_label = QLabel("--")
+        self.xray_class_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        xray_layout.addWidget(self.xray_class_label)
+        xray_layout.addWidget(QLabel("(A=Quiet, X=Major flare)"))
+        xray_layout.addStretch()
+        layout.addLayout(xray_layout)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_propagation_section(self) -> QGroupBox:
+        """Create HF propagation recommendation"""
+        group = QGroupBox("HF Band Recommendations")
+        layout = QVBoxLayout()
+
+        self.band_recommendations = QLabel("")
+        self.band_recommendations.setFont(QFont("Arial", 9))
+        self.band_recommendations.setWordWrap(True)
+        layout.addWidget(self.band_recommendations)
+
+        group.setLayout(layout)
+        return group
+
+    def refresh(self) -> None:
+        """Refresh space weather data"""
+        try:
+            # Try cache first
+            cached = self.cache.get("current_conditions")
+            if cached is not None:
+                logger.debug("Using cached space weather data")
+                self._update_ui(cached)
+                self._update_muf_display(cached)
+                return
+
+            # Fetch new data
+            logger.debug("Fetching current space weather data from NOAA")
+            conditions = self.fetcher.get_current_conditions()
+            solar = self.fetcher.get_solar_data()
+
+            # Combine data
+            data = {**conditions, **solar}
+
+            # Cache the results
+            self.cache.set("current_conditions", data)
+
+            # Update UI
+            self._update_ui(data)
+            self._update_muf_display(data)
+
+            # Update timestamp
+            self.update_status_label.setText(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
+
+        except Exception as e:
+            logger.error(f"Error refreshing space weather: {e}")
+            self.update_status_label.setText(f"Error: {str(e)[:50]}")
+
+    def _update_ui(self, data: dict) -> None:
+        """Update UI with space weather data"""
+        # Current conditions
+        status_info = data.get('status', {})
+        if status_info:
+            status = status_info.get('status', 'Unknown')
+            hf_condition = status_info.get('hf_condition', 'Unknown')
+            description = status_info.get('description', '')
+            recommendation = status_info.get('recommendation', '')
+            color = status_info.get('color', '#999999')
+
+            self.status_label_main.setText(f"Status: {status}")
+            self.hf_condition_label.setText(f"HF Condition: {hf_condition}")
+            self.description_label.setText(description)
+            self.recommendation_label.setText(f"📡 {recommendation}")
+
+            # Set indicator color
+            self.status_indicator.setStyleSheet(f"color: {color};")
+
+        # K-Index
+        kp = data.get('kp_index')
+        if kp is not None:
+            try:
+                kp_val = float(kp)
+                self.kp_value_label.setText(f"{kp_val:.1f}")
+                self.kindex_progress.setValue(int(min(kp_val, 9)))  # Cap at 9
+
+                # Color code the progress bar
+                if kp_val < 3:
+                    style = "background-color: #00AA00;"  # Green
+                elif kp_val < 5:
+                    style = "background-color: #FFAA00;"  # Orange
+                elif kp_val < 7:
+                    style = "background-color: #FF6600;"  # Dark orange
+                else:
+                    style = "background-color: #FF0000;"  # Red
+
+                self.kindex_progress.setStyleSheet(f"QProgressBar::chunk {{{style}}}")
+            except (ValueError, TypeError):
+                self.kp_value_label.setText("--")
+
+        # Geomagnetic Scale
+        g_scale = data.get('geomagnetic_scale')
+        g_text = data.get('geomagnetic_text', '')
+        if g_scale is not None:
+            self.aindex_label.setText(f"G-Scale: {g_scale} ({g_text})")
+
+        # Radio Blackout Scale
+        r_scale = data.get('radio_blackout_scale')
+        if r_scale is not None:
+            # R-scale affects HF, add this info
+            if r_scale == '0':
+                self.sfi_condition_label.setText("Radio: None")
+            elif r_scale in ('1', '2'):
+                self.sfi_condition_label.setText("Radio: Minor disturbance")
+            else:
+                self.sfi_condition_label.setText("Radio: Major event - HF impact!")
+
+        # Solar Radiation Scale
+        s_scale = data.get('solar_radiation_scale')
+        if s_scale is not None:
+            if s_scale == '0':
+                self.xray_class_label.setText("Solar: Quiet")
+            else:
+                self.xray_class_label.setText(f"Solar: Event Level {s_scale}")
+
+        # Band recommendations
+        self._update_band_recommendations(data)
+
+    def _update_band_recommendations(self, data: dict) -> None:
+        """Update HF band recommendations based on current conditions"""
+        kp = data.get('kp_index', 0)
+        sfi = data.get('solar_flux_index', 70)
+
+        if kp is None or sfi is None:
+            self.band_recommendations.setText("Unable to assess conditions")
+            return
+
+        kp_val = float(kp)
+        sfi_val = float(sfi)
+
+        recommendations = []
+
+        # 10m: Needs high SFI and low K-index
+        if kp_val < 4 and sfi_val > 100:
+            recommendations.append("• 10m: ✓ Excellent (high SFI + stable)")
+        elif kp_val < 5:
+            recommendations.append("• 10m: Fair (SFI dependent)")
+        else:
+            recommendations.append("• 10m: Poor (geomagnetic disturbance)")
+
+        # 15m: Good middle ground
+        if kp_val < 5:
+            recommendations.append("• 15m: ✓ Good (try this first)")
+        else:
+            recommendations.append("• 15m: Fair (storm conditions)")
+
+        # 20m: Reliable, less K-index dependent
+        recommendations.append("• 20m: ✓ Always available (reliable)")
+
+        # 40m: Works in all conditions
+        recommendations.append("• 40m: ✓ Excellent (works in any K-index)")
+
+        # 80m/160m: Better in poor conditions
+        if kp_val > 5:
+            recommendations.append("• 80/160m: ✓ Best during storms")
+        else:
+            recommendations.append("• 80/160m: Good (local/regional)")
+
+        self.band_recommendations.setText("\n".join(recommendations))
+
+    def _update_muf_display(self, data: dict) -> None:
+        """Update MUF bar chart with current predictions"""
+        try:
+            # Get user's grid square from settings
+            home_grid = self.config.get("general.home_grid", "FN20qd")
+
+            # Update location label
+            self.muf_location_label.setText(f"Location: {home_grid} (your home grid)")
+
+            # Get solar flux and K-index for MUF calculation
+            sfi = data.get('solar_flux_index')
+            kp = data.get('kp_index')
+
+            if sfi is None or kp is None:
+                logger.warning("Missing SFI or K-index data for MUF calculation")
+                for band in self.muf_band_labels.keys():
+                    self.muf_value_labels[band].setText("--")
+                    self.muf_band_labels[band].setText("Data unavailable")
+                return
+
+            try:
+                sfi_val = int(float(sfi))
+                kp_val = int(float(kp))
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid SFI or K-index values: SFI={sfi}, K={kp}")
+                return
+
+            # Calculate MUF predictions
+            logger.debug(f"Calculating MUF for location {home_grid} (SFI={sfi_val}, K={kp_val})")
+            predictions = self.muf_fetcher.get_band_muf_predictions(
+                sfi=sfi_val,
+                k_index=kp_val,
+                home_grid=home_grid
+            )
+
+            # Store predictions for reference
+            self.current_muf_predictions = predictions
+
+            # Update display for each band
+            for band_name, label in self.muf_band_labels.items():
+                if band_name in predictions:
+                    prediction = predictions[band_name]
+
+                    # Update MUF value label
+                    value_label = self.muf_value_labels[band_name]
+                    value_label.setText(f"{prediction.muf_value:.1f}M")
+
+                    # Create visual bar representation
+                    # Bar fills from 0 to 50 MHz
+                    filled_blocks = int((prediction.muf_value / 50.0) * 10)
+                    filled_blocks = min(filled_blocks, 10)
+
+                    bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
+
+                    # Add status indicator
+                    if prediction.usable:
+                        status = "✓ USABLE"
+                        color = "#00AA00"  # Green
+                    else:
+                        status = "✗ Skip only"
+                        color = "#FF0000"  # Red
+
+                    # Set color for value label
+                    value_label.setStyleSheet(f"color: {color};")
+
+                    # Update bar label
+                    band_min, band_max = prediction.frequency_range
+                    label.setText(f"{bar} {status}")
+                    label.setStyleSheet(f"color: {color};")
+
+                    logger.debug(f"{band_name}: MUF={prediction.muf_value:.1f}MHz "
+                               f"({band_min}-{band_max}MHz), Usable={prediction.usable}")
+                else:
+                    # Band not in predictions
+                    self.muf_value_labels[band_name].setText("N/A")
+                    self.muf_band_labels[band_name].setText("Not calculated")
+
+            logger.info(f"Updated MUF display with {len(predictions)} band predictions")
+
+        except Exception as e:
+            logger.error(f"Error updating MUF display: {e}", exc_info=True)
+            # Show error in first band label
+            if self.muf_band_labels:
+                first_band = next(iter(self.muf_band_labels.values()))
+                first_band.setText(f"Error: {str(e)[:40]}")
+
+    def closeEvent(self, event) -> None:
+        """Clean up on close"""
+        self.refresh_timer.stop()
+        self.fetcher.close()
+        self.muf_fetcher.close()
+        super().closeEvent(event)
