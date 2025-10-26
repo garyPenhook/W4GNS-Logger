@@ -537,46 +537,75 @@ class SpaceWeatherWidget(QWidget):
         self._update_band_recommendations(data)
 
     def _update_band_recommendations(self, data: dict) -> None:
-        """Update HF band recommendations based on current conditions"""
-        kp = data.get('kp_index', 0)
-        sfi = data.get('solar_flux_index', 70)
+        """Update HF band recommendations based on actual time-of-day propagation"""
+        try:
+            kp = data.get('kp_index')
+            sfi = data.get('solar_flux_index')
 
-        if kp is None or sfi is None:
-            self.band_recommendations.setText("Unable to assess conditions")
-            return
+            if kp is None or sfi is None:
+                self.band_recommendations.setText("Unable to assess conditions")
+                return
 
-        kp_val = float(kp)
-        sfi_val = float(sfi)
+            kp_val = int(float(kp))
+            sfi_val = int(float(sfi))
 
-        recommendations = []
+            # Get user's home grid and calculate best bands NOW
+            home_grid = self.config.get("general.home_grid", "FN20qd")
 
-        # 10m: Needs high SFI and low K-index
-        if kp_val < 4 and sfi_val > 100:
-            recommendations.append("• 10m: ✓ Excellent (high SFI + stable)")
-        elif kp_val < 5:
-            recommendations.append("• 10m: Fair (SFI dependent)")
-        else:
-            recommendations.append("• 10m: Poor (geomagnetic disturbance)")
+            # Calculate MUF predictions
+            predictions = self.muf_fetcher.get_band_muf_predictions(
+                sfi=sfi_val,
+                k_index=kp_val,
+                home_grid=home_grid
+            )
 
-        # 15m: Good middle ground
-        if kp_val < 5:
-            recommendations.append("• 15m: ✓ Good (try this first)")
-        else:
-            recommendations.append("• 15m: Fair (storm conditions)")
+            # Get best band ranking based on time of day
+            best_band_info = self.muf_fetcher.get_best_band_now(
+                predictions=predictions,
+                home_grid=home_grid,
+                sfi=sfi_val,
+                k_index=kp_val
+            )
 
-        # 20m: Reliable, less K-index dependent
-        recommendations.append("• 20m: ✓ Always available (reliable)")
+            # Get time period and top 3 bands
+            time_period = best_band_info.get('time_period', 'Unknown')
+            top_3 = best_band_info.get('top_3_bands', [])
 
-        # 40m: Works in all conditions
-        recommendations.append("• 40m: ✓ Excellent (works in any K-index)")
+            recommendations = []
 
-        # 80m: Better in poor conditions
-        if kp_val > 5:
-            recommendations.append("• 80m: ✓ Best during storms")
-        else:
-            recommendations.append("• 80m: Good (local/regional)")
+            # Add time period indicator
+            if time_period == "Daytime":
+                recommendations.append(f"☀️ {time_period}: High frequencies best for worldwide")
+            elif time_period == "Terminator (Best!)":
+                recommendations.append(f"🌅 {time_period}: All bands excellent!")
+            else:  # Nighttime
+                recommendations.append(f"🌙 {time_period}: Low frequencies best for worldwide")
 
-        self.band_recommendations.setText("\n".join(recommendations))
+            # Add top 3 recommended bands with usability info
+            if top_3:
+                recommendations.append("\nBest bands to use RIGHT NOW:")
+                for i, band_info in enumerate(top_3, 1):
+                    band = band_info['band']
+                    muf = band_info['muf']
+                    margin = band_info['margin']
+
+                    # Determine quality indicator based on margin
+                    if margin > 5:
+                        quality = "✓ Excellent"
+                    elif margin > 2:
+                        quality = "✓ Good"
+                    else:
+                        quality = "⚠ Marginal"
+
+                    recommendations.append(f"{i}. {band}: {quality} (MUF margin: +{margin:.1f} MHz)")
+            else:
+                recommendations.append("\nNo bands currently usable. Wait for conditions to improve.")
+
+            self.band_recommendations.setText("\n".join(recommendations))
+
+        except Exception as e:
+            logger.error(f"Error updating band recommendations: {e}")
+            self.band_recommendations.setText(f"Error calculating recommendations: {str(e)[:50]}")
 
     def _update_muf_display(self, data: dict) -> None:
         """Update MUF bar chart with current predictions"""
