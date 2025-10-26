@@ -27,6 +27,25 @@ logger = logging.getLogger(__name__)
 class SpaceWeatherWidget(QWidget):
     """Displays current space weather conditions and HF propagation status"""
 
+    # Default font size multipliers for consistent scaling
+    FONT_SMALL = 0.85  # 8-9pt equivalent
+    FONT_NORMAL = 1.0  # 10-11pt equivalent
+    FONT_LARGE = 1.25  # 12-13pt equivalent
+    FONT_XLARGE = 1.5  # 15-16pt equivalent
+    FONT_HUGE = 2.0    # 20pt+ equivalent
+
+    def _get_font(self, size_multiplier: float = FONT_NORMAL, bold: bool = False) -> QFont:
+        """Get a properly scaled font based on application default font and multiplier"""
+        font = QFont()  # Get application default font
+        # Scale the point size
+        base_size = font.pointSize()
+        if base_size <= 0:
+            base_size = 10  # Fallback if point size isn't set
+        font.setPointSize(int(base_size * size_multiplier))
+        if bold:
+            font.setBold(True)
+        return font
+
     def __init__(self, parent: Optional[QWidget] = None):
         """
         Initialize space weather widget
@@ -99,12 +118,12 @@ class SpaceWeatherWidget(QWidget):
         controls_layout.addWidget(refresh_btn)
 
         self.update_status_label = QLabel("Loading...")
-        self.update_status_label.setFont(QFont("Arial", 8))
+        self.update_status_label.setFont(self._get_font(self.FONT_SMALL))
         controls_layout.addWidget(self.update_status_label)
 
         # Data source indicator
         self.data_source_label = QLabel("Data: NOAA SWPC")
-        self.data_source_label.setFont(QFont("Arial", 7))
+        self.data_source_label.setFont(self._get_font(self.FONT_SMALL))
         self.data_source_label.setStyleSheet("color: #666666;")
         controls_layout.addWidget(self.data_source_label)
 
@@ -122,15 +141,15 @@ class SpaceWeatherWidget(QWidget):
         # Status indicator with color
         status_layout = QHBoxLayout()
         self.status_label_main = QLabel("Status: ")
-        self.status_label_main.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self.status_label_main.setFont(self._get_font(self.FONT_LARGE, bold=True))
         status_layout.addWidget(self.status_label_main)
 
         self.status_indicator = QLabel("●")
-        self.status_indicator.setFont(QFont("Arial", 24))
+        self.status_indicator.setFont(self._get_font(self.FONT_HUGE))
         status_layout.addWidget(self.status_indicator)
 
         self.hf_condition_label = QLabel("HF Condition: ")
-        self.hf_condition_label.setFont(QFont("Arial", 11))
+        self.hf_condition_label.setFont(self._get_font(self.FONT_LARGE))
         status_layout.addWidget(self.hf_condition_label)
 
         status_layout.addStretch()
@@ -138,13 +157,13 @@ class SpaceWeatherWidget(QWidget):
 
         # Description
         self.description_label = QLabel("")
-        self.description_label.setFont(QFont("Arial", 9))
+        self.description_label.setFont(self._get_font(self.FONT_NORMAL))
         self.description_label.setWordWrap(True)
         layout.addWidget(self.description_label)
 
         # Recommendation
         self.recommendation_label = QLabel("")
-        self.recommendation_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.recommendation_label.setFont(self._get_font(self.FONT_NORMAL, bold=True))
         self.recommendation_label.setWordWrap(True)
         layout.addWidget(self.recommendation_label)
 
@@ -160,11 +179,11 @@ class SpaceWeatherWidget(QWidget):
         kindex_layout = QHBoxLayout()
 
         kindex_label = QLabel("Kp: ")
-        kindex_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        kindex_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
         kindex_layout.addWidget(kindex_label)
 
         self.kp_value_label = QLabel("--")
-        self.kp_value_label.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        self.kp_value_label.setFont(self._get_font(self.FONT_HUGE, bold=True))
         self.kp_value_label.setMinimumWidth(50)
         kindex_layout.addWidget(self.kp_value_label)
 
@@ -183,7 +202,7 @@ class SpaceWeatherWidget(QWidget):
         aindex_layout = QHBoxLayout()
         aindex_layout.addWidget(QLabel("Planetary A-Index:"))
         self.aindex_label = QLabel("--")
-        self.aindex_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.aindex_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
         aindex_layout.addWidget(self.aindex_label)
         aindex_layout.addWidget(QLabel("(Lower is better for DX)"))
         aindex_layout.addStretch()
@@ -202,7 +221,7 @@ class SpaceWeatherWidget(QWidget):
         # Time and location info
         time_info_layout = QHBoxLayout()
         self.best_band_time_label = QLabel("Time: -- UTC | Location: --")
-        self.best_band_time_label.setFont(QFont("Arial", 9))
+        self.best_band_time_label.setFont(self._get_font(self.FONT_NORMAL))
         time_info_layout.addWidget(self.best_band_time_label)
         time_info_layout.addStretch()
         layout.addLayout(time_info_layout)
@@ -212,7 +231,7 @@ class SpaceWeatherWidget(QWidget):
 
         # Time period emoji
         self.best_band_emoji = QLabel("❓")
-        self.best_band_emoji.setFont(QFont("Arial", 24))
+        self.best_band_emoji.setFont(self._get_font(self.FONT_HUGE))
         self.best_band_emoji.setMinimumWidth(50)
         best_band_layout.addWidget(self.best_band_emoji)
 
@@ -221,20 +240,20 @@ class SpaceWeatherWidget(QWidget):
 
         # Best band name (LARGE) - uses system palette, works in light and dark mode
         self.best_band_name = QLabel("--")
-        self.best_band_name.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        self.best_band_name.setFont(self._get_font(self.FONT_XLARGE, bold=True))
         self.best_band_name.setStyleSheet("color: #1E7D5E;")  # Medium green, readable in both modes
         recommendation_vbox.addWidget(self.best_band_name)
 
         # Reason text - uses system palette
         self.best_band_reason = QLabel("Loading propagation data...")
-        self.best_band_reason.setFont(QFont("Arial", 9))
+        self.best_band_reason.setFont(self._get_font(self.FONT_NORMAL))
         self.best_band_reason.setWordWrap(True)
         # No color style - uses system palette text color
         recommendation_vbox.addWidget(self.best_band_reason)
 
         # MUF and margin info - uses system palette
         self.best_band_muf_info = QLabel("MUF: -- MHz | Margin: -- MHz")
-        self.best_band_muf_info.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+        self.best_band_muf_info.setFont(self._get_font(self.FONT_SMALL, bold=True))
         # No color style - uses system palette text color
         recommendation_vbox.addWidget(self.best_band_muf_info)
 
@@ -245,7 +264,7 @@ class SpaceWeatherWidget(QWidget):
         # Top 3 bands section
         layout.addWidget(QLabel("Next best options:"))
         self.best_band_top3_label = QLabel("Loading...")
-        self.best_band_top3_label.setFont(QFont("Arial", 8))
+        self.best_band_top3_label.setFont(self._get_font(self.FONT_SMALL))
         # Use palette-aware styling with padding only, no explicit colors
         self.best_band_top3_label.setStyleSheet("padding: 5px;")
         self.best_band_top3_label.setWordWrap(True)
@@ -265,7 +284,7 @@ class SpaceWeatherWidget(QWidget):
             "If band frequency is BELOW MUF: works for any distance.\n"
             "If band frequency is ABOVE MUF: only works for distant contacts."
         )
-        info_label.setFont(QFont("Arial", 8))
+        info_label.setFont(self._get_font(self.FONT_SMALL))
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -274,7 +293,7 @@ class SpaceWeatherWidget(QWidget):
             "🟢 Green (Reliable): Band works for local, regional, AND distant stations\n"
             "🔴 Red (Long-distance): Band only works with distant stations via skip"
         )
-        legend_label.setFont(QFont("Arial", 8))
+        legend_label.setFont(self._get_font(self.FONT_SMALL))
         legend_label.setWordWrap(True)
         legend_label.setStyleSheet("color: gray;")
         layout.addWidget(legend_label)
@@ -295,7 +314,7 @@ class SpaceWeatherWidget(QWidget):
 
             # Band label
             band_label = QLabel(f"{band}:")
-            band_label.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+            band_label.setFont(self._get_font(self.FONT_NORMAL, bold=True))
             grid_layout.addWidget(band_label, row, col)
 
             # MUF value and bar container
@@ -303,7 +322,7 @@ class SpaceWeatherWidget(QWidget):
 
             # MUF value label
             muf_value_label = QLabel("--")
-            muf_value_label.setFont(QFont("Courier", 10, QFont.Weight.Bold))
+            muf_value_label.setFont(self._get_font(self.FONT_NORMAL, bold=True))
             muf_value_label.setMinimumWidth(50)
             self.muf_value_labels[band] = muf_value_label
             value_bar_layout.addWidget(muf_value_label)
@@ -311,7 +330,7 @@ class SpaceWeatherWidget(QWidget):
             # Simplified bar representation using label with styled background
             # We'll show this as text with indicator (using text color coding)
             muf_bar_label = QLabel("█░░░░░░░░░░ Calculating...")
-            muf_bar_label.setFont(QFont("Courier", 8))
+            muf_bar_label.setFont(self._get_font(self.FONT_SMALL))
             muf_bar_label.setMinimumWidth(120)
             self.muf_band_labels[band] = muf_bar_label
             value_bar_layout.addWidget(muf_bar_label)
@@ -324,7 +343,7 @@ class SpaceWeatherWidget(QWidget):
 
         # Add note about location
         location_label = QLabel("Location: Getting grid square from settings...")
-        location_label.setFont(QFont("Arial", 8))
+        location_label.setFont(self._get_font(self.FONT_SMALL))
         location_label.setStyleSheet("color: gray;")
         self.muf_location_label = location_label
         layout.addWidget(location_label)
@@ -341,7 +360,7 @@ class SpaceWeatherWidget(QWidget):
         sfi_layout = QHBoxLayout()
         sfi_layout.addWidget(QLabel("Solar Flux Index (SFI):"))
         self.sfi_label = QLabel("-- sfu")
-        self.sfi_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.sfi_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
         sfi_layout.addWidget(self.sfi_label)
         sfi_layout.addWidget(QLabel("(Higher = Better for 10-15-20m)"))
         sfi_layout.addStretch()
@@ -349,14 +368,14 @@ class SpaceWeatherWidget(QWidget):
 
         # SFI condition indicator
         self.sfi_condition_label = QLabel("")
-        self.sfi_condition_label.setFont(QFont("Arial", 9))
+        self.sfi_condition_label.setFont(self._get_font(self.FONT_NORMAL))
         layout.addWidget(self.sfi_condition_label)
 
         # Sunspot Count
         sunspot_layout = QHBoxLayout()
         sunspot_layout.addWidget(QLabel("Sunspot Count:"))
         self.sunspot_count_label = QLabel("--")
-        self.sunspot_count_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.sunspot_count_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
         sunspot_layout.addWidget(self.sunspot_count_label)
         sunspot_layout.addWidget(QLabel("(Current observed count)"))
         sunspot_layout.addStretch()
@@ -366,7 +385,7 @@ class SpaceWeatherWidget(QWidget):
         ssn_layout = QHBoxLayout()
         ssn_layout.addWidget(QLabel("Smoothed Sunspot # (SSN):"))
         self.ssn_label = QLabel("--")
-        self.ssn_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.ssn_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
         ssn_layout.addWidget(self.ssn_label)
         ssn_layout.addWidget(QLabel("(12-month average)"))
         ssn_layout.addStretch()
@@ -376,7 +395,7 @@ class SpaceWeatherWidget(QWidget):
         xray_layout = QHBoxLayout()
         xray_layout.addWidget(QLabel("X-Ray Class:"))
         self.xray_class_label = QLabel("--")
-        self.xray_class_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        self.xray_class_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
         xray_layout.addWidget(self.xray_class_label)
         xray_layout.addWidget(QLabel("(A=Quiet, X=Major flare)"))
         xray_layout.addStretch()
@@ -391,7 +410,7 @@ class SpaceWeatherWidget(QWidget):
         layout = QVBoxLayout()
 
         self.band_recommendations = QLabel("")
-        self.band_recommendations.setFont(QFont("Arial", 9))
+        self.band_recommendations.setFont(self._get_font(self.FONT_SMALL))
         self.band_recommendations.setWordWrap(True)
         layout.addWidget(self.band_recommendations)
 
