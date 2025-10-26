@@ -87,8 +87,8 @@ class VOACAPMUFFetcher:
         self.last_update = None
         self.cached_predictions: Dict[str, List[MUFPrediction]] = {}
 
-        # Initialize space weather fetcher for GIRO data access
-        self.weather_fetcher = SpaceWeatherFetcher()
+        # Lazy-initialize space weather fetcher for GIRO data access (avoid blocking GUI on startup)
+        self.weather_fetcher = None
         self.giro_data = None
         self.giro_data_time = None
 
@@ -217,7 +217,12 @@ class VOACAPMUFFetcher:
                     logger.debug(f"Using cached GIRO data ({age_seconds:.0f}s old)")
                     return self.giro_data.get('mufd')
 
-            # Fetch fresh GIRO data from nearest station
+            # Lazy-initialize weather fetcher on first use (avoid blocking GUI on startup)
+            if self.weather_fetcher is None:
+                logger.debug("Initializing SpaceWeatherFetcher for GIRO data access...")
+                self.weather_fetcher = SpaceWeatherFetcher()
+
+            # Fetch fresh GIRO data from nearest station (with timeout to prevent GUI blocking)
             logger.debug("Fetching fresh GIRO data from nearest ionosonde...")
             giro_info = self.weather_fetcher.get_giro_nearest_station_mufd(latitude, longitude)
 
@@ -845,8 +850,15 @@ class VOACAPMUFFetcher:
                 return "#FF0000"  # Red - not usable
 
     def close(self) -> None:
-        """Close HTTP session"""
+        """Close HTTP session and weather fetcher"""
         try:
             self.session.close()
         except Exception as e:
             logger.warning(f"Error closing VOACAP session: {e}")
+
+        # Close weather fetcher if it was initialized
+        try:
+            if self.weather_fetcher is not None:
+                self.weather_fetcher.close()
+        except Exception as e:
+            logger.warning(f"Error closing weather fetcher: {e}")
