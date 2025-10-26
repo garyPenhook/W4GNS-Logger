@@ -244,8 +244,37 @@ class VOACAPMUFFetcher:
             else:
                 k_factor = 0.80 - (k_index - 7) * 0.08  # More aggressive reduction
 
-            # Latitude correction (equatorial regions have higher MUF)
-            latitude_factor = 1.0 + (0.3 * (90.0 - abs(latitude)) / 90.0)
+            # Latitude correction - accounts for ionospheric characteristics by latitude zone
+            # This is crucial for accuracy across different regions of the globe
+            abs_lat = abs(latitude)
+
+            if abs_lat < 10:
+                # EQUATORIAL REGION (0-10°): Lower MUF, Spread-F effects, less reliable
+                # More absorption, different ionospheric layer heights
+                latitude_factor = 0.85 - (5 - abs_lat) * 0.02
+            elif abs_lat < 20:
+                # LOW EQUATORIAL (10-20°): Transitioning to better propagation
+                latitude_factor = 0.88 + (abs_lat - 10) * 0.008
+            elif abs_lat < 35:
+                # LOW MID-LATITUDE (20-35°): Good propagation
+                latitude_factor = 0.94 + (abs_lat - 20) * 0.005
+            elif abs_lat < 55:
+                # MID-LATITUDE (35-55°): OPTIMAL - most stable, best for DX
+                # This is the reference region for standard propagation models
+                latitude_factor = 1.0 + (abs_lat - 35) * 0.002
+            elif abs_lat < 70:
+                # HIGH LATITUDE (55-70°): Auroral effects, more variable
+                # Stronger K-index dependence, lower average MUF during storms
+                latitude_factor = 1.02 - (abs_lat - 55) * 0.012
+                # Apply additional K-index penalty at high latitudes
+                if k_index > 5:
+                    latitude_factor *= (1.0 - (k_index - 5) * 0.08)
+            else:
+                # POLAR REGION (>70°): Extreme auroral effects, unreliable
+                # Special aurora-dependent behavior
+                latitude_factor = 0.70
+                if k_index >= 6:
+                    latitude_factor *= 0.70  # Severe degradation during storms
 
             # Frequency-dependent attenuation factor
             # Lower frequencies penetrate better
