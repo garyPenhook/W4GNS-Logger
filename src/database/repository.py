@@ -1166,11 +1166,13 @@ class DatabaseRepository:
                 if user_centurion_entry and user_centurion_entry.centurion_date:
                     centurion_achievement_date = user_centurion_entry.centurion_date
 
-            # Get all CW contacts with SKCC numbers
-            centurion_contacts = session.query(Contact).filter(
+            # Get all CW contacts with SKCC numbers (optimized: select only needed columns)
+            centurion_contacts = session.query(
+                Contact.callsign, Contact.skcc_number, Contact.qso_date, Contact.band
+            ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None)
-            ).order_by(Contact.qso_date).all()
+            ).all()
 
             # Collect unique SKCC members (base number without suffixes)
             unique_members = set()
@@ -1250,7 +1252,7 @@ class DatabaseRepository:
                 'endorsement': endorsement,
                 'next_level': next_level,
                 'members_to_next': max(0, next_level - member_count),
-                'total_centurion_on_record': len(session.query(CenturionMember).all()),
+                'total_centurion_on_record': session.query(func.count(CenturionMember.id)).scalar() or 0,
                 'centurion_achievement_date': centurion_achievement_date  # Official Centurion achievement date from SKCC list
             }
 
@@ -1284,11 +1286,24 @@ class DatabaseRepository:
         """
         session = self.get_session()
         try:
-            from src.services.tribune_fetcher import TribuneFetcher
             from src.config.settings import get_config_manager
 
-            # First check if user is a Centurion
-            centurion_contacts = session.query(Contact).filter(
+            # Optimized: Load Tribune member numbers upfront (single query)
+            tribune_members_data = session.query(TribuneeMember.skcc_number).all()
+            tribune_member_set = set()
+            for member in tribune_members_data:
+                skcc_num = member.skcc_number.strip()
+                if skcc_num:
+                    base = skcc_num.split()[0]
+                    if base and base[-1] in 'CTS':
+                        base = base[:-1]
+                    if base:
+                        tribune_member_set.add(base)
+
+            # Optimized: Get only needed columns for centurion calculation
+            centurion_contacts = session.query(
+                Contact.skcc_number
+            ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None)
             ).all()
@@ -1321,10 +1336,12 @@ class DatabaseRepository:
                 if user_tribune_entry and user_tribune_entry.tribune_date:
                     tribune_achievement_date = user_tribune_entry.tribune_date
 
-            # Get all Tribune-eligible contacts (CW + valid date + Tribune/Senator)
+            # Optimized: Get only needed columns for Tribune calculations
             tribune_eligible_date = "20070301"  # March 1, 2007
 
-            tribune_contacts = session.query(Contact).filter(
+            tribune_contacts = session.query(
+                Contact.skcc_number, Contact.qso_date
+            ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
                 Contact.qso_date >= tribune_eligible_date
@@ -1339,21 +1356,20 @@ class DatabaseRepository:
                 if not skcc_num:
                     continue
 
-                # Check if this is a Tribune/Senator member
-                is_tribune = TribuneFetcher.is_tribune_member(session, skcc_num)
-                if is_tribune:
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    if base_number and base_number.isdigit():
-                        # Add to unique tribunes
-                        unique_tribunes.add(base_number)
+                # Check if this is a Tribune/Senator member (using pre-loaded set - no N+1)
+                base_number = skcc_num.split()[0]
+                if base_number and base_number[-1] in 'CTS':
+                    base_number = base_number[:-1]
+                if base_number and 'x' in base_number:
+                    base_number = base_number.split('x')[0]
 
-                        # After official achievement date, count for endorsements
-                        if tribune_achievement_date and contact.qso_date > tribune_achievement_date:
-                            tribunes_after_achievement.add(base_number)
+                if base_number and base_number in tribune_member_set:
+                    # Add to unique tribunes
+                    unique_tribunes.add(base_number)
+
+                    # After official achievement date, count for endorsements
+                    if tribune_achievement_date and contact.qso_date > tribune_achievement_date:
+                        tribunes_after_achievement.add(base_number)
 
             # For endorsement calculation, only count Tribune members contacted AFTER achievement
             tribune_count_for_endorsement = len(tribunes_after_achievement)
@@ -1421,7 +1437,7 @@ class DatabaseRepository:
                 'tribunes_to_next': tribunes_to_next if tribune_count >= 50 else max(0, 50 - tribune_count),
                 'is_centurion': is_centurion,
                 'centurion_count': len(unique_centurions),
-                'total_tribune_on_record': len(session.query(TribuneeMember).all()),
+                'total_tribune_on_record': session.query(func.count(TribuneeMember.id)).scalar() or 0,
                 'tribune_achievement_date': tribune_achievement_date  # Official Tribune achievement date from SKCC list
             }
 
@@ -1457,9 +1473,30 @@ class DatabaseRepository:
         """
         session = self.get_session()
         try:
-            from src.services.tribune_fetcher import TribuneFetcher
-            from src.services.senator_fetcher import SenatorFetcher
             from src.config.settings import get_config_manager
+
+            # Optimized: Load Tribune and Senator member numbers upfront (two single queries)
+            tribune_members_data = session.query(TribuneeMember.skcc_number).all()
+            tribune_member_set = set()
+            for member in tribune_members_data:
+                skcc_num = member.skcc_number.strip()
+                if skcc_num:
+                    base = skcc_num.split()[0]
+                    if base and base[-1] in 'CTS':
+                        base = base[:-1]
+                    if base:
+                        tribune_member_set.add(base)
+
+            senator_members_data = session.query(SenatorMember.skcc_number).all()
+            senator_member_set = set()
+            for member in senator_members_data:
+                skcc_num = member.skcc_number.strip()
+                if skcc_num:
+                    base = skcc_num.split()[0]
+                    if base and base[-1] in 'CTS':
+                        base = base[:-1]
+                    if base:
+                        senator_member_set.add(base)
 
             # Get user's callsign from config
             config_manager = get_config_manager()
@@ -1475,8 +1512,10 @@ class DatabaseRepository:
                 if user_tribune_entry and user_tribune_entry.tribune_date:
                     tribune_x8_achievement_date = user_tribune_entry.tribune_date
 
-            # First check if user is Tribune x8 (400+ unique Tribune members)
-            tribune_contacts = session.query(Contact).filter(
+            # Optimized: Get only needed columns for Tribune x8 calculation
+            tribune_contacts = session.query(
+                Contact.skcc_number
+            ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
                 Contact.qso_date >= "20070301"  # After Tribune eligible date
@@ -1488,23 +1527,24 @@ class DatabaseRepository:
                 if not skcc_num:
                     continue
 
-                # Check if this is a Tribune/Senator member
-                is_tribune = TribuneFetcher.is_tribune_member(session, skcc_num)
-                if is_tribune:
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    if base_number and base_number.isdigit():
-                        unique_tribunes.add(base_number)
+                # Check if this is a Tribune/Senator member (using pre-loaded set - no N+1)
+                base_number = skcc_num.split()[0]
+                if base_number and base_number[-1] in 'CTS':
+                    base_number = base_number[:-1]
+                if base_number and 'x' in base_number:
+                    base_number = base_number.split('x')[0]
+
+                if base_number and base_number in tribune_member_set:
+                    unique_tribunes.add(base_number)
 
             is_tribune_x8 = len(unique_tribunes) >= 400
 
-            # Get all Senator-eligible contacts (CW + valid date + Tribune/Senator)
+            # Optimized: Get only needed columns for Senator calculations
             senator_eligible_date = "20130801"  # August 1, 2013
 
-            senator_contacts = session.query(Contact).filter(
+            senator_contacts = session.query(
+                Contact.skcc_number, Contact.qso_date
+            ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
                 Contact.qso_date >= senator_eligible_date
@@ -1518,19 +1558,17 @@ class DatabaseRepository:
                 if not skcc_num:
                     continue
 
-                # Check if this is a Tribune/Senator member
-                is_tribune_or_senator = (TribuneFetcher.is_tribune_member(session, skcc_num) or
-                                       SenatorFetcher.is_senator_member(session, skcc_num))
-                if is_tribune_or_senator:
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    if base_number and base_number.isdigit():
-                        # Only add if contacted after Tribune x8 date
-                        if tribune_x8_achievement_date and contact.qso_date > tribune_x8_achievement_date:
-                            unique_senators.add(base_number)
+                # Check if this is a Tribune/Senator member (using pre-loaded sets - no N+1)
+                base_number = skcc_num.split()[0]
+                if base_number and base_number[-1] in 'CTS':
+                    base_number = base_number[:-1]
+                if base_number and 'x' in base_number:
+                    base_number = base_number.split('x')[0]
+
+                if base_number and (base_number in tribune_member_set or base_number in senator_member_set):
+                    # Only add if contacted after Tribune x8 date
+                    if tribune_x8_achievement_date and contact.qso_date > tribune_x8_achievement_date:
+                        unique_senators.add(base_number)
 
             # For endorsement calculation, only count Tribune/Senator members contacted AFTER x8
             senator_count_for_endorsement = len(unique_senators)
@@ -1583,7 +1621,7 @@ class DatabaseRepository:
                 'senators_to_next': senators_to_next,
                 'is_tribune_x8': is_tribune_x8,
                 'tribune_x8_count': len(unique_tribunes),
-                'total_senator_on_record': len(session.query(SenatorMember).all()),
+                'total_senator_on_record': session.query(func.count(SenatorMember.id)).scalar() or 0,
                 'tribune_x8_achievement_date': tribune_x8_achievement_date  # Official Tribune x8 achievement date from SKCC list
             }
 

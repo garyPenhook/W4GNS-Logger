@@ -41,21 +41,8 @@ class MainWindow(QMainWindow):
         db_path = self.config_manager.get("database.location")
         self.db = DatabaseRepository(db_path)
 
-        # Auto-sync SKCC roster on startup (background, non-blocking)
-        logger.info("Syncing SKCC membership roster...")
-        try:
-            success = self.db.skcc_members.sync_membership_data()
-            member_count = self.db.skcc_members.get_member_count()
-            if success and member_count > 0:
-                logger.info(f"SKCC roster synced: {member_count} members available")
-            elif member_count > 0:
-                logger.warning(f"SKCC roster sync incomplete: {member_count} members in cache")
-            else:
-                logger.warning("SKCC roster sync failed and no cached data. Loading test data for development...")
-                if self.db.skcc_members.load_test_data():
-                    logger.warning("Test data loaded - use 'Sync Roster' button to load real roster when ready")
-        except Exception as e:
-            logger.error(f"Error syncing SKCC roster on startup: {e}")
+        # Will be set after UI is initialized
+        self.status_label = None
 
         # Setup UI
         self.setWindowTitle("W4GNS Ham Radio Logger")
@@ -65,6 +52,9 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_central_widget()
         self._create_status_bar()
+
+        # Start background roster sync (non-blocking)
+        self._start_background_roster_sync()
 
         logger.info("Main window initialized")
 
@@ -290,6 +280,44 @@ class MainWindow(QMainWindow):
         """Create status bar"""
         self.status_label = self.statusBar()
         self.status_label.showMessage("Ready")
+
+    def _start_background_roster_sync(self) -> None:
+        """Start SKCC roster sync in background thread (non-blocking)"""
+        import threading
+
+        def sync_roster():
+            """Background thread function to sync SKCC roster"""
+            try:
+                self.status_label.showMessage("Syncing SKCC roster... (background)")
+                logger.info("Starting background SKCC roster sync...")
+
+                success = self.db.skcc_members.sync_membership_data()
+                member_count = self.db.skcc_members.get_member_count()
+
+                if success and member_count > 0:
+                    status_msg = f"✓ SKCC roster synced: {member_count} members"
+                    logger.info(status_msg)
+                elif member_count > 0:
+                    status_msg = f"⚠ SKCC roster (cache): {member_count} members available"
+                    logger.warning(status_msg)
+                else:
+                    logger.warning("SKCC roster sync failed, no cached data")
+                    if self.db.skcc_members.load_test_data():
+                        status_msg = "⚠ Test data loaded - use 'Sync Roster' button to update"
+                        logger.warning(status_msg)
+                    else:
+                        status_msg = "✗ No SKCC data available"
+
+                # Update status bar from background thread
+                self.status_label.showMessage(status_msg)
+
+            except Exception as e:
+                logger.error(f"Error syncing SKCC roster in background: {e}")
+                self.status_label.showMessage(f"✗ Roster sync error: {str(e)}")
+
+        # Start roster sync in daemon thread (won't block main thread)
+        roster_thread = threading.Thread(target=sync_roster, daemon=True)
+        roster_thread.start()
 
     def _show_help(self) -> None:
         """Show help contents"""

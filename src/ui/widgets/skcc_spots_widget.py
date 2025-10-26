@@ -103,20 +103,18 @@ class SKCCSpotWidget(QWidget):
         self._load_band_selections()  # Load saved band selections
         self._connect_signals()
 
-        # Refresh timer
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self._refresh_spots)
-        self.refresh_timer.start(5000)  # Refresh every 5 seconds
-
-        # Auto-cleanup timer
+        # Auto-cleanup timer (runs periodically to clean up old spots)
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self._cleanup_old_spots)
         self.cleanup_timer.start(300000)  # Cleanup every 5 minutes
 
-        # Award cache refresh timer (refresh every minute)
+        # Award cache refresh timer (runs periodically to update award-critical member list)
         self.award_cache_timer = QTimer()
         self.award_cache_timer.timeout.connect(self._refresh_award_cache)
-        self.award_cache_timer.start(60000)
+        self.award_cache_timer.start(60000)  # Refresh every minute
+
+        # Note: Spot display refresh is now event-driven via _on_new_spot() callback
+        # instead of polling every 5 seconds. This significantly reduces CPU usage.
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
