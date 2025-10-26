@@ -517,10 +517,12 @@ class SpaceWeatherFetcher:
 
     def get_giro_nearest_station_mufd(self, latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
         """
-        Get real-time MUF measurement from nearest GIRO ionosonde station.
+        Get real-time MUF measurement from nearest (or overridden) GIRO ionosonde station.
 
         GIRO provides ACTUAL MEASURED ionospheric data from worldwide ionosondes,
         updated every ~15 minutes. This is far more accurate than empirical formulas.
+
+        Can be overridden via settings: propagation.giro_station_override (e.g., "WP937")
 
         Args:
             latitude: User latitude in degrees
@@ -547,6 +549,51 @@ class SpaceWeatherFetcher:
                 logger.warning("No GIRO station data available")
                 return None
 
+            # Check if user has overridden station selection
+            from src.config.settings import ConfigManager
+            config = ConfigManager()
+            override_station = config.get("propagation.giro_station_override", "").upper()
+
+            # If override specified, use that station
+            if override_station:
+                logger.debug(f"Using GIRO station override: {override_station}")
+                for station_data in stations:
+                    station_info = station_data.get('station', {})
+                    code = station_info.get('code', '').upper()
+                    if code == override_station:
+                        # Found override station, use it
+                        mufd = station_data.get('mufd')
+                        fof2 = station_data.get('fof2')
+                        hmf2 = station_data.get('hmf2')
+                        time_str = station_data.get('time', 'Unknown')
+
+                        # Calculate distance for reference
+                        station_lat = float(station_info.get('latitude', 0))
+                        station_lon = float(station_info.get('longitude', 0))
+                        if station_lon > 180:
+                            station_lon = station_lon - 360
+                        user_lon = longitude if longitude <= 180 else longitude - 360
+
+                        lat_diff = latitude - station_lat
+                        lon_diff = user_lon - station_lon
+                        distance_deg = (lat_diff**2 + lon_diff**2)**0.5
+                        distance_km = distance_deg * 111.0
+
+                        logger.info(f"Using override GIRO station: {code} at {distance_km:.0f}km, MUFD={mufd:.1f}MHz")
+                        return {
+                            'mufd': mufd,
+                            'fof2': fof2,
+                            'hmf2': hmf2,
+                            'station_code': code,
+                            'station_name': station_info.get('name', 'Unknown'),
+                            'distance_km': round(distance_km, 1),
+                            'time': time_str,
+                            'source': 'GIRO'
+                        }
+
+                logger.warning(f"GIRO station override {override_station} not found, falling back to nearest")
+
+            # Auto-select nearest station
             # Calculate distance to each station using simple Haversine approximation
             # For small distances, Euclidean distance in degrees works adequately
             min_distance = float('inf')

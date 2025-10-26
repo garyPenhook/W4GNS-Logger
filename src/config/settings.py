@@ -61,6 +61,10 @@ class ConfigManager:
             "min_signal_strength": 0,  # dB
             "max_spot_age_seconds": 300,  # seconds
         },
+        "propagation": {
+            "giro_station_override": "",  # Leave empty for auto-select nearest, or set to station code (e.g., "WP937")
+            "giro_cache_minutes": 15,  # Cache GIRO data for this many minutes
+        },
         "ui": {
             "theme": "light",
             "font_size": 10,
