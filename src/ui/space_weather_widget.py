@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar,
     QPushButton, QGridLayout
 )
-from PyQt6.QtCore import QTimer, Qt, QMetaObject
+from PyQt6.QtCore import QTimer, Qt, QMetaObject, pyqtSlot
 from PyQt6.QtGui import QFont
 import threading
 
@@ -28,11 +28,11 @@ class SpaceWeatherWidget(QWidget):
     """Displays current space weather conditions and HF propagation status"""
 
     # Default font size multipliers for consistent scaling
-    FONT_SMALL = 0.85  # 8-9pt equivalent
-    FONT_NORMAL = 1.0  # 10-11pt equivalent
-    FONT_LARGE = 1.25  # 12-13pt equivalent
-    FONT_XLARGE = 1.5  # 15-16pt equivalent
-    FONT_HUGE = 2.0    # 20pt+ equivalent
+    FONT_SMALL = 0.95  # 9-10pt equivalent
+    FONT_NORMAL = 1.15  # 11-12pt equivalent
+    FONT_LARGE = 1.5  # 15pt equivalent
+    FONT_XLARGE = 1.8  # 18pt equivalent
+    FONT_HUGE = 2.3    # 23pt+ equivalent
 
     def _get_font(self, size_multiplier: float = FONT_NORMAL, bold: bool = False) -> QFont:
         """Get a properly scaled font based on application default font and multiplier"""
@@ -459,6 +459,7 @@ class SpaceWeatherWidget(QWidget):
         thread = threading.Thread(target=background_refresh, daemon=True)
         thread.start()
 
+    @pyqtSlot()
     def _on_data_fetched(self) -> None:
         """Slot called when space weather data is fetched (runs on main thread)"""
         if not hasattr(self, '_pending_data') or self._pending_data is None:

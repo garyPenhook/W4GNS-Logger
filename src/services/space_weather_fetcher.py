@@ -177,9 +177,9 @@ class SpaceWeatherFetcher:
             logger.debug("NOAA F10.7 data not available, trying HamQSL...")
 
         except requests.RequestException as e:
-            logger.debug(f"Unable to fetch NOAA F10.7: {e}, trying fallback...")
+            logger.warning(f"Unable to fetch NOAA F10.7: {e}, trying fallback...")
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.debug(f"Error parsing NOAA F10.7: {e}, trying fallback...")
+            logger.warning(f"Error parsing NOAA F10.7: {e}, trying fallback...")
 
         try:
             # Secondary source: HamQSL (community maintained aggregation)
@@ -264,88 +264,71 @@ class SpaceWeatherFetcher:
 
     def get_sunspot_data(self) -> Dict[str, Any]:
         """
-        Get sunspot count and Smoothed Sunspot Number (SSN) from NOAA SWPC.
+        Get sunspot count from HamQSL XML.
+
+        NOAA SWPC endpoints are no longer available, so we use HamQSL XML which provides
+        current sunspot data.
 
         Returns:
             Dict with:
             - sunspot_count: Current daily sunspot count
-            - ssn: Smoothed Sunspot Number (12-month average)
             - timestamp: Data timestamp
-            - source: Data source (NOAA SWPC or HamQSL)
+            - source: Data source (HamQSL)
         """
         try:
-            # Try NOAA sunspot data (current daily count)
-            logger.debug("Fetching sunspot data from NOAA SWPC...")
-            response = self.session.get(NOAA_SUNSPOTS, timeout=HTTP_TIMEOUT)
+            import xml.etree.ElementTree as ET
+
+            # Use HamQSL XML endpoint which includes sunspot count
+            logger.debug("Fetching sunspot data from HamQSL XML...")
+            response = self.session.get(HAMQSL_SOLAR_XML, timeout=HTTP_TIMEOUT)
             response.raise_for_status()
-            data = response.json()
+
+            # Parse XML response - structure is <solar><solardata><sunspots>
+            root = ET.fromstring(response.text)
+            solardata = root.find('solardata')
 
             sunspot_data = {}
 
-            if isinstance(data, list) and len(data) > 0:
-                # Get most recent entry
-                latest = data[-1]
-                if isinstance(latest, dict):
-                    sunspot_count = latest.get('sunspot_count')
-                    if sunspot_count is not None:
-                        try:
-                            sunspot_data['sunspot_count'] = int(sunspot_count)
-                            sunspot_data['timestamp'] = latest.get('time_tag', datetime.now().isoformat())
-                            sunspot_data['source'] = 'NOAA SWPC'
-                            logger.info(f"Retrieved sunspot count from NOAA: {sunspot_data['sunspot_count']}")
-                        except (ValueError, TypeError):
-                            logger.debug(f"Invalid sunspot count value: {sunspot_count}")
+            if solardata is not None:
+                # Extract sunspot count from XML (nested under solardata)
+                sunspot_elem = solardata.find('sunspots')
+                if sunspot_elem is not None and sunspot_elem.text:
+                    try:
+                        sunspot_count = int(sunspot_elem.text.strip())
+                        sunspot_data['sunspot_count'] = sunspot_count
+                        logger.info(f"Retrieved sunspot count from HamQSL: {sunspot_count}")
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid sunspot count value from HamQSL: {sunspot_elem.text}")
 
-            # Now try to get SSN from HamQSL (contains 12-month smoothed average)
-            ssn = self._get_smoothed_sunspot_number()
-            if ssn is not None:
-                sunspot_data['ssn'] = ssn
+            if sunspot_data:
+                sunspot_data['timestamp'] = datetime.now().isoformat()
+                sunspot_data['source'] = 'HamQSL'
 
             return sunspot_data
 
         except requests.RequestException as e:
-            logger.debug(f"Unable to fetch NOAA sunspot data: {e}")
+            logger.warning(f"Unable to fetch HamQSL sunspot data: {e}")
+            return {}
+        except ET.ParseError as e:
+            logger.warning(f"Error parsing HamQSL XML sunspot data: {e}")
             return {}
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.debug(f"Error parsing NOAA sunspot data: {e}")
+            logger.warning(f"Error parsing sunspot data: {e}")
             return {}
 
     def _get_smoothed_sunspot_number(self) -> Optional[float]:
         """
         Get Smoothed Sunspot Number (SSN) - 12-month running average.
 
-        Data Sources (in order of preference):
-        1. HamQSL solar data (includes 'ssn' field)
-        2. NOAA/other sources as fallback
+        NOTE: HamQSL XML endpoint does not provide SSN data.
+        This method returns None to indicate SSN is not available.
 
         Returns:
-            SSN value or None if unable to fetch
+            SSN value or None if unable to fetch (currently always None)
         """
-        try:
-            logger.debug("Fetching Smoothed Sunspot Number (SSN) from HamQSL...")
-            response = self.session.get(HAMQSL_SOLAR_DATA, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            data = response.json()
-
-            # HamQSL format includes 'ssn' field (Smoothed Sunspot Number)
-            if isinstance(data, dict) and 'ssn' in data:
-                try:
-                    ssn = float(data['ssn'])
-                    if ssn >= 0:  # SSN should be non-negative
-                        logger.info(f"Retrieved Smoothed Sunspot Number from HamQSL: {ssn:.0f}")
-                        return ssn
-                except (ValueError, TypeError):
-                    logger.debug(f"Invalid SSN value from HamQSL: {data.get('ssn')}")
-
-            logger.debug("SSN not found in HamQSL response")
-            return None
-
-        except requests.RequestException as e:
-            logger.debug(f"Unable to fetch SSN from HamQSL: {e}")
-            return None
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.debug(f"Error parsing SSN from HamQSL: {e}")
-            return None
+        # HamQSL XML doesn't provide SSN, so we can't calculate it from public sources
+        logger.debug("Smoothed Sunspot Number (SSN) not available from current data sources")
+        return None
 
     def get_solar_data(self) -> Dict[str, Any]:
         """
