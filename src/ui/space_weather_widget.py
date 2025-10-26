@@ -180,11 +180,24 @@ class SpaceWeatherWidget(QWidget):
         layout = QVBoxLayout()
 
         # MUF explanation
-        info_label = QLabel("MUF is the highest frequency that will refract off the ionosphere. "
-                          "Bands above MUF require skip propagation (less reliable).")
+        info_label = QLabel(
+            "MUF = Maximum Usable Frequency. The bar shows the highest frequency available now.\n"
+            "If band frequency is BELOW MUF: works for any distance.\n"
+            "If band frequency is ABOVE MUF: only works for distant contacts."
+        )
         info_label.setFont(QFont("Arial", 8))
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
+
+        # Status legend
+        legend_label = QLabel(
+            "🟢 Green (Reliable): Band works for local, regional, AND distant stations\n"
+            "🔴 Red (Long-distance): Band only works with distant stations via skip"
+        )
+        legend_label.setFont(QFont("Arial", 8))
+        legend_label.setWordWrap(True)
+        legend_label.setStyleSheet("color: gray;")
+        layout.addWidget(legend_label)
 
         # Create grid for MUF bars (2 columns)
         grid_layout = QGridLayout()
@@ -483,12 +496,13 @@ class SpaceWeatherWidget(QWidget):
 
                     bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
 
-                    # Add status indicator
+                    # Add status indicator with user-friendly explanations
                     if prediction.usable:
-                        status = "✓ USABLE"
+                        status = "✓ Reliable"
                         color = "#00AA00"  # Green
                     else:
-                        status = "✗ Skip only"
+                        # Red = band is below MUF, only works for long distance (skip)
+                        status = "⚠ Long-distance"
                         color = "#FF0000"  # Red
 
                     # Set color for value label
