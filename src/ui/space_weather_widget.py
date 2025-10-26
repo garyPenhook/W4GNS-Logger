@@ -76,10 +76,10 @@ class SpaceWeatherWidget(QWidget):
         # This allows the window to render immediately while network data loads in background
         QTimer.singleShot(100, self._refresh_in_background)
 
-        # Auto-refresh every hour (space weather updates every 3 hours, hourly refresh ensures timely updates)
+        # Auto-refresh every 15 minutes (MUF changes frequently with solar conditions)
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self._refresh_in_background)
-        self.refresh_timer.start(3600000)  # 1 hour
+        self.refresh_timer.start(900000)  # 15 minutes
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -280,87 +280,53 @@ class SpaceWeatherWidget(QWidget):
         return group
 
     def _create_muf_section(self) -> QGroupBox:
-        """Create Maximum Usable Frequency (MUF) bar chart display"""
-        group = QGroupBox("Maximum Usable Frequency (MUF) - HF Band Predictions")
+        """Create Maximum Usable Frequency (MUF) bar display"""
+        group = QGroupBox("Maximum Usable Frequency (MUF) - Updated every 15 minutes")
         layout = QVBoxLayout()
+        layout.setSpacing(15)
+
+        # MUF value display (large and prominent)
+        muf_header_layout = QHBoxLayout()
+        muf_label = QLabel("Current MUF:")
+        muf_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
+        muf_header_layout.addWidget(muf_label)
+
+        self.muf_value_label = QLabel("-- MHz")
+        self.muf_value_label.setFont(self._get_font(self.FONT_HUGE, bold=True))
+        self.muf_value_label.setStyleSheet("color: #1E7D5E;")  # Green
+        muf_header_layout.addWidget(self.muf_value_label)
+        muf_header_layout.addStretch()
+        layout.addLayout(muf_header_layout)
+
+        # MUF bar representation
+        bar_layout = QHBoxLayout()
+        bar_layout.setSpacing(10)
+
+        self.muf_bar_display = QLabel("█░░░░░░░░░░░░░░░░░░ Loading...")
+        self.muf_bar_display.setFont(self._get_font(self.FONT_XLARGE))
+        bar_layout.addWidget(self.muf_bar_display)
+
+        self.muf_status_label = QLabel("Calculating...")
+        self.muf_status_label.setFont(self._get_font(self.FONT_NORMAL))
+        bar_layout.addWidget(self.muf_status_label)
+
+        layout.addLayout(bar_layout)
 
         # MUF explanation
         info_label = QLabel(
-            "MUF = Maximum Usable Frequency. The bar shows the highest frequency available now.\n"
-            "If band frequency is BELOW MUF: works for any distance.\n"
-            "If band frequency is ABOVE MUF: only works for distant contacts."
+            "MUF (Maximum Usable Frequency) is the highest frequency that reliably supports skywave propagation.\n"
+            "Higher MUF = More bands available for long-distance communication."
         )
         info_label.setFont(self._get_font(self.FONT_NORMAL))
         info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: gray;")
         layout.addWidget(info_label)
 
-        # Status legend
-        legend_label = QLabel(
-            "🟢 Green (Reliable): Band works for local, regional, AND distant stations\n"
-            "🔴 Red (Long-distance): Band only works with distant stations via skip"
-        )
-        legend_label.setFont(self._get_font(self.FONT_NORMAL))
-        legend_label.setWordWrap(True)
-        legend_label.setStyleSheet("color: gray;")
-        layout.addWidget(legend_label)
-
-        # Create grid for MUF bars (3 columns, 2 rows - one band per cell)
-        grid_layout = QGridLayout()
-        grid_layout.setSpacing(15)
-        grid_layout.setColumnStretch(0, 1)
-        grid_layout.setColumnStretch(1, 1)
-        grid_layout.setColumnStretch(2, 1)
-
-        self.muf_band_labels: Dict[str, QLabel] = {}  # Band name -> label with bar
-        self.muf_value_labels: Dict[str, QLabel] = {}  # Band name -> value label
-
-        # Most practical amateur HF bands (6 key bands that most hams use)
-        # Omitted: 60m (rare), 17m (niche), 12m (niche), 6m (requires different antenna)
-        bands_to_show = ["80m", "40m", "30m", "20m", "15m", "10m"]
-
-        for i, band in enumerate(bands_to_show):
-            row = i // 3  # 2 rows
-            col = i % 3   # 3 columns
-
-            # Band container with all elements stacked vertically
-            band_container = QWidget()
-            band_layout = QVBoxLayout()
-            band_layout.setSpacing(8)
-            band_layout.setContentsMargins(10, 10, 10, 10)
-
-            # Band name and MUF value on same line
-            header_layout = QHBoxLayout()
-            header_layout.setSpacing(10)
-
-            band_label = QLabel(f"{band}:")
-            band_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
-            header_layout.addWidget(band_label)
-
-            muf_value_label = QLabel("--")
-            muf_value_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
-            self.muf_value_labels[band] = muf_value_label
-            header_layout.addWidget(muf_value_label)
-            header_layout.addStretch()
-
-            band_layout.addLayout(header_layout)
-
-            # Bar indicator below
-            muf_bar_label = QLabel("█░░░░░░░░░░ Calculating...")
-            muf_bar_label.setFont(self._get_font(self.FONT_NORMAL))
-            self.muf_band_labels[band] = muf_bar_label
-            band_layout.addWidget(muf_bar_label)
-
-            band_container.setLayout(band_layout)
-            grid_layout.addWidget(band_container, row, col)
-
-        layout.addLayout(grid_layout)
-
-        # Add note about location
-        location_label = QLabel("Location: Getting grid square from settings...")
-        location_label.setFont(self._get_font(self.FONT_NORMAL))
-        location_label.setStyleSheet("color: gray;")
-        self.muf_location_label = location_label
-        layout.addWidget(location_label)
+        # Location info
+        self.muf_location_label = QLabel("Location: -- (grid square from settings)")
+        self.muf_location_label.setFont(self._get_font(self.FONT_NORMAL))
+        self.muf_location_label.setStyleSheet("color: gray;")
+        layout.addWidget(self.muf_location_label)
 
         group.setLayout(layout)
         return group
@@ -733,12 +699,10 @@ class SpaceWeatherWidget(QWidget):
             self.band_recommendations.setText(f"Error calculating recommendations: {str(e)[:50]}")
 
     def _update_muf_display(self, data: dict) -> None:
-        """Update MUF bar chart with current predictions"""
+        """Update single MUF bar display with current maximum MUF value"""
         try:
             # Get user's grid square from settings
             home_grid = self.config.get("general.home_grid", "FN20qd")
-
-            # Update location label
             self.muf_location_label.setText(f"Location: {home_grid} (your home grid)")
 
             # Get solar flux and K-index for MUF calculation
@@ -747,9 +711,9 @@ class SpaceWeatherWidget(QWidget):
 
             if sfi is None or kp is None:
                 logger.warning("Missing SFI or K-index data for MUF calculation")
-                for band in self.muf_band_labels.keys():
-                    self.muf_value_labels[band].setText("--")
-                    self.muf_band_labels[band].setText("Data unavailable")
+                self.muf_value_label.setText("-- MHz")
+                self.muf_bar_display.setText("█░░░░░░░░░░░░░░░░░░ Data unavailable")
+                self.muf_status_label.setText("Cannot calculate - missing data")
                 return
 
             try:
@@ -757,6 +721,8 @@ class SpaceWeatherWidget(QWidget):
                 kp_val = int(float(kp))
             except (ValueError, TypeError):
                 logger.warning(f"Invalid SFI or K-index values: SFI={sfi}, K={kp}")
+                self.muf_value_label.setText("-- MHz")
+                self.muf_bar_display.setText("█░░░░░░░░░░░░░░░░░░ Invalid data")
                 return
 
             # Calculate MUF predictions
@@ -770,57 +736,36 @@ class SpaceWeatherWidget(QWidget):
             # Store predictions for reference
             self.current_muf_predictions = predictions
 
-            # Update "Best Band Now" section (NEW!)
+            # Update "Best Band Now" section
             self._update_best_band_now(predictions, home_grid, sfi_val, kp_val)
 
-            # Update display for each band
-            for band_name, label in self.muf_band_labels.items():
-                if band_name in predictions:
-                    prediction = predictions[band_name]
+            # Find the maximum MUF value from all predictions
+            max_muf = 0
+            best_band = None
+            if predictions:
+                for band_name, prediction in predictions.items():
+                    if prediction.muf_value > max_muf:
+                        max_muf = prediction.muf_value
+                        best_band = band_name
 
-                    # Update MUF value label
-                    value_label = self.muf_value_labels[band_name]
-                    value_label.setText(f"{prediction.muf_value:.1f}M")
+            # Display the maximum MUF value
+            self.muf_value_label.setText(f"{max_muf:.0f} MHz")
+            self.muf_value_label.setStyleSheet("color: #1E7D5E;")  # Green
 
-                    # Create visual bar representation
-                    # Bar fills from 0 to 50 MHz
-                    filled_blocks = int((prediction.muf_value / 50.0) * 10)
-                    filled_blocks = min(filled_blocks, 10)
+            # Create visual bar representation (0-60 MHz scale)
+            filled_blocks = int((max_muf / 60.0) * 20)
+            filled_blocks = min(filled_blocks, 20)
+            bar = "█" * filled_blocks + "░" * (20 - filled_blocks)
 
-                    bar = "█" * filled_blocks + "░" * (10 - filled_blocks)
+            self.muf_bar_display.setText(bar)
+            self.muf_status_label.setText(f"Maximum MUF: {max_muf:.0f} MHz (from {best_band})")
 
-                    # Add status indicator with user-friendly explanations
-                    if prediction.usable:
-                        status = "✓ Reliable"
-                        color = "#00AA00"  # Green
-                    else:
-                        # Red = band is below MUF, only works for long distance (skip)
-                        status = "⚠ Long-distance"
-                        color = "#FF0000"  # Red
-
-                    # Set color for value label
-                    value_label.setStyleSheet(f"color: {color};")
-
-                    # Update bar label
-                    band_min, band_max = prediction.frequency_range
-                    label.setText(f"{bar} {status}")
-                    label.setStyleSheet(f"color: {color};")
-
-                    logger.debug(f"{band_name}: MUF={prediction.muf_value:.1f}MHz "
-                               f"({band_min}-{band_max}MHz), Usable={prediction.usable}")
-                else:
-                    # Band not in predictions
-                    self.muf_value_labels[band_name].setText("N/A")
-                    self.muf_band_labels[band_name].setText("Not calculated")
-
-            logger.info(f"Updated MUF display with {len(predictions)} band predictions")
+            logger.info(f"Updated MUF display: Max MUF = {max_muf:.1f} MHz from {best_band}")
 
         except Exception as e:
             logger.error(f"Error updating MUF display: {e}", exc_info=True)
-            # Show error in first band label
-            if self.muf_band_labels:
-                first_band = next(iter(self.muf_band_labels.values()))
-                first_band.setText(f"Error: {str(e)[:40]}")
+            self.muf_value_label.setText("-- MHz")
+            self.muf_bar_display.setText(f"█░░░░░░░░░░░░░░░░░░ Error: {str(e)[:30]}")
 
     def _update_best_band_now(self, predictions: Dict[str, 'MUFPrediction'],
                               home_grid: str, sfi: int, k_index: int) -> None:
