@@ -5,14 +5,14 @@ Displays current space weather conditions and HF propagation forecasts.
 """
 
 import logging
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar,
     QPushButton, QGridLayout
 )
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, QMetaObject
 from PyQt6.QtGui import QFont
 import threading
 
@@ -46,6 +46,9 @@ class SpaceWeatherWidget(QWidget):
 
         # Store MUF predictions for display
         self.current_muf_predictions: Dict[str, MUFPrediction] = {}
+
+        # For passing data from background thread to main thread
+        self._pending_data: Optional[Dict[str, Any]] = None
 
         self._init_ui()
 
@@ -398,18 +401,18 @@ class SpaceWeatherWidget(QWidget):
     def _refresh_in_background(self) -> None:
         """Start refresh operation in background thread to avoid blocking UI"""
         def background_refresh():
-            """Background thread function to fetch data"""
+            """Background thread function to fetch data (non-blocking)"""
             try:
                 # Try cache first
                 cached = self.cache.get("current_conditions")
                 if cached is not None:
                     logger.debug("Using cached space weather data")
-                    # Update UI on main thread
-                    self._update_ui(cached)
-                    self._update_muf_display(cached)
+                    # Store data and marshal UI update back to main thread
+                    self._pending_data = cached
+                    QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
                     return
 
-                # Fetch new data (blocking network calls)
+                # Fetch new data (blocking network calls - but in background thread!)
                 logger.debug("Fetching current space weather data from NOAA (background thread)")
                 conditions = self.fetcher.get_current_conditions()
                 solar = self.fetcher.get_solar_data()
@@ -420,34 +423,56 @@ class SpaceWeatherWidget(QWidget):
                 # Cache the results
                 self.cache.set("current_conditions", data)
 
-                # Update UI on main thread
-                self._update_ui(data)
-                self._update_muf_display(data)
-
-                # Update timestamp and data sources
-                self.update_status_label.setText(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
-
-                # Show data source information
-                sources = []
-                if data.get('kp_index') is not None:
-                    sources.append("K-index: NOAA SWPC")
-                if data.get('solar_flux_index') is not None:
-                    sources.append("Solar Flux: NOAA/HamQSL")
-                if data.get('sunspot_count') is not None or data.get('sunspot_ssn') is not None:
-                    sunspot_source = data.get('sunspot_source', 'NOAA/HamQSL')
-                    sources.append(f"Sunspots: {sunspot_source}")
-                if sources:
-                    self.data_source_label.setText(f"Data: {' | '.join(sources)}")
-                else:
-                    self.data_source_label.setText("Data: Calculated estimate")
+                # Store data and marshal UI update back to main thread
+                self._pending_data = data
+                QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
 
             except Exception as e:
-                logger.error(f"Error refreshing space weather: {e}")
-                self.update_status_label.setText(f"Error: {str(e)[:50]}")
+                logger.error(f"Error refreshing space weather: {e}", exc_info=True)
+                # Marshal error update back to main thread
+                QMetaObject.invokeMethod(
+                    self.update_status_label, "setText",
+                    Qt.ConnectionType.QueuedConnection,
+                    f"Error: {str(e)[:50]}"
+                )
 
         # Start background thread (daemon thread exits with main app)
         thread = threading.Thread(target=background_refresh, daemon=True)
         thread.start()
+
+    def _on_data_fetched(self) -> None:
+        """Slot called when space weather data is fetched (runs on main thread)"""
+        if not hasattr(self, '_pending_data') or self._pending_data is None:
+            return
+
+        try:
+            data = self._pending_data
+            self._pending_data = None
+
+            # Update UI with fetched data
+            self._update_ui(data)
+            self._update_muf_display(data)
+
+            # Update timestamp
+            self.update_status_label.setText(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
+
+            # Show data source information
+            sources = []
+            if data.get('kp_index') is not None:
+                sources.append("K-index: NOAA SWPC")
+            if data.get('solar_flux_index') is not None:
+                sources.append("Solar Flux: NOAA/HamQSL")
+            if data.get('sunspot_count') is not None or data.get('sunspot_ssn') is not None:
+                sunspot_source = data.get('sunspot_source', 'NOAA/HamQSL')
+                sources.append(f"Sunspots: {sunspot_source}")
+            if sources:
+                self.data_source_label.setText(f"Data: {' | '.join(sources)}")
+            else:
+                self.data_source_label.setText("Data: Calculated estimate")
+
+        except Exception as e:
+            logger.error(f"Error updating space weather display: {e}", exc_info=True)
+            self.update_status_label.setText(f"Error: {str(e)[:50]}")
 
     def refresh(self) -> None:
         """Refresh space weather data (synchronous - for manual refresh button)"""
