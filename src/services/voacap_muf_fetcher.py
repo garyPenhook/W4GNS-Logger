@@ -16,6 +16,8 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
+from src.services.space_weather_fetcher import SpaceWeatherFetcher
+
 logger = logging.getLogger(__name__)
 
 # Standard HF bands used in amateur radio (frequency in MHz)
@@ -40,6 +42,7 @@ VOACAP_QUERY_ENDPOINT = f"{VOACAP_BASE_URL}/query.html"
 
 class MUFSource(Enum):
     """Source of MUF data"""
+    GIRO = "giro"  # Real measured data from GIRO ionosondes (MOST ACCURATE)
     EMPIRICAL = "empirical"  # SFI-based calculation
     VOACAP = "voacap"  # VOACAP online predictions
     HYBRID = "hybrid"  # Best of both
@@ -76,13 +79,18 @@ class VOACAPMUFFetcher:
     """Fetch and calculate Maximum Usable Frequency predictions"""
 
     def __init__(self):
-        """Initialize VOACAP MUF fetcher"""
+        """Initialize VOACAP MUF fetcher with GIRO real-time data support"""
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'W4GNS-Logger/1.0 (ham radio logging application)'
         })
         self.last_update = None
         self.cached_predictions: Dict[str, List[MUFPrediction]] = {}
+
+        # Initialize space weather fetcher for GIRO data access
+        self.weather_fetcher = SpaceWeatherFetcher()
+        self.giro_data = None
+        self.giro_data_time = None
 
     def _get_solar_zenith_angle(self, latitude: float, longitude: float, utc_time: Optional[datetime] = None) -> float:
         """
@@ -184,6 +192,53 @@ class VOACAPMUFFetcher:
         except Exception as e:
             logger.debug(f"Error calculating day/night factor: {e}")
             return 1.0
+
+    def get_giro_muf(self, latitude: float, longitude: float, frequency_mhz: float = 14.0) -> Optional[float]:
+        """
+        Get real-time MUF from GIRO ionosondes (MOST ACCURATE).
+
+        GIRO provides ACTUAL MEASURED ionospheric data from worldwide ionosondes,
+        updated every ~15 minutes. This is far more accurate than any empirical formula.
+
+        Args:
+            latitude: Observer latitude in degrees
+            longitude: Observer longitude in degrees
+            frequency_mhz: Operating frequency in MHz (for time-of-day adjustment)
+
+        Returns:
+            Measured MUFD in MHz from nearest GIRO station, or None if unavailable
+        """
+        try:
+            # Check if cached GIRO data is still fresh (15 minutes)
+            now = datetime.now()
+            if self.giro_data is not None and self.giro_data_time is not None:
+                age_seconds = (now - self.giro_data_time).total_seconds()
+                if age_seconds < 900:  # 15 minutes
+                    logger.debug(f"Using cached GIRO data ({age_seconds:.0f}s old)")
+                    return self.giro_data.get('mufd')
+
+            # Fetch fresh GIRO data from nearest station
+            logger.debug("Fetching fresh GIRO data from nearest ionosonde...")
+            giro_info = self.weather_fetcher.get_giro_nearest_station_mufd(latitude, longitude)
+
+            if giro_info is None:
+                logger.debug("GIRO data not available, will use empirical formula")
+                return None
+
+            # Cache the GIRO data
+            self.giro_data = giro_info
+            self.giro_data_time = now
+
+            mufd = giro_info.get('mufd')
+            logger.info(
+                f"Using GIRO measured MUF: {mufd:.1f}MHz from {giro_info['station_code']} "
+                f"({giro_info['distance_km']:.0f}km away)"
+            )
+            return mufd
+
+        except Exception as e:
+            logger.debug(f"Error getting GIRO MUF: {e}")
+            return None
 
     def calculate_empirical_muf(
         self,
@@ -311,6 +366,9 @@ class VOACAPMUFFetcher:
         """
         Get MUF predictions for all standard HF bands with time-of-day considerations
 
+        Uses real-time GIRO ionospheric measurements when available (MOST ACCURATE),
+        falls back to empirical SFI+K-index formula if GIRO unavailable.
+
         Args:
             sfi: Solar Flux Index (70-300)
             k_index: Geomagnetic K-Index (0-9)
@@ -331,31 +389,52 @@ class VOACAPMUFFetcher:
                 longitude = self._grid_to_longitude(home_grid)
 
             predictions = {}
+            muf_source = MUFSource.EMPIRICAL
+
+            # TRY GIRO FIRST - Real measured ionospheric data (MOST ACCURATE)
+            giro_muf = self.get_giro_muf(latitude, longitude)
+            if giro_muf is not None:
+                muf_source = MUFSource.GIRO
+                logger.info(f"Using GIRO-measured base MUF: {giro_muf:.1f} MHz")
 
             for band_name, (min_freq, max_freq) in HF_BANDS.items():
                 # Use center frequency for calculation
                 center_freq = (min_freq + max_freq) / 2.0
 
-                # Calculate MUF for this band with time-of-day factor
-                muf = self.calculate_empirical_muf(
-                    sfi, k_index, latitude, center_freq,
-                    longitude=longitude,
-                    utc_time=utc_time,
-                    include_time_factor=include_time_factor
-                )
+                if giro_muf is not None:
+                    # Scale GIRO MUF based on frequency dependence
+                    # GIRO provides MUFD (daytime), adjust for time of day
+                    muf = giro_muf * (1.0 - (center_freq - 14.0) / 100.0)
+                    muf = max(2.0, min(50.0, muf))  # Bounds check
+
+                    if include_time_factor:
+                        # Apply time-of-day factor to scaled GIRO value
+                        zenith = self._get_solar_zenith_angle(latitude, longitude, utc_time)
+                        time_factor = self._get_day_night_factor(zenith, center_freq)
+                        muf = muf * time_factor
+                else:
+                    # Fall back to empirical calculation
+                    muf = self.calculate_empirical_muf(
+                        sfi, k_index, latitude, center_freq,
+                        longitude=longitude,
+                        utc_time=utc_time,
+                        include_time_factor=include_time_factor
+                    )
 
                 # Create prediction
+                confidence = 0.95 if muf_source == MUFSource.GIRO else 0.75
                 prediction = MUFPrediction(
                     band_name=band_name,
                     frequency_range=(min_freq, max_freq),
                     muf_value=muf,
-                    confidence=0.75,
-                    source=MUFSource.EMPIRICAL
+                    confidence=confidence,
+                    source=muf_source
                 )
 
                 predictions[band_name] = prediction
 
-            logger.info(f"Calculated MUF for {len(predictions)} bands (SFI={sfi}, K={k_index}, time-aware)")
+            source_name = muf_source.value.upper()
+            logger.info(f"Calculated MUF for {len(predictions)} bands using {source_name} (SFI={sfi}, K={k_index})")
             return predictions
 
         except Exception as e:

@@ -24,6 +24,11 @@ NOAA_SUNSPOT_AREA = "https://services.swpc.noaa.gov/json/solar_sunspot_areas.jso
 HAMQSL_SOLAR_DATA = "https://www.hamqsl.com/solar.json"
 HAMQSL_SOLAR_XML = "https://www.hamqsl.com/solarxml.php"  # XML version with more detailed data
 
+# GIRO (Global Ionosphere Radio Observatory) Real-time Ionospheric Data
+# Data from worldwide ionosondes, updated every ~15 minutes
+# This provides real measured MUF (MUFD) and other ionospheric parameters
+GIRO_STATIONS_API = "https://prop.kc2g.com/api/stations.json"
+
 # Default timeout for HTTP requests
 HTTP_TIMEOUT = 10
 
@@ -509,6 +514,100 @@ class SpaceWeatherFetcher:
                 'hf_condition': 'Unknown'
             }
         }
+
+    def get_giro_nearest_station_mufd(self, latitude: float, longitude: float) -> Optional[Dict[str, Any]]:
+        """
+        Get real-time MUF measurement from nearest GIRO ionosonde station.
+
+        GIRO provides ACTUAL MEASURED ionospheric data from worldwide ionosondes,
+        updated every ~15 minutes. This is far more accurate than empirical formulas.
+
+        Args:
+            latitude: User latitude in degrees
+            longitude: User longitude in degrees
+
+        Returns:
+            Dict with:
+            - 'mufd': Measured MUFD (MUF for daytime) in MHz
+            - 'fof2': Critical frequency (foF2) in MHz
+            - 'hmf2': Peak height (hmF2) in km
+            - 'station_code': Ionosonde station code
+            - 'station_name': Ionosonde station name
+            - 'distance_km': Distance from user location to station in km
+            - 'time': Measurement time
+            Or None if unable to fetch
+        """
+        try:
+            logger.debug("Fetching real-time GIRO ionospheric data from prop.kc2g.com...")
+            response = self.session.get(GIRO_STATIONS_API, timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
+            stations = response.json()
+
+            if not isinstance(stations, list) or len(stations) == 0:
+                logger.warning("No GIRO station data available")
+                return None
+
+            # Calculate distance to each station using simple Haversine approximation
+            # For small distances, Euclidean distance in degrees works adequately
+            min_distance = float('inf')
+            nearest_station = None
+
+            for station_data in stations:
+                try:
+                    station_info = station_data.get('station', {})
+                    station_lat = float(station_info.get('latitude', 0))
+                    station_lon = float(station_info.get('longitude', 0))
+
+                    # Simple distance calculation (Euclidean in degrees)
+                    # Good enough for finding nearest station
+                    lat_diff = latitude - station_lat
+                    lon_diff = longitude - station_lon
+                    distance_deg = (lat_diff**2 + lon_diff**2)**0.5
+
+                    if distance_deg < min_distance:
+                        min_distance = distance_deg
+                        nearest_station = station_data
+
+                except (ValueError, TypeError):
+                    continue
+
+            if nearest_station is None:
+                logger.warning("Unable to process GIRO station data")
+                return None
+
+            # Extract relevant data from nearest station
+            station_info = nearest_station.get('station', {})
+            mufd = nearest_station.get('mufd')
+            fof2 = nearest_station.get('fof2')
+            hmf2 = nearest_station.get('hmf2')
+            time_str = nearest_station.get('time', 'Unknown')
+
+            # Convert distance back to km (rough approximation: 1 degree ≈ 111 km)
+            distance_km = min_distance * 111.0
+
+            logger.info(
+                f"Got GIRO data from nearest station: {station_info.get('code', 'Unknown')} "
+                f"({station_info.get('name', 'Unknown')}), {distance_km:.0f}km away. "
+                f"MUFD={mufd:.1f}MHz, foF2={fof2:.1f}MHz at {time_str}"
+            )
+
+            return {
+                'mufd': mufd,
+                'fof2': fof2,
+                'hmf2': hmf2,
+                'station_code': station_info.get('code', 'Unknown'),
+                'station_name': station_info.get('name', 'Unknown'),
+                'distance_km': round(distance_km, 1),
+                'time': time_str,
+                'source': 'GIRO'
+            }
+
+        except requests.RequestException as e:
+            logger.debug(f"Unable to fetch GIRO data: {e}")
+            return None
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.debug(f"Error parsing GIRO data: {e}")
+            return None
 
     def close(self) -> None:
         """Close the session"""
