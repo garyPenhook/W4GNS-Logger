@@ -284,7 +284,7 @@ class SpaceWeatherWidget(QWidget):
             "If band frequency is BELOW MUF: works for any distance.\n"
             "If band frequency is ABOVE MUF: only works for distant contacts."
         )
-        info_label.setFont(self._get_font(self.FONT_SMALL))
+        info_label.setFont(self._get_font(self.FONT_NORMAL))
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -293,7 +293,7 @@ class SpaceWeatherWidget(QWidget):
             "🟢 Green (Reliable): Band works for local, regional, AND distant stations\n"
             "🔴 Red (Long-distance): Band only works with distant stations via skip"
         )
-        legend_label.setFont(self._get_font(self.FONT_SMALL))
+        legend_label.setFont(self._get_font(self.FONT_NORMAL))
         legend_label.setWordWrap(True)
         legend_label.setStyleSheet("color: gray;")
         layout.addWidget(legend_label)
@@ -314,7 +314,7 @@ class SpaceWeatherWidget(QWidget):
 
             # Band label
             band_label = QLabel(f"{band}:")
-            band_label.setFont(self._get_font(self.FONT_NORMAL, bold=True))
+            band_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
             grid_layout.addWidget(band_label, row, col)
 
             # MUF value and bar container
@@ -322,7 +322,7 @@ class SpaceWeatherWidget(QWidget):
 
             # MUF value label
             muf_value_label = QLabel("--")
-            muf_value_label.setFont(self._get_font(self.FONT_NORMAL, bold=True))
+            muf_value_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
             muf_value_label.setMinimumWidth(50)
             self.muf_value_labels[band] = muf_value_label
             value_bar_layout.addWidget(muf_value_label)
@@ -330,7 +330,7 @@ class SpaceWeatherWidget(QWidget):
             # Simplified bar representation using label with styled background
             # We'll show this as text with indicator (using text color coding)
             muf_bar_label = QLabel("█░░░░░░░░░░ Calculating...")
-            muf_bar_label.setFont(self._get_font(self.FONT_SMALL))
+            muf_bar_label.setFont(self._get_font(self.FONT_NORMAL))
             muf_bar_label.setMinimumWidth(120)
             self.muf_band_labels[band] = muf_bar_label
             value_bar_layout.addWidget(muf_bar_label)
@@ -343,7 +343,7 @@ class SpaceWeatherWidget(QWidget):
 
         # Add note about location
         location_label = QLabel("Location: Getting grid square from settings...")
-        location_label.setFont(self._get_font(self.FONT_SMALL))
+        location_label.setFont(self._get_font(self.FONT_NORMAL))
         location_label.setStyleSheet("color: gray;")
         self.muf_location_label = location_label
         layout.addWidget(location_label)
