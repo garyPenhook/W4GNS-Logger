@@ -12,8 +12,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar,
     QPushButton, QGridLayout
 )
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
+import threading
 
 from src.services.space_weather_fetcher import SpaceWeatherFetcher
 from src.services.voacap_muf_fetcher import VOACAPMUFFetcher, MUFPrediction
@@ -47,11 +48,15 @@ class SpaceWeatherWidget(QWidget):
         self.current_muf_predictions: Dict[str, MUFPrediction] = {}
 
         self._init_ui()
-        self.refresh()
+
+        # Defer initial refresh to avoid blocking GUI initialization
+        # Uses QTimer.singleShot to defer until event loop is running
+        # This allows the window to render immediately while network data loads in background
+        QTimer.singleShot(100, self._refresh_in_background)
 
         # Auto-refresh every hour (space weather updates every 3 hours, hourly refresh ensures timely updates)
         self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.timeout.connect(self._refresh_in_background)
         self.refresh_timer.start(3600000)  # 1 hour
 
     def _init_ui(self) -> None:
@@ -390,8 +395,62 @@ class SpaceWeatherWidget(QWidget):
         group.setLayout(layout)
         return group
 
+    def _refresh_in_background(self) -> None:
+        """Start refresh operation in background thread to avoid blocking UI"""
+        def background_refresh():
+            """Background thread function to fetch data"""
+            try:
+                # Try cache first
+                cached = self.cache.get("current_conditions")
+                if cached is not None:
+                    logger.debug("Using cached space weather data")
+                    # Update UI on main thread
+                    self._update_ui(cached)
+                    self._update_muf_display(cached)
+                    return
+
+                # Fetch new data (blocking network calls)
+                logger.debug("Fetching current space weather data from NOAA (background thread)")
+                conditions = self.fetcher.get_current_conditions()
+                solar = self.fetcher.get_solar_data()
+
+                # Combine data
+                data = {**conditions, **solar}
+
+                # Cache the results
+                self.cache.set("current_conditions", data)
+
+                # Update UI on main thread
+                self._update_ui(data)
+                self._update_muf_display(data)
+
+                # Update timestamp and data sources
+                self.update_status_label.setText(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
+
+                # Show data source information
+                sources = []
+                if data.get('kp_index') is not None:
+                    sources.append("K-index: NOAA SWPC")
+                if data.get('solar_flux_index') is not None:
+                    sources.append("Solar Flux: NOAA/HamQSL")
+                if data.get('sunspot_count') is not None or data.get('sunspot_ssn') is not None:
+                    sunspot_source = data.get('sunspot_source', 'NOAA/HamQSL')
+                    sources.append(f"Sunspots: {sunspot_source}")
+                if sources:
+                    self.data_source_label.setText(f"Data: {' | '.join(sources)}")
+                else:
+                    self.data_source_label.setText("Data: Calculated estimate")
+
+            except Exception as e:
+                logger.error(f"Error refreshing space weather: {e}")
+                self.update_status_label.setText(f"Error: {str(e)[:50]}")
+
+        # Start background thread (daemon thread exits with main app)
+        thread = threading.Thread(target=background_refresh, daemon=True)
+        thread.start()
+
     def refresh(self) -> None:
-        """Refresh space weather data"""
+        """Refresh space weather data (synchronous - for manual refresh button)"""
         try:
             # Try cache first
             cached = self.cache.get("current_conditions")
