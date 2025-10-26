@@ -68,6 +68,10 @@ class SpaceWeatherWidget(QWidget):
         kindex_group = self._create_kindex_section()
         main_layout.addWidget(kindex_group)
 
+        # Best Band NOW Section (NEW!)
+        best_band_group = self._create_best_band_now_section()
+        main_layout.addWidget(best_band_group)
+
         # Maximum Usable Frequency (MUF) Section
         muf_group = self._create_muf_section()
         main_layout.addWidget(muf_group)
@@ -170,6 +174,67 @@ class SpaceWeatherWidget(QWidget):
         aindex_layout.addWidget(QLabel("(Lower is better for DX)"))
         aindex_layout.addStretch()
         layout.addLayout(aindex_layout)
+
+        group.setLayout(layout)
+        return group
+
+    def _create_best_band_now_section(self) -> QGroupBox:
+        """Create 'Best Band NOW' recommendation section with time-aware analysis"""
+        group = QGroupBox("🎯 BEST BAND FOR WORLDWIDE COMMUNICATION NOW")
+        group.setStyleSheet("QGroupBox { font-weight: bold; background-color: #f0f8ff; }")
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+
+        # Time and location info
+        time_info_layout = QHBoxLayout()
+        self.best_band_time_label = QLabel("Time: -- UTC | Location: --")
+        self.best_band_time_label.setFont(QFont("Arial", 9))
+        time_info_layout.addWidget(self.best_band_time_label)
+        time_info_layout.addStretch()
+        layout.addLayout(time_info_layout)
+
+        # Best band recommendation (LARGE)
+        best_band_layout = QHBoxLayout()
+
+        # Time period emoji
+        self.best_band_emoji = QLabel("❓")
+        self.best_band_emoji.setFont(QFont("Arial", 24))
+        self.best_band_emoji.setMinimumWidth(50)
+        best_band_layout.addWidget(self.best_band_emoji)
+
+        # Band name and reason
+        recommendation_vbox = QVBoxLayout()
+
+        # Best band name (LARGE)
+        self.best_band_name = QLabel("--")
+        self.best_band_name.setFont(QFont("Arial", 20, QFont.Weight.Bold))
+        self.best_band_name.setStyleSheet("color: #006400;")  # Dark green
+        recommendation_vbox.addWidget(self.best_band_name)
+
+        # Reason text
+        self.best_band_reason = QLabel("Loading propagation data...")
+        self.best_band_reason.setFont(QFont("Arial", 9))
+        self.best_band_reason.setWordWrap(True)
+        self.best_band_reason.setStyleSheet("color: #333333;")
+        recommendation_vbox.addWidget(self.best_band_reason)
+
+        # MUF and margin info
+        self.best_band_muf_info = QLabel("MUF: -- MHz | Margin: -- MHz")
+        self.best_band_muf_info.setFont(QFont("Arial", 8, QFont.Weight.Bold))
+        self.best_band_muf_info.setStyleSheet("color: #666666;")
+        recommendation_vbox.addWidget(self.best_band_muf_info)
+
+        best_band_layout.addLayout(recommendation_vbox)
+        best_band_layout.addStretch()
+        layout.addLayout(best_band_layout)
+
+        # Top 3 bands section
+        layout.addWidget(QLabel("Next best options:"))
+        self.best_band_top3_label = QLabel("Loading...")
+        self.best_band_top3_label.setFont(QFont("Arial", 8))
+        self.best_band_top3_label.setStyleSheet("color: #555555; background-color: #f5f5f5; padding: 5px;")
+        self.best_band_top3_label.setWordWrap(True)
+        layout.addWidget(self.best_band_top3_label)
 
         group.setLayout(layout)
         return group
@@ -480,6 +545,9 @@ class SpaceWeatherWidget(QWidget):
             # Store predictions for reference
             self.current_muf_predictions = predictions
 
+            # Update "Best Band Now" section (NEW!)
+            self._update_best_band_now(predictions, home_grid, sfi_val, kp_val)
+
             # Update display for each band
             for band_name, label in self.muf_band_labels.items():
                 if band_name in predictions:
@@ -528,6 +596,65 @@ class SpaceWeatherWidget(QWidget):
             if self.muf_band_labels:
                 first_band = next(iter(self.muf_band_labels.values()))
                 first_band.setText(f"Error: {str(e)[:40]}")
+
+    def _update_best_band_now(self, predictions: Dict[str, 'MUFPrediction'],
+                              home_grid: str, sfi: int, k_index: int) -> None:
+        """Update 'Best Band NOW' section with time-aware recommendation"""
+        try:
+            # Get best band recommendation
+            best_band_data = self.muf_fetcher.get_best_band_now(
+                predictions=predictions,
+                home_grid=home_grid,
+                sfi=sfi,
+                k_index=k_index
+            )
+
+            # Update time and location
+            self.best_band_time_label.setText(
+                f"Time: {best_band_data['utc_time']} | Location: {home_grid} | "
+                f"Time Period: {best_band_data['time_period']}"
+            )
+
+            # Update emoji based on time period
+            self.best_band_emoji.setText(best_band_data['time_emoji'])
+
+            # Update best band name
+            if best_band_data['band']:
+                self.best_band_name.setText(best_band_data['band'])
+                self.best_band_name.setStyleSheet("color: #006400; font-weight: bold;")  # Dark green
+            else:
+                self.best_band_name.setText("No data")
+                self.best_band_name.setStyleSheet("color: #ff0000; font-weight: bold;")  # Red
+
+            # Update reason
+            self.best_band_reason.setText(best_band_data['reason'])
+
+            # Update MUF and margin info
+            if best_band_data['band'] and best_band_data['muf'] is not None:
+                margin_str = f"{best_band_data['margin']:.1f}" if best_band_data['margin'] else "--"
+                muf_str = f"{best_band_data['muf']:.1f}"
+                self.best_band_muf_info.setText(
+                    f"MUF: {muf_str} MHz | Margin: {margin_str} MHz above band edge"
+                )
+            else:
+                self.best_band_muf_info.setText("MUF: -- MHz | Margin: -- MHz")
+
+            # Update top 3 bands
+            if best_band_data['top_3_bands']:
+                top_3_text = "  " + " | ".join([
+                    f"{b['band']} ({b['muf']:.1f}M)"
+                    for b in best_band_data['top_3_bands']
+                ])
+                self.best_band_top3_label.setText(top_3_text)
+            else:
+                self.best_band_top3_label.setText("(No usable bands at this time)")
+
+            logger.info(f"Best band now: {best_band_data['band']} ({best_band_data['time_period']})")
+
+        except Exception as e:
+            logger.error(f"Error updating best band now: {e}", exc_info=True)
+            self.best_band_name.setText("Error")
+            self.best_band_reason.setText(f"Failed to calculate: {str(e)[:50]}")
 
     def closeEvent(self, event) -> None:
         """Clean up on close"""

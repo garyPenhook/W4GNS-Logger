@@ -11,6 +11,7 @@ The MUF is the highest frequency that will refract off the ionosphere for a give
 
 import logging
 import requests
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
@@ -82,29 +83,122 @@ class VOACAPMUFFetcher:
         self.last_update = None
         self.cached_predictions: Dict[str, List[MUFPrediction]] = {}
 
+    def _get_solar_zenith_angle(self, latitude: float, longitude: float, utc_time: Optional[datetime] = None) -> float:
+        """
+        Calculate solar zenith angle at observer location
+
+        Args:
+            latitude: Observer latitude in degrees (-90 to 90)
+            longitude: Observer longitude in degrees (-180 to 180)
+            utc_time: UTC time (defaults to current time)
+
+        Returns:
+            Solar zenith angle in degrees (0=sun overhead, 90=horizon, 180=under horizon)
+        """
+        try:
+            if utc_time is None:
+                utc_time = datetime.now(timezone.utc)
+
+            # Days since J2000.0 epoch
+            jd = (utc_time - datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)).days
+            jd = jd + (utc_time.hour - 12.0) / 24.0
+
+            # Solar declination (simplified)
+            declination = 23.44 * math.sin(math.radians(360.0 * (jd - 81.0) / 365.25))
+
+            # Hour angle (sun's position relative to local noon)
+            gst = 280.46 + 360.985647 * jd
+            local_hour_angle = gst + longitude - (utc_time.hour * 15.0 + utc_time.minute * 0.25 + utc_time.second * 0.00416667)
+            local_hour_angle = local_hour_angle % 360.0
+
+            # Convert to radians
+            lat_rad = math.radians(latitude)
+            dec_rad = math.radians(declination)
+            ha_rad = math.radians(local_hour_angle)
+
+            # Zenith angle calculation
+            cos_zenith = (math.sin(lat_rad) * math.sin(dec_rad) +
+                         math.cos(lat_rad) * math.cos(dec_rad) * math.cos(ha_rad))
+            zenith_angle = math.degrees(math.acos(max(-1, min(1, cos_zenith))))
+
+            return zenith_angle
+
+        except Exception as e:
+            logger.debug(f"Error calculating solar zenith angle: {e}")
+            return 90.0  # Default to horizon
+
+    def _get_day_night_factor(self, zenith_angle: float, frequency_mhz: float) -> float:
+        """
+        Get daytime/nighttime absorption factor for frequency
+
+        Higher frequencies absorbed more during daytime, lower frequencies more at night.
+
+        Args:
+            zenith_angle: Solar zenith angle in degrees
+            frequency_mhz: Operating frequency in MHz
+
+        Returns:
+            Absorption factor (multiplier, 0.5-1.5)
+        """
+        try:
+            # Zenith angle interpretation:
+            # 0-90: Daytime (sun above horizon)
+            # 90-110: Twilight/terminator
+            # 110-180: Nighttime (sun below horizon)
+
+            # Daytime (zenith < 90°)
+            if zenith_angle < 90.0:
+                # Daytime absorption increases with frequency
+                # High frequencies (20m+) good, low frequencies suppressed
+                daytime_factor = 0.7 + (zenith_angle / 90.0) * 0.3  # 0.7-1.0 during day
+                freq_boost = max(0.9, 1.0 + (frequency_mhz - 14.0) / 50.0)  # Boost high freq
+                return daytime_factor * freq_boost
+
+            # Twilight/Terminator (90° <= zenith < 110°)
+            elif zenith_angle < 110.0:
+                # Best propagation window - all frequencies work well
+                return 1.3 + (110.0 - zenith_angle) * 0.01  # 1.3-1.4 at terminator
+
+            # Nighttime (zenith >= 110°)
+            else:
+                # Nighttime - low frequencies excellent, high frequencies suppressed
+                nighttime_factor = 0.8 + ((180.0 - zenith_angle) / 70.0) * 0.4  # 0.8-1.2
+                freq_reduction = min(1.0, 1.0 - (14.0 - frequency_mhz) / 30.0)  # Reduce low freq boost
+                return nighttime_factor * (0.9 + freq_reduction * 0.1)
+
+        except Exception as e:
+            logger.debug(f"Error calculating day/night factor: {e}")
+            return 1.0
+
     def calculate_empirical_muf(
         self,
         sfi: int,
         k_index: int,
         latitude: float = 38.0,
-        frequency_mhz: float = 14.0
+        frequency_mhz: float = 14.0,
+        longitude: float = -75.0,
+        utc_time: Optional[datetime] = None,
+        include_time_factor: bool = True
     ) -> float:
         """
-        Calculate Maximum Usable Frequency using empirical model
+        Calculate Maximum Usable Frequency using empirical model with time-of-day correction
 
         Based on standard ionospheric propagation models:
         - Solar Flux Index (SFI) is the primary driver
         - K-Index provides geomagnetic disturbance correction
         - Latitude affects ionospheric height
-        - Time of day affects ionospheric absorption (simplified)
+        - Time of day affects ionospheric absorption
 
-        Formula: MUF ≈ Base_MUF × (1 + Frequency_Factor) × (1 + K_Factor)
+        Formula: MUF ≈ Base_MUF × K_Factor × Latitude_Factor × Frequency_Factor × Time_Factor
 
         Args:
             sfi: Solar Flux Index (70-300)
             k_index: Geomagnetic K-Index (0-9)
             latitude: Observer latitude in degrees (0-90)
             frequency_mhz: Operating frequency in MHz (for attenuation calc)
+            longitude: Observer longitude in degrees (-180 to 180)
+            utc_time: UTC time for time-of-day calculation (defaults to now)
+            include_time_factor: Include time-of-day absorption factor (default True)
 
         Returns:
             Estimated MUF in MHz
@@ -134,8 +228,14 @@ class VOACAPMUFFetcher:
             # Lower frequencies penetrate better
             freq_factor = max(0.85, 1.0 - (frequency_mhz - 3.5) / 100.0)
 
+            # Time-of-day absorption factor (NEW)
+            time_factor = 1.0
+            if include_time_factor:
+                zenith = self._get_solar_zenith_angle(latitude, longitude, utc_time)
+                time_factor = self._get_day_night_factor(zenith, frequency_mhz)
+
             # Calculate final MUF
-            muf = base_muf * k_factor * latitude_factor * freq_factor
+            muf = base_muf * k_factor * latitude_factor * freq_factor * time_factor
 
             # Ensure reasonable bounds
             muf = max(2.0, min(50.0, muf))
@@ -151,24 +251,32 @@ class VOACAPMUFFetcher:
         sfi: int,
         k_index: int,
         home_grid: str = "FN20qd",
-        latitude: Optional[float] = None
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        utc_time: Optional[datetime] = None,
+        include_time_factor: bool = True
     ) -> Dict[str, MUFPrediction]:
         """
-        Get MUF predictions for all standard HF bands
+        Get MUF predictions for all standard HF bands with time-of-day considerations
 
         Args:
             sfi: Solar Flux Index (70-300)
             k_index: Geomagnetic K-Index (0-9)
             home_grid: Maidenhead grid square for location
             latitude: Override latitude (derived from grid if not provided)
+            longitude: Override longitude (derived from grid if not provided)
+            utc_time: UTC time for time-of-day calculation (defaults to now)
+            include_time_factor: Include time-of-day absorption factor (default True)
 
         Returns:
             Dictionary of band name -> MUFPrediction
         """
         try:
-            # Derive latitude from grid square if not provided
+            # Derive latitude/longitude from grid square if not provided
             if latitude is None:
                 latitude = self._grid_to_latitude(home_grid)
+            if longitude is None:
+                longitude = self._grid_to_longitude(home_grid)
 
             predictions = {}
 
@@ -176,8 +284,13 @@ class VOACAPMUFFetcher:
                 # Use center frequency for calculation
                 center_freq = (min_freq + max_freq) / 2.0
 
-                # Calculate MUF for this band
-                muf = self.calculate_empirical_muf(sfi, k_index, latitude, center_freq)
+                # Calculate MUF for this band with time-of-day factor
+                muf = self.calculate_empirical_muf(
+                    sfi, k_index, latitude, center_freq,
+                    longitude=longitude,
+                    utc_time=utc_time,
+                    include_time_factor=include_time_factor
+                )
 
                 # Create prediction
                 prediction = MUFPrediction(
@@ -190,7 +303,7 @@ class VOACAPMUFFetcher:
 
                 predictions[band_name] = prediction
 
-            logger.info(f"Calculated MUF for {len(predictions)} bands (SFI={sfi}, K={k_index})")
+            logger.info(f"Calculated MUF for {len(predictions)} bands (SFI={sfi}, K={k_index}, time-aware)")
             return predictions
 
         except Exception as e:
@@ -243,6 +356,129 @@ class VOACAPMUFFetcher:
         except Exception as e:
             logger.error(f"Error querying VOACAP MUF: {e}")
             return None
+
+    def get_best_band_now(
+        self,
+        predictions: Dict[str, MUFPrediction],
+        home_grid: str = "FN20qd",
+        sfi: int = 100,
+        k_index: int = 3
+    ) -> Dict[str, any]:
+        """
+        Determine the best band for worldwide communication RIGHT NOW
+
+        Takes into account:
+        - Current time of day at your location
+        - Space weather (K-index, SFI)
+        - Band usability and MUF margins
+        - Day/night propagation characteristics
+
+        Args:
+            predictions: Dictionary of MUF predictions
+            home_grid: Maidenhead grid square for time calculation
+            sfi: Current Solar Flux Index
+            k_index: Current K-Index
+
+        Returns:
+            Dict with:
+            - 'band': Best band name (e.g., "20m")
+            - 'muf': MUF value for that band
+            - 'usable': Boolean if band is usable
+            - 'reason': Explanation string
+            - 'time_period': Current time period (Daytime/Nighttime/Terminator)
+            - 'top_3_bands': List of top 3 recommendations
+        """
+        try:
+            latitude = self._grid_to_latitude(home_grid)
+            longitude = self._grid_to_longitude(home_grid)
+            utc_time = datetime.now(timezone.utc)
+
+            # Get solar zenith angle for time period identification
+            zenith_angle = self._get_solar_zenith_angle(latitude, longitude, utc_time)
+
+            # Determine time period
+            if zenith_angle < 90.0:
+                time_period = "Daytime"
+                time_emoji = "☀️"
+            elif zenith_angle < 110.0:
+                time_period = "Terminator (Best!)"
+                time_emoji = "🌅"
+            else:
+                time_period = "Nighttime"
+                time_emoji = "🌙"
+
+            # Rank bands by usability and MUF margin
+            ranked_bands = []
+            for band_name, prediction in predictions.items():
+                if prediction.usable:
+                    # Margin = how much above minimum freq
+                    margin = prediction.muf_value - prediction.frequency_range[1]
+                    # Score based on margin and frequency (prefer higher freq for DX)
+                    score = margin + (prediction.muf_value / 50.0) * 2
+                    ranked_bands.append((band_name, prediction, score, margin))
+
+            # Sort by score
+            ranked_bands.sort(key=lambda x: x[2], reverse=True)
+
+            # Get top 3 recommendations
+            top_3 = []
+            for band_name, prediction, score, margin in ranked_bands[:3]:
+                top_3.append({
+                    'band': band_name,
+                    'muf': prediction.muf_value,
+                    'margin': round(margin, 1)
+                })
+
+            # Best band (first ranked)
+            if ranked_bands:
+                best_band, best_pred, best_score, best_margin = ranked_bands[0]
+
+                # Generate reason
+                if time_period == "Terminator (Best!)":
+                    reason = f"Excellent propagation window! All frequencies work well."
+                elif time_period == "Daytime":
+                    reason = f"Daytime conditions. High frequencies ({best_band}) work best for worldwide."
+                else:  # Nighttime
+                    reason = f"Nighttime conditions. Low frequencies ({best_band}) excellent for worldwide."
+
+                return {
+                    'band': best_band,
+                    'muf': best_pred.muf_value,
+                    'usable': best_pred.usable,
+                    'margin': round(best_margin, 1),
+                    'reason': reason,
+                    'time_period': time_period,
+                    'time_emoji': time_emoji,
+                    'zenith_angle': round(zenith_angle, 1),
+                    'top_3_bands': top_3,
+                    'utc_time': utc_time.strftime('%H:%M UTC')
+                }
+            else:
+                return {
+                    'band': None,
+                    'muf': None,
+                    'usable': False,
+                    'reason': 'No usable bands available',
+                    'time_period': time_period,
+                    'time_emoji': time_emoji,
+                    'zenith_angle': round(zenith_angle, 1),
+                    'top_3_bands': [],
+                    'utc_time': utc_time.strftime('%H:%M UTC')
+                }
+
+        except Exception as e:
+            logger.error(f"Error determining best band: {e}", exc_info=True)
+            return {
+                'band': None,
+                'muf': None,
+                'usable': False,
+                'reason': f'Error: {str(e)}',
+                'time_period': 'Unknown',
+                'time_emoji': '❓',
+                'zenith_angle': None,
+                'top_3_bands': [],
+                'utc_time': datetime.now(timezone.utc).strftime('%H:%M UTC')
+            }
 
     def get_muf_status_string(self, predictions: Dict[str, MUFPrediction]) -> str:
         """
