@@ -7,7 +7,7 @@ Retrieves current space weather conditions from NOAA SWPC for HF propagation ass
 import logging
 import requests
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 
 logger = logging.getLogger(__name__)
@@ -601,6 +601,32 @@ class SpaceWeatherFetcher:
 
             for station_data in stations:
                 try:
+                    # Skip stations with stale data (>24 hours old, no valid MUFD)
+                    # This prevents using old measurements from defunct ionosondes
+                    time_str = station_data.get('time', '')
+                    mufd = station_data.get('mufd')
+                    if not mufd:
+                        continue  # Skip if no MUFD value
+
+                    # Check if measurement is recent enough (within 24 hours)
+                    try:
+                        # GIRO API returns times like "2025-10-26T19:05:05" (no timezone)
+                        # Parse as UTC assuming all GIRO times are UTC
+                        time_str_clean = time_str.replace('Z', '').strip()
+                        meas_time = datetime.fromisoformat(time_str_clean)
+                        # Make it timezone-aware (UTC)
+                        if meas_time.tzinfo is None:
+                            meas_time = meas_time.replace(tzinfo=timezone.utc)
+
+                        age_hours = (datetime.now(timezone.utc) - meas_time).total_seconds() / 3600
+                        if age_hours > 24:
+                            logger.debug(f"Skipping stale GIRO data from {station_data.get('station', {}).get('code', 'Unknown')}: {age_hours:.1f}h old")
+                            continue
+                    except (ValueError, TypeError) as e:
+                        # If we can't parse the time, use the station anyway
+                        logger.debug(f"Could not parse GIRO time {time_str}: {e}")
+                        pass
+
                     station_info = station_data.get('station', {})
                     station_lat = float(station_info.get('latitude', 0))
                     station_lon = float(station_info.get('longitude', 0))

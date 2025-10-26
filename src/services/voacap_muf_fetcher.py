@@ -407,13 +407,15 @@ class VOACAPMUFFetcher:
                 center_freq = (min_freq + max_freq) / 2.0
 
                 if giro_muf is not None:
-                    # Scale GIRO MUF based on frequency dependence
-                    # GIRO provides MUFD (daytime), adjust for time of day
-                    muf = giro_muf * (1.0 - (center_freq - 14.0) / 100.0)
+                    # GIRO provides MUFD - real measured ionospheric data (3000km path, daytime)
+                    # This is actual measured data from ionosondes, not a formula
+                    # Use it directly as the base MUF for the band
+                    muf = giro_muf  # Use measured value directly - don't scale with frequency
                     muf = max(2.0, min(50.0, muf))  # Bounds check
 
                     if include_time_factor:
-                        # Apply time-of-day factor to scaled GIRO value
+                        # Apply time-of-day factor to GIRO measured value
+                        # GIRO MUFD is for daytime, reduce for nighttime
                         zenith = self._get_solar_zenith_angle(latitude, longitude, utc_time)
                         time_factor = self._get_day_night_factor(zenith, center_freq)
                         muf = muf * time_factor

@@ -69,11 +69,15 @@ class MainWindow(QMainWindow):
         saved_geometry = self.config_manager.get("ui.window_geometry")
         if saved_geometry:
             try:
-                # Geometry is stored as (x, y, width, height) tuple
-                x, y, w, h = saved_geometry
-                self.setGeometry(x, y, w, h)
-            except (TypeError, ValueError):
-                logger.warning(f"Invalid saved window geometry: {saved_geometry}")
+                # Geometry is stored as list [x, y, width, height]
+                if isinstance(saved_geometry, (list, tuple)) and len(saved_geometry) == 4:
+                    x, y, w, h = saved_geometry
+                    self.setGeometry(int(x), int(y), int(w), int(h))
+                else:
+                    logger.warning(f"Invalid saved window geometry format: {saved_geometry}")
+                    self.setGeometry(100, 100, 1400, 900)
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Error parsing saved window geometry: {e}")
                 self.setGeometry(100, 100, 1400, 900)
 
         self._create_menu_bar()
@@ -484,9 +488,10 @@ class MainWindow(QMainWindow):
                 # Save window geometry for next session
                 try:
                     geometry = self.geometry()
-                    geometry_tuple = (geometry.x(), geometry.y(), geometry.width(), geometry.height())
-                    self.config_manager.set("ui.window_geometry", geometry_tuple)
-                    logger.debug(f"Saved window geometry: {geometry_tuple}")
+                    # Store as list (YAML-serializable) not tuple
+                    geometry_list = [geometry.x(), geometry.y(), geometry.width(), geometry.height()]
+                    self.config_manager.set("ui.window_geometry", geometry_list)
+                    logger.debug(f"Saved window geometry: {geometry_list}")
                 except Exception as geom_error:
                     logger.warning(f"Error saving window geometry: {geom_error}")
 
