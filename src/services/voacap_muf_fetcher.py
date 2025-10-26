@@ -99,27 +99,38 @@ class VOACAPMUFFetcher:
             if utc_time is None:
                 utc_time = datetime.now(timezone.utc)
 
+            # Convert UTC to local solar time
+            # Local solar time = UTC + (longitude / 15.0) hours
+            local_offset_hours = longitude / 15.0
+            local_hour = (utc_time.hour + local_offset_hours) % 24.0
+
             # Days since J2000.0 epoch
             jd = (utc_time - datetime(2000, 1, 1, 12, 0, 0, tzinfo=timezone.utc)).days
-            jd = jd + (utc_time.hour - 12.0) / 24.0
+            jd = jd + (local_hour - 12.0) / 24.0
 
-            # Solar declination (simplified)
-            declination = 23.44 * math.sin(math.radians(360.0 * (jd - 81.0) / 365.25))
+            # Day of year
+            day_of_year = utc_time.timetuple().tm_yday
 
-            # Hour angle (sun's position relative to local noon)
-            gst = 280.46 + 360.985647 * jd
-            local_hour_angle = gst + longitude - (utc_time.hour * 15.0 + utc_time.minute * 0.25 + utc_time.second * 0.00416667)
-            local_hour_angle = local_hour_angle % 360.0
+            # Solar declination
+            declination = 23.44 * math.sin(math.radians(360.0 * (day_of_year - 81.0) / 365.25))
+
+            # Hour angle (degrees per hour, 15° = 1 hour)
+            # Using local solar time (not standard time)
+            hour_angle = 15.0 * (local_hour - 12.0)
 
             # Convert to radians
             lat_rad = math.radians(latitude)
             dec_rad = math.radians(declination)
-            ha_rad = math.radians(local_hour_angle)
+            ha_rad = math.radians(hour_angle)
 
-            # Zenith angle calculation
+            # Zenith angle using spherical law of cosines
+            # cos(z) = sin(lat)*sin(dec) + cos(lat)*cos(dec)*cos(ha)
             cos_zenith = (math.sin(lat_rad) * math.sin(dec_rad) +
                          math.cos(lat_rad) * math.cos(dec_rad) * math.cos(ha_rad))
-            zenith_angle = math.degrees(math.acos(max(-1, min(1, cos_zenith))))
+
+            # Clamp to valid range
+            cos_zenith = max(-1.0, min(1.0, cos_zenith))
+            zenith_angle = math.degrees(math.acos(cos_zenith))
 
             return zenith_angle
 
@@ -216,7 +227,7 @@ class VOACAPMUFFetcher:
             # Empirical relationship: MUF increases with SFI
             # Nominal: SFI=70 -> MUF~9MHz at 14MHz reference
             #          SFI=200 -> MUF~25MHz at 14MHz reference
-            base_muf = 9.0 + (sfi - 70) * 0.08  # Linear approximation
+            base_muf = 9.0 + (sfi - 70) * 0.2  # Linear approximation (0.2 MHz per SFI unit)
 
             # K-Index correction (negative effects from geomagnetic disturbance)
             # K=0-3: Normal conditions, slight boost
@@ -430,18 +441,21 @@ class VOACAPMUFFetcher:
                     # Score based on time-of-day suitability
                     if time_period == "Daytime":
                         # Daytime: prefer HIGH frequencies (20m, 15m, 10m best)
-                        # Score = margin + frequency bonus for high bands
-                        freq_score = band_freq / 2.0 if band_freq > 10 else band_freq / 10.0
-                        score = margin + freq_score
+                        # Weight frequency heavily: high freq bonus dominates margin
+                        freq_score = band_freq * 2.0  # High frequencies get major boost
+                        margin_factor = min(1.0, margin / 5.0)  # Cap margin benefit
+                        score = freq_score + margin_factor
                     elif time_period == "Terminator (Best!)":
                         # Terminator: all bands good, prefer moderate-high frequencies
-                        freq_score = band_freq / 1.5
-                        score = margin + freq_score
+                        freq_score = band_freq * 1.5
+                        margin_factor = min(1.5, margin / 5.0)
+                        score = freq_score + margin_factor
                     else:  # Nighttime
                         # Nighttime: prefer LOW frequencies (80m, 160m best)
-                        # Score = margin + bonus for low frequencies
-                        freq_score = (50.0 - band_freq) / 2.0  # Invert: lower freq = higher score
-                        score = margin + freq_score
+                        # Weight low frequency heavily
+                        freq_score = (50.0 - band_freq) * 2.0  # Low frequencies get major boost
+                        margin_factor = min(1.0, margin / 5.0)
+                        score = freq_score + margin_factor
 
                     ranked_bands.append((band_name, prediction, score, margin, band_freq))
                     logger.debug(f"  {band_name}: freq={band_freq:.1f}MHz, MUF={prediction.muf_value:.1f}MHz, "
@@ -463,13 +477,19 @@ class VOACAPMUFFetcher:
             if ranked_bands:
                 best_band, best_pred, best_score, best_margin, best_freq = ranked_bands[0]
 
-                # Generate reason
+                # Generate reason based on time of day
                 if time_period == "Terminator (Best!)":
                     reason = f"🌅 Excellent propagation window! All frequencies work well. {best_band} recommended."
                 elif time_period == "Daytime":
-                    reason = f"☀️ Daytime at your location. High frequencies like {best_band} work best for worldwide DX."
+                    if best_freq > 10:
+                        reason = f"☀️ Daytime at your location. High frequencies like {best_band} ({best_freq:.1f}MHz) work best for worldwide DX."
+                    else:
+                        reason = f"☀️ Daytime, but only low frequencies usable now. {best_band} ({best_freq:.1f}MHz) is best available."
                 else:  # Nighttime
-                    reason = f"🌙 Nighttime at your location. Low frequencies like {best_band} excellent for worldwide."
+                    if best_freq < 8:
+                        reason = f"🌙 Nighttime at your location. Low frequencies like {best_band} ({best_freq:.1f}MHz) excellent for worldwide."
+                    else:
+                        reason = f"🌙 Nighttime, mid-range frequencies still usable. {best_band} ({best_freq:.1f}MHz) is best available."
 
                 return {
                     'band': best_band,
