@@ -407,22 +407,44 @@ class VOACAPMUFFetcher:
                 time_period = "Nighttime"
                 time_emoji = "🌙"
 
-            # Rank bands by usability and MUF margin
+            logger.debug(f"Best band calculation: Grid={home_grid}, Lat={latitude:.1f}, Lon={longitude:.1f}, "
+                        f"Zenith={zenith_angle:.1f}°, Time period={time_period}")
+
+            # Rank bands by suitability based on time of day
             ranked_bands = []
             for band_name, prediction in predictions.items():
                 if prediction.usable:
-                    # Margin = how much above minimum freq
+                    # Get band center frequency
+                    band_freq = (prediction.frequency_range[0] + prediction.frequency_range[1]) / 2.0
+                    # Margin above band edge
                     margin = prediction.muf_value - prediction.frequency_range[1]
-                    # Score based on margin and frequency (prefer higher freq for DX)
-                    score = margin + (prediction.muf_value / 50.0) * 2
-                    ranked_bands.append((band_name, prediction, score, margin))
+
+                    # Score based on time-of-day suitability
+                    if time_period == "Daytime":
+                        # Daytime: prefer HIGH frequencies (20m, 15m, 10m best)
+                        # Score = margin + frequency bonus for high bands
+                        freq_score = band_freq / 2.0 if band_freq > 10 else band_freq / 10.0
+                        score = margin + freq_score
+                    elif time_period == "Terminator (Best!)":
+                        # Terminator: all bands good, prefer moderate-high frequencies
+                        freq_score = band_freq / 1.5
+                        score = margin + freq_score
+                    else:  # Nighttime
+                        # Nighttime: prefer LOW frequencies (80m, 160m best)
+                        # Score = margin + bonus for low frequencies
+                        freq_score = (50.0 - band_freq) / 2.0  # Invert: lower freq = higher score
+                        score = margin + freq_score
+
+                    ranked_bands.append((band_name, prediction, score, margin, band_freq))
+                    logger.debug(f"  {band_name}: freq={band_freq:.1f}MHz, MUF={prediction.muf_value:.1f}MHz, "
+                               f"margin={margin:.1f}MHz, score={score:.1f}")
 
             # Sort by score
             ranked_bands.sort(key=lambda x: x[2], reverse=True)
 
             # Get top 3 recommendations
             top_3 = []
-            for band_name, prediction, score, margin in ranked_bands[:3]:
+            for band_name, prediction, score, margin, band_freq in ranked_bands[:3]:
                 top_3.append({
                     'band': band_name,
                     'muf': prediction.muf_value,
@@ -431,15 +453,15 @@ class VOACAPMUFFetcher:
 
             # Best band (first ranked)
             if ranked_bands:
-                best_band, best_pred, best_score, best_margin = ranked_bands[0]
+                best_band, best_pred, best_score, best_margin, best_freq = ranked_bands[0]
 
                 # Generate reason
                 if time_period == "Terminator (Best!)":
-                    reason = f"Excellent propagation window! All frequencies work well."
+                    reason = f"🌅 Excellent propagation window! All frequencies work well. {best_band} recommended."
                 elif time_period == "Daytime":
-                    reason = f"Daytime conditions. High frequencies ({best_band}) work best for worldwide."
+                    reason = f"☀️ Daytime at your location. High frequencies like {best_band} work best for worldwide DX."
                 else:  # Nighttime
-                    reason = f"Nighttime conditions. Low frequencies ({best_band}) excellent for worldwide."
+                    reason = f"🌙 Nighttime at your location. Low frequencies like {best_band} excellent for worldwide."
 
                 return {
                     'band': best_band,

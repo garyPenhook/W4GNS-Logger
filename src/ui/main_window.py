@@ -453,7 +453,7 @@ class MainWindow(QMainWindow):
         """
         Handle window close event with graceful resource cleanup
 
-        Ensures database connections are properly closed before exit.
+        Ensures all background processes are stopped and database connections are properly closed before exit.
         """
         try:
             # Ask user confirmation
@@ -465,6 +465,14 @@ class MainWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
+                # Stop spot manager BEFORE closing database to prevent background thread errors
+                try:
+                    if hasattr(self, 'spot_manager') and self.spot_manager:
+                        logger.info("Stopping SKCC spot manager...")
+                        self.spot_manager.stop()
+                except Exception as spot_error:
+                    logger.error(f"Error stopping spot manager: {spot_error}", exc_info=True)
+
                 # Perform automatic backup if enabled and destination is configured
                 try:
                     auto_backup_enabled = self.config_manager.get("database.auto_backup_on_shutdown", True)
@@ -472,7 +480,7 @@ class MainWindow(QMainWindow):
 
                     if auto_backup_enabled and backup_destination:
                         backup_dest_path = Path(backup_destination)
-                        if backup_dest_path.exists():
+                        if backup_dest_path.exists() and backup_dest_path.is_dir():
                             logger.info("Performing automatic backup on shutdown...")
                             db_path = Path(self.config_manager.get("database.location"))
 
@@ -487,7 +495,7 @@ class MainWindow(QMainWindow):
                             else:
                                 logger.warning(f"Auto-backup failed: {result['message']}")
                         else:
-                            logger.warning(f"Backup destination not available: {backup_destination}")
+                            logger.warning(f"Backup destination not available or not a directory: {backup_destination}")
                 except Exception as backup_error:
                     logger.error(f"Error during auto-backup: {backup_error}", exc_info=True)
 
@@ -508,9 +516,16 @@ class MainWindow(QMainWindow):
             logger.error(f"Error in closeEvent: {e}", exc_info=True)
             # Accept event anyway to allow exit on error
             try:
+                # Try to stop spot manager if it exists
+                if hasattr(self, 'spot_manager') and self.spot_manager:
+                    try:
+                        self.spot_manager.stop()
+                    except Exception as spot_error:
+                        logger.warning(f"Error stopping spot manager during error cleanup: {spot_error}")
+
                 if hasattr(self, 'db') and self.db:
                     self.db.engine.dispose()
             except Exception as cleanup_error:
-                logger.warning(f"Error disposing database engine: {cleanup_error}")
+                logger.warning(f"Error during final cleanup: {cleanup_error}")
                 # Continue with exit even if cleanup fails
             event.accept()
