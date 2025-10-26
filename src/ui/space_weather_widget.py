@@ -277,8 +277,8 @@ class SpaceWeatherWidget(QWidget):
         self.muf_band_labels: Dict[str, QLabel] = {}  # Band name -> label with bar
         self.muf_value_labels: Dict[str, QLabel] = {}  # Band name -> value label
 
-        # Standard HF bands to display (80m, 40m, 20m, 15m, 10m are most common)
-        bands_to_show = ["160m", "80m", "40m", "20m", "15m", "10m"]
+        # Practical amateur HF bands to display (most hams can't accommodate 160m antenna)
+        bands_to_show = ["80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"]
 
         for i, band in enumerate(bands_to_show):
             row = i % 3
@@ -570,11 +570,11 @@ class SpaceWeatherWidget(QWidget):
         # 40m: Works in all conditions
         recommendations.append("• 40m: ✓ Excellent (works in any K-index)")
 
-        # 80m/160m: Better in poor conditions
+        # 80m: Better in poor conditions
         if kp_val > 5:
-            recommendations.append("• 80/160m: ✓ Best during storms")
+            recommendations.append("• 80m: ✓ Best during storms")
         else:
-            recommendations.append("• 80/160m: Good (local/regional)")
+            recommendations.append("• 80m: Good (local/regional)")
 
         self.band_recommendations.setText("\n".join(recommendations))
 

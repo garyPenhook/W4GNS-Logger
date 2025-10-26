@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Standard HF bands used in amateur radio (frequency in MHz)
 HF_BANDS = {
-    "160m": (1.8, 2.0),
+    # Practical amateur radio bands (160m excluded - most hams lack 160m antenna due to size)
     "80m": (3.5, 4.0),
     "60m": (5.3, 5.4),
     "40m": (7.0, 7.3),
@@ -30,6 +30,7 @@ HF_BANDS = {
     "15m": (21.0, 21.45),
     "12m": (24.89, 24.99),
     "10m": (28.0, 29.7),
+    "6m": (50.0, 54.0),
 }
 
 # VOACAP API endpoints and configuration
@@ -458,7 +459,7 @@ class VOACAPMUFFetcher:
                         margin_factor = min(1.5, margin / 5.0)
                         score = freq_score + margin_factor
                     else:  # Nighttime
-                        # Nighttime: prefer LOW frequencies (80m, 160m best)
+                        # Nighttime: prefer LOW frequencies (80m best for practical antennas)
                         # Weight low frequency heavily
                         freq_score = (50.0 - band_freq) * 2.0  # Low frequencies get major boost
                         margin_factor = min(1.0, margin / 5.0)
