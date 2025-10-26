@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 NOAA_SCALES = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 NOAA_KP_FORECAST = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
 
+# Alternative data source for Solar Flux Index
+# HamQSL provides real-time propagation data including SFI
+HAMQSL_SOLAR_DATA = "https://www.hamqsl.com/solar.json"
+
 # Default timeout for HTTP requests
 HTTP_TIMEOUT = 10
 
@@ -126,12 +130,104 @@ class SpaceWeatherFetcher:
             logger.error(f"Error parsing K-index forecast: {e}")
             return {'forecasts': [], 'error': str(e), 'timestamp': datetime.now().isoformat()}
 
-    def get_solar_data(self) -> Dict[str, Any]:
+    def get_solar_flux_index(self) -> Optional[float]:
         """
-        Get solar data from NOAA scales (R-scale and S-scale data).
+        Get current Solar Flux Index (SFI) from external sources.
+
+        Tries multiple sources:
+        1. HamQSL solar data (community maintained)
+        2. Calculated estimate from NOAA K-index and R-scale data
 
         Returns:
-            Dict with solar radiation and radio blackout information
+            Current SFI value or None if unable to fetch
+        """
+        try:
+            # Try HamQSL first (includes SFI)
+            response = self.session.get(HAMQSL_SOLAR_DATA, timeout=HTTP_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+
+            # HamQSL format includes 'sfi' field
+            if isinstance(data, dict) and 'sfi' in data:
+                try:
+                    sfi = float(data['sfi'])
+                    if sfi > 0:
+                        logger.debug(f"Retrieved Solar Flux Index from HamQSL: {sfi}")
+                        return sfi
+                except (ValueError, TypeError):
+                    pass
+
+            logger.debug("SFI not found in HamQSL response, using fallback")
+            return None
+
+        except requests.RequestException as e:
+            logger.debug(f"Unable to fetch from HamQSL: {e}")
+            return None
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.debug(f"Error parsing SFI from HamQSL: {e}")
+            return None
+
+    def estimate_sfi_from_conditions(self, g_scale: Optional[str] = None,
+                                     r_scale: Optional[str] = None,
+                                     kp_index: Optional[float] = None) -> float:
+        """
+        Estimate Solar Flux Index from geomagnetic conditions when actual SFI unavailable.
+
+        Uses NOAA G-scale and R-scale data to estimate SFI:
+        - Quiet conditions: SFI ~ 70-90
+        - Unsettled: SFI ~ 90-120
+        - Active: SFI ~ 120-180
+        - Minor storm: SFI ~ 90-120
+        - Major storm: SFI ~ 50-90 (reduced propagation)
+
+        Args:
+            g_scale: Geomagnetic scale (G0-G5)
+            r_scale: Radio blackout scale (R0-R5)
+            kp_index: K-index value (0-9)
+
+        Returns:
+            Estimated SFI value
+        """
+        # Start with baseline
+        estimated_sfi = 85.0
+
+        # G-scale affects estimated SFI
+        if g_scale:
+            if g_scale == 'G0':
+                estimated_sfi += 20  # Very quiet
+            elif g_scale == 'G1':
+                estimated_sfi += 10
+            elif g_scale in ('G2', 'G3'):
+                estimated_sfi -= 10  # Minor storm
+            elif g_scale in ('G4', 'G5'):
+                estimated_sfi -= 30  # Major storm
+
+        # R-scale (radio blackout) also correlates with solar activity
+        if r_scale and r_scale != 'R0':
+            try:
+                scale_num = int(r_scale[1]) if len(r_scale) > 1 else 0
+                estimated_sfi += (scale_num * 15)  # Radio events indicate higher solar activity
+            except (ValueError, IndexError):
+                pass
+
+        # K-index can provide additional context
+        if kp_index is not None:
+            # Very high K-index can reduce apparent propagation
+            if kp_index > 6:
+                estimated_sfi -= (kp_index - 6) * 5
+
+        # Ensure within reasonable bounds
+        estimated_sfi = max(50, min(250, estimated_sfi))
+
+        logger.info(f"Estimated SFI: {estimated_sfi:.0f} (G:{g_scale}, R:{r_scale}, Kp:{kp_index})")
+        return estimated_sfi
+
+    def get_solar_data(self) -> Dict[str, Any]:
+        """
+        Get solar data from NOAA scales (R-scale and S-scale data) and Solar Flux Index.
+
+        Returns:
+            Dict with solar radiation, radio blackout information, and Solar Flux Index
         """
         try:
             response = self.session.get(NOAA_SCALES, timeout=HTTP_TIMEOUT)
@@ -144,8 +240,31 @@ class SpaceWeatherFetcher:
             forecast_day2 = scales_data.get("2", {})
             forecast_day3 = scales_data.get("3", {})
 
+            # Also fetch Solar Flux Index
+            solar_flux = self.get_solar_flux_index()
+
+            # If actual SFI not available, estimate from conditions
+            if solar_flux is None:
+                kp_response = self.session.get(NOAA_KP_FORECAST, timeout=HTTP_TIMEOUT)
+                kp_response.raise_for_status()
+                kp_data = kp_response.json()
+
+                # Get current K-index
+                kp_index = None
+                if kp_data and len(kp_data) > 1:
+                    for row in reversed(kp_data[1:]):
+                        if row[2] == "observed":
+                            kp_index = float(row[1]) if row[1] else None
+                            break
+
+                # Use estimate based on conditions
+                g_scale = current.get('G', {}).get('Scale')
+                r_scale = current.get('R', {}).get('Scale')
+                solar_flux = self.estimate_sfi_from_conditions(g_scale, r_scale, kp_index)
+
             result = {
                 'timestamp': current.get('TimeStamp', datetime.now().isoformat()),
+                'solar_flux_index': solar_flux,  # Add SFI for MUF calculations
                 'current': {
                     'radio_blackout_scale': current.get('R', {}).get('Scale'),
                     'radio_blackout_text': current.get('R', {}).get('Text'),
