@@ -9,19 +9,28 @@ Rules:
 - Contact 200+ additional Tribunes/Senators (on or after Tribune x8 achievement)
 - Exchanges must include SKCC numbers
 - QSOs must be CW mode only
+- Mechanical key policy: Contacts must use straight key, bug, or side swiper
+- Club calls and special event calls don't qualify
 - Any band(s) allowed
 - Contacts valid on or after August 1, 2013
 - Each call sign counts only once (per category)
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 from datetime import datetime
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
 
 logger = logging.getLogger(__name__)
+
+# Special event calls that don't count for Senator Award
+# Including K9SKC (SKCC Club Call) and known special-event calls like K3Y
+SPECIAL_EVENT_CALLS: Set[str] = {
+    'K9SKC',  # SKCC Club Call
+    'K3Y',    # Example special-event call
+}
 
 
 class SenatorAward(AwardProgram):
@@ -47,7 +56,9 @@ class SenatorAward(AwardProgram):
         Requirements:
         - CW mode only
         - SKCC number present
+        - Mechanical key required (STRAIGHT, BUG, or SIDESWIPER)
         - Contact date on or after August 1, 2013
+        - Club calls and special event calls excluded
         - Remote station must be Tribune/Senator (checked via list)
         - Both operators must hold appropriate SKCC membership at time of contact
 
@@ -65,10 +76,31 @@ class SenatorAward(AwardProgram):
         if not contact.get('skcc_number'):
             return False
 
+        # CRITICAL RULE: SKCC Mechanical Key Policy
+        # Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+        key_type = contact.get('key_type', '').upper()
+        if key_type and key_type not in ['STRAIGHT', 'BUG', 'SIDESWIPER']:
+            logger.debug(f"Invalid key type for Senator: {key_type}")
+            return False
+
+        # Get contact date for date-based validations
+        qso_date = contact.get('qso_date', '')
+
         # Check contact date (must be on/after August 1, 2013)
         # Date comparison using YYYYMMDD string format (lexicographic comparison works correctly)
-        qso_date = contact.get('qso_date', '')
         if qso_date and qso_date < self.senator_effective_date_str:
+            return False
+
+        # CRITICAL RULE: Club calls and special event calls don't count for Senator
+        # "Club calls (K9SKC) and special event calls don't qualify unless paired with
+        # an FCC-assigned call."
+        callsign = contact.get('callsign', '').upper().strip()
+        base_call = callsign.split('/')[0] if '/' in callsign else callsign
+
+        if base_call in SPECIAL_EVENT_CALLS:
+            logger.debug(
+                f"Special-event call filtered for Senator: {callsign}"
+            )
             return False
 
         # Remote station must be Tribune or Senator

@@ -10,19 +10,28 @@ Rules:
 - Both operators must hold Centurion status at time of contact
 - Exchanges must include SKCC numbers
 - QSOs must be CW mode only
+- Mechanical key policy: Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+- Club calls and special event calls don't count after October 1, 2008
 - Any band(s) allowed
 - Contacts valid on or after March 1, 2007
 - Each call sign counts only once (per category)
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 from datetime import datetime
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
 
 logger = logging.getLogger(__name__)
+
+# Special event calls that don't count after October 1, 2008
+# Including K9SKC (SKCC Club Call) and known special-event calls like K3Y
+SPECIAL_EVENT_CALLS: Set[str] = {
+    'K9SKC',  # SKCC Club Call
+    'K3Y',    # Example special-event call
+}
 
 
 class TribuneAward(AwardProgram):
@@ -49,6 +58,8 @@ class TribuneAward(AwardProgram):
         - CW mode only
         - SKCC number present
         - Contact date on or after March 1, 2007
+        - Mechanical key required (STRAIGHT, BUG, or SIDESWIPER)
+        - Club calls and special event calls excluded after October 1, 2008
         - Remote station must be Tribune/Senator (checked via list)
         - Both operators must hold appropriate SKCC membership at time of contact
 
@@ -66,11 +77,36 @@ class TribuneAward(AwardProgram):
         if not contact.get('skcc_number'):
             return False
 
+        # Get contact date once for multiple date-based validations
+        qso_date = contact.get('qso_date', '')
+
         # Check contact date (must be on/after March 1, 2007)
         # Date comparison using YYYYMMDD string format (lexicographic comparison works correctly)
-        qso_date = contact.get('qso_date', '')
         if qso_date and qso_date < self.tribune_effective_date_str:
             return False
+
+        # CRITICAL RULE: SKCC Mechanical Key Policy
+        # Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+        key_type = contact.get('key_type', '').upper()
+        if key_type and key_type not in ['STRAIGHT', 'BUG', 'SIDESWIPER']:
+            logger.debug(f"Invalid key type for Tribune: {key_type}")
+            return False
+
+        # CRITICAL RULE: Club calls and special event calls don't count after Oct 1, 2008
+        # "Neither the SKCC Club Call (K9SKC) nor any special-event call sign
+        # (such as K3Y) will be accepted for credit for contacts logged on or
+        # after 1 October 2008."
+        if qso_date and qso_date >= '20081001':  # On or after October 1, 2008
+            callsign = contact.get('callsign', '').upper().strip()
+            # Remove /portable or other suffix indicators
+            base_call = callsign.split('/')[0] if '/' in callsign else callsign
+
+            if base_call in SPECIAL_EVENT_CALLS:
+                logger.debug(
+                    f"Special-event call filtered after Oct 1, 2008: {callsign} "
+                    f"(date: {qso_date})"
+                )
+                return False
 
         # Remote station must be Tribune or higher
         # Check if contacted station is on Tribune/Senator list

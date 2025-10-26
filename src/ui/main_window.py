@@ -270,6 +270,10 @@ class MainWindow(QMainWindow):
         from src.ui.centurion_progress_widget import CenturionProgressWidget
         from src.ui.tribune_progress_widget import TribuneProgressWidget
         from src.ui.senator_progress_widget import SenatorProgressWidget
+        from src.ui.canadian_maple_progress_widget import CanadianMapleProgressWidget
+        from src.ui.dx_award_progress_widget import DXAwardProgressWidget
+        from src.ui.rag_chew_progress_widget import RagChewProgressWidget
+        from src.ui.pfx_progress_widget import PFXProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -297,6 +301,34 @@ class MainWindow(QMainWindow):
         senator_widget = SenatorProgressWidget(self.db)
         senator_scroll.setWidget(senator_widget)
         awards_tabs.addTab(senator_scroll, "Senator")
+
+        # Canadian Maple Award Tab
+        maple_scroll = QScrollArea()
+        maple_scroll.setWidgetResizable(True)
+        maple_widget = CanadianMapleProgressWidget(self.db)
+        maple_scroll.setWidget(maple_widget)
+        awards_tabs.addTab(maple_scroll, "Canadian Maple")
+
+        # DX Award Tab
+        dx_scroll = QScrollArea()
+        dx_scroll.setWidgetResizable(True)
+        dx_widget = DXAwardProgressWidget(self.db)
+        dx_scroll.setWidget(dx_widget)
+        awards_tabs.addTab(dx_scroll, "DX Award")
+
+        # Rag Chew Award Tab
+        ragchew_scroll = QScrollArea()
+        ragchew_scroll.setWidgetResizable(True)
+        ragchew_widget = RagChewProgressWidget(self.db)
+        ragchew_scroll.setWidget(ragchew_widget)
+        awards_tabs.addTab(ragchew_scroll, "Rag Chew")
+
+        # PFX Award Tab
+        pfx_scroll = QScrollArea()
+        pfx_scroll.setWidgetResizable(True)
+        pfx_widget = PFXProgressWidget(self.db)
+        pfx_scroll.setWidget(pfx_widget)
+        awards_tabs.addTab(pfx_scroll, "PFX")
 
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)

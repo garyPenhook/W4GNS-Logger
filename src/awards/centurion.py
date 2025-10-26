@@ -6,20 +6,30 @@ Endorsements are available in 100-contact increments up to Centurion x10,
 then in 500-contact increments (Cx15, Cx20, etc.).
 
 Rules:
-- Both operators must hold SKCC membership
+- Both operators must hold SKCC membership at time of contact
 - Exchanges must include SKCC numbers
 - QSOs must be CW mode only
+- Mechanical key policy: Contacts must use straight key, sideswiper (cootie), or bug
+- Club calls and special event calls don't count after December 1, 2009
 - Any band(s) allowed
 - Each call sign counts only once (per category)
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
 
 logger = logging.getLogger(__name__)
+
+# Special event calls that don't count after December 1, 2009 for Centurion
+# (Different from Tribune which uses October 1, 2008)
+# Including K9SKC (SKCC Club Call) and known special-event calls like K3Y
+SPECIAL_EVENT_CALLS: Set[str] = {
+    'K9SKC',  # SKCC Club Call
+    'K3Y',    # Example special-event call
+}
 
 
 class CenturionAward(AwardProgram):
@@ -42,6 +52,8 @@ class CenturionAward(AwardProgram):
         Requirements:
         - CW mode only
         - SKCC number present on both sides (in skcc_number field and contact's SKCC number)
+        - Mechanical key required (STRAIGHT, BUG, or SIDESWIPER)
+        - Club calls and special event calls excluded after December 1, 2009
         - Both operators must hold SKCC membership at time of contact
         - Valid SKCC member (can be checked against Centurion list, but not required)
 
@@ -58,6 +70,32 @@ class CenturionAward(AwardProgram):
         # Must have SKCC number
         if not contact.get('skcc_number'):
             return False
+
+        # CRITICAL RULE: SKCC Mechanical Key Policy
+        # Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+        key_type = contact.get('key_type', '').upper()
+        if key_type and key_type not in ['STRAIGHT', 'BUG', 'SIDESWIPER']:
+            logger.debug(f"Invalid key type for Centurion: {key_type}")
+            return False
+
+        # Get contact date for date-based validations
+        qso_date = contact.get('qso_date', '')
+
+        # CRITICAL RULE: Club calls and special event calls don't count after Dec 1, 2009
+        # "Club calls (K9SKC) and special-event callsigns cannot be used for credit
+        # after December 1, 2009. Individual operator call signs are acceptable if
+        # not previously used."
+        if qso_date and qso_date >= '20091201':  # On or after December 1, 2009
+            callsign = contact.get('callsign', '').upper().strip()
+            # Remove /portable or other suffix indicators
+            base_call = callsign.split('/')[0] if '/' in callsign else callsign
+
+            if base_call in SPECIAL_EVENT_CALLS:
+                logger.debug(
+                    f"Special-event call filtered after Dec 1, 2009: {callsign} "
+                    f"(date: {qso_date})"
+                )
+                return False
 
         # Remote station must be a valid SKCC member (they have a SKCC number in the contact)
         # This is assumed to be present if the contact was logged in SKCC context
