@@ -91,9 +91,19 @@ class SpaceWeatherWidget(QWidget):
         conditions_group = self._create_current_conditions_section()
         main_layout.addWidget(conditions_group)
 
+        # K-Index and Solar Activity side by side (save vertical space)
+        kindex_solar_layout = QHBoxLayout()
+        kindex_solar_layout.setSpacing(15)
+
         # K-Index Status Section
         kindex_group = self._create_kindex_section()
-        main_layout.addWidget(kindex_group)
+        kindex_solar_layout.addWidget(kindex_group)
+
+        # Solar Activity Section
+        solar_group = self._create_solar_section()
+        kindex_solar_layout.addWidget(solar_group)
+
+        main_layout.addLayout(kindex_solar_layout)
 
         # Best Band NOW Section (NEW!)
         best_band_group = self._create_best_band_now_section()
@@ -102,10 +112,6 @@ class SpaceWeatherWidget(QWidget):
         # Maximum Usable Frequency (MUF) Section
         muf_group = self._create_muf_section()
         main_layout.addWidget(muf_group)
-
-        # Solar Activity Section
-        solar_group = self._create_solar_section()
-        main_layout.addWidget(solar_group)
 
         # HF Propagation Recommendation Section
         propagation_group = self._create_propagation_section()
