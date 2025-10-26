@@ -63,15 +63,61 @@ awards:
   - name: SKCC_Centurion
     program_id: SKCC_CEN
     type: unique_contact_count
-    enabled: false
+    enabled: true
     requirements:
       unique_contacts: 100
       organization: SKCC
       mode: CW
+      mechanical_key_required: true
     endorsements:
       - level: 100
         description: "Centurion Award"
-    handler: skcc.py
+      - level: 200
+        description: "Centurion x2"
+      - level: 1000
+        description: "Centurion x10"
+    handler: centurion.py
+
+  - name: SKCC_Tribune
+    program_id: SKCC_TRB
+    type: unique_contact_count
+    enabled: true
+    requirements:
+      unique_contacts: 50
+      organization: SKCC
+      mode: CW
+      mechanical_key_required: true
+      prerequisite: "SKCC_Centurion"
+      effective_date: "20070301"
+    endorsements:
+      - level: 50
+        description: "Tribune Award"
+      - level: 100
+        description: "Tribune x2"
+      - level: 400
+        description: "Tribune x8"
+    handler: tribune.py
+
+  - name: SKCC_Senator
+    program_id: SKCC_SEN
+    type: unique_contact_count
+    enabled: true
+    requirements:
+      unique_contacts: 200
+      organization: SKCC
+      mode: CW
+      mechanical_key_required: true
+      prerequisite: "SKCC_Tribune"
+      effective_date: "20130801"
+      prerequisite_level: "Tribune x8"
+    endorsements:
+      - level: 200
+        description: "Senator Award"
+      - level: 400
+        description: "Senator x2"
+      - level: 2000
+        description: "Senator x10"
+    handler: senator.py
 
   - name: IOTA
     program_id: IOTA_MIXED

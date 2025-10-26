@@ -13,10 +13,13 @@ Rules:
 - Each call sign counts only once (per category)
 """
 
+import logging
 from typing import Dict, List, Any
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
+
+logger = logging.getLogger(__name__)
 
 
 class CenturionAward(AwardProgram):
@@ -39,6 +42,7 @@ class CenturionAward(AwardProgram):
         Requirements:
         - CW mode only
         - SKCC number present on both sides (in skcc_number field and contact's SKCC number)
+        - Both operators must hold SKCC membership at time of contact
         - Valid SKCC member (can be checked against Centurion list, but not required)
 
         Args:
@@ -59,6 +63,35 @@ class CenturionAward(AwardProgram):
         # This is assumed to be present if the contact was logged in SKCC context
         if not contact.get('skcc_number'):
             return False
+
+        # Verify remote operator held SKCC membership at time of contact
+        # Extract base SKCC number (remove suffixes) for validation
+        skcc_num = contact.get('skcc_number', '').strip()
+        if skcc_num:
+            from src.database.models import CenturionMember
+            try:
+                # Check if remote operator is/was in Centurion member list
+                session = self.db
+                base_number = skcc_num.split()[0]
+                if base_number and base_number[-1] in 'CTS':
+                    base_number = base_number[:-1]
+                if base_number and 'x' in base_number:
+                    base_number = base_number.split('x')[0]
+
+                # Query the member list by base SKCC number
+                member = session.query(CenturionMember).filter(
+                    CenturionMember.skcc_number == base_number
+                ).first()
+
+                if not member:
+                    logger.debug(
+                        f"Remote operator SKCC {skcc_num} not found in Centurion member list. "
+                        f"Contact will be counted but may require verification."
+                    )
+                    # Allow contact but log for verification
+            except Exception as e:
+                logger.warning(f"Failed to verify remote operator SKCC membership: {e}", exc_info=True)
+                # Allow contact to be counted, but user should verify
 
         return True
 

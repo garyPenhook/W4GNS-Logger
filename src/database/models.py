@@ -150,12 +150,14 @@ class Contact(Base):
     )
 
     def validate_skcc(self) -> None:
-        """Validate that SKCC contacts are CW-only and cannot use paddles"""
+        """Validate that SKCC contacts are CW-only, use mechanical keys only, and cannot use paddles"""
         if self.skcc_number:
             if self.mode and self.mode.upper() != "CW":
                 raise ValueError(f"SKCC contacts must be CW mode only. Got mode: {self.mode}")
             if self.paddle:
                 raise ValueError(f"SKCC contacts cannot use paddles. Got paddle: {self.paddle}")
+            if self.key_type and self.key_type.upper() not in ["STRAIGHT", "BUG", "SIDESWIPER"]:
+                raise ValueError(f"SKCC contacts must use mechanical keys only (STRAIGHT, BUG, SIDESWIPER). Got: {self.key_type}")
 
     # === QRP POWER TRACKING METHODS ===
 

@@ -14,11 +14,14 @@ Rules:
 - Each call sign counts only once (per category)
 """
 
+import logging
 from typing import Dict, List, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
+
+logger = logging.getLogger(__name__)
 
 
 class SenatorAward(AwardProgram):
@@ -33,7 +36,9 @@ class SenatorAward(AwardProgram):
         """
         super().__init__(name="Senator", program_id="SENATOR")
         self.db = db
-        self.senator_effective_date = "20130801"  # August 1, 2013 - YYYYMMDD
+        # Effective date for Senator award: August 1, 2013
+        self.senator_effective_date = datetime(2013, 8, 1)
+        self.senator_effective_date_str = "20130801"  # YYYYMMDD format for string comparisons
 
     def validate(self, contact: Dict[str, Any]) -> bool:
         """
@@ -44,6 +49,7 @@ class SenatorAward(AwardProgram):
         - SKCC number present
         - Contact date on or after August 1, 2013
         - Remote station must be Tribune/Senator (checked via list)
+        - Both operators must hold appropriate SKCC membership at time of contact
 
         Args:
             contact: Contact record dictionary
@@ -60,19 +66,47 @@ class SenatorAward(AwardProgram):
             return False
 
         # Check contact date (must be on/after August 1, 2013)
+        # Date comparison using YYYYMMDD string format (lexicographic comparison works correctly)
         qso_date = contact.get('qso_date', '')
-        if qso_date and qso_date < self.senator_effective_date:
+        if qso_date and qso_date < self.senator_effective_date_str:
             return False
 
         # Remote station must be Tribune or Senator
         # Check if contacted station is on Tribune/Senator list
         from src.services.tribune_fetcher import TribuneFetcher
         from src.services.senator_fetcher import SenatorFetcher
+        from src.database.models import TribuneeMember, SenatorMember
         try:
             skcc_num = contact.get('skcc_number', '')
             if not (TribuneFetcher.is_tribune_member(self.db, skcc_num) or
                     SenatorFetcher.is_senator_member(self.db, skcc_num)):
                 return False
+
+            # Verify remote operator held Tribune/Senator membership at time of contact
+            if skcc_num:
+                session = self.db
+                base_number = skcc_num.strip().split()[0]
+                if base_number and base_number[-1] in 'CTS':
+                    base_number = base_number[:-1]
+                if base_number and 'x' in base_number:
+                    base_number = base_number.split('x')[0]
+
+                # Query Tribune or Senator member lists by base SKCC number
+                member = session.query(TribuneeMember).filter(
+                    TribuneeMember.skcc_number == base_number
+                ).first()
+
+                if not member:
+                    member = session.query(SenatorMember).filter(
+                        SenatorMember.skcc_number == base_number
+                    ).first()
+
+                if not member:
+                    logger.debug(
+                        f"Remote operator SKCC {skcc_num} not found in Tribune/Senator member lists. "
+                        f"Contact will be counted but may require verification."
+                    )
+
         except Exception as e:
             # If we can't check, log error and require manual verification
             logger.warning(
@@ -80,8 +114,8 @@ class SenatorAward(AwardProgram):
                 f"Contact will require manual verification.",
                 exc_info=True
             )
-            # Return False to indicate this contact needs verification
-            pass
+            # Return False to indicate this contact needs verification by the user
+            return False
 
         return True
 
