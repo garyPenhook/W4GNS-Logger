@@ -9,12 +9,14 @@ provinces and territories. Four levels of achievement are available:
 3. Red Maple: 90 contacts - 10 from each province/territory across 9 HF bands
 4. Gold Maple: 90 QRP contacts (≤5W) across all 9 HF bands
 
-Rules:
+Rules (ALL CRITICAL):
 - Contacts must be with SKCC members (remote station has SKCC number)
 - QSOs must be CW mode only
 - Valid HF bands: 160M, 80M, 60M, 40M, 30M, 20M, 17M, 15M, 12M, 10M
 - For Red/Gold Maple: contacts must be across 9 bands (160, 80, 60, 40, 30, 20, 17, 15, 12, 10)
 - Contacts valid from: Sept 1, 2009 (provinces), Jan 2014 (territories)
+- Mechanical Key Policy: Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+- Remote operator must hold SKCC membership at time of contact
 
 Canadian Provinces (10 - required for all awards):
 - BC (British Columbia), AB (Alberta), SK (Saskatchewan), MB (Manitoba)
@@ -73,6 +75,8 @@ class CanadianMapleAward(AwardProgram):
         - Remote station must have a valid Canadian province/territory in state field
         - Remote station must have SKCC number
         - Contact on valid HF band
+        - Contact date valid: Sept 1, 2009 (provinces), Jan 2014 (territories)
+        - Mechanical key policy: Contact must use straight key (STRAIGHT, BUG, or SIDESWIPER)
 
         Args:
             contact: Contact record dictionary
@@ -100,6 +104,29 @@ class CanadianMapleAward(AwardProgram):
         # Must be on valid HF band
         band = contact.get('band', '').strip().upper()
         if band not in HF_BANDS:
+            return False
+
+        # CRITICAL RULE: Contact date validation
+        # Provinces valid from Sept 1, 2009 (20090901)
+        # Territories valid from Jan 2014 (20140101)
+        qso_date = contact.get('qso_date', '')
+        if qso_date:
+            if state in CANADIAN_PROVINCES:
+                # Provinces: Sept 1, 2009 or later
+                if qso_date < '20090901':
+                    logger.debug(f"Contact with {state} before Sept 1, 2009: {qso_date}")
+                    return False
+            elif state in CANADIAN_TERRITORIES:
+                # Territories: Jan 2014 or later
+                if qso_date < '20140101':
+                    logger.debug(f"Contact with {state} before Jan 2014: {qso_date}")
+                    return False
+
+        # CRITICAL RULE: SKCC Mechanical Key Policy
+        # Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+        key_type = contact.get('key_type', '').upper()
+        if key_type and key_type not in ['STRAIGHT', 'BUG', 'SIDESWIPER']:
+            logger.debug(f"Invalid key type for Canadian Maple: {key_type}")
             return False
 
         return True

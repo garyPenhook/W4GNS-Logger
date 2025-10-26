@@ -62,14 +62,37 @@ The Canadian Maple Award recognizes SKCC operators who have made CW contacts wit
 - **Mode:** CW only
 - **Description:** Demonstrate QRP efficiency with low-power contacts across Canada!
 
-## Basic Rules
+## Basic Rules (ALL CRITICAL - MUST BE MET)
 
 1. **CW Mode Only** - All contacts must be in Morse code (CW)
+   - No SSB, FM, RTTY, or other modes allowed
+   - Enforced in validation
+
 2. **SKCC Members Only** - Contact must be with an SKCC member
+   - Remote station must have valid SKCC number in contact record
+   - Enforced in validation
+
 3. **HF Bands Only** - 160, 80, 60, 40, 30, 20, 17, 15, 12, 10 meters
-4. **Valid Contact Date** - From September 1, 2009 (provinces), January 2014 (territories)
-5. **Province Identification** - Remote station's province/territory must be logged in state field
-6. **Mechanical Key** - SKCC straight key policy applies
+   - WARC bands allowed (60M, 30M)
+   - Enforced in validation
+
+4. **Valid Contact Date** - CRITICAL RULE
+   - **Provinces:** September 1, 2009 (20090901) or later
+   - **Territories:** January 2014 (20140101) or later
+   - Enforced in validation
+   - Contacts before these dates will be rejected automatically
+
+5. **Province Identification** - CRITICAL RULE
+   - Remote station's province/territory MUST be logged in state field
+   - Valid codes: BC, AB, SK, MB, ON, QC, NB, NS, PE, NL, YT, NT, NU, VE0, VY9
+   - Enforced in validation
+
+6. **Mechanical Key Policy** - CRITICAL RULE
+   - Contact must use mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+   - Electronic paddles (ELECTRONIC, IAMBIC) NOT allowed for Canadian Maple
+   - Key type must be specified when logging contact
+   - Enforced in validation
+   - Invalid key types will be rejected automatically
 
 ## Implementation in W4GNS Logger
 
@@ -82,22 +105,37 @@ The Canadian Maple Award recognizes SKCC operators who have made CW contacts wit
 - `tx_power` - Transmit power (for Gold Maple calculation)
 - `band` - Operating band (160M, 80M, etc.)
 
-### How to Log a Canadian Contact
+### How to Log a Canadian Contact (CRITICAL FIELDS)
 
-1. In the Logging tab, enter:
-   - **Callsign:** The remote station's callsign
-   - **Country:** Canada
-   - **State:** The province code (e.g., "ON" for Ontario, "QC" for Quebec)
-   - **SKCC Number:** The remote operator's SKCC number
-   - **Mode:** CW
-   - **Band:** The operating band (e.g., 20M)
-   - **TX Power:** Your transmit power (important for Gold Maple)
+**REQUIRED FIELDS (Must be correct for Canadian Maple to count):**
 
-2. The application will automatically:
-   - Validate the contact against Canadian Maple rules
-   - Update your progress toward all four levels
-   - Track province coverage
-   - Calculate band diversity
+1. **Callsign:** The remote station's callsign
+2. **Country:** **MUST BE** "Canada" (case-insensitive)
+3. **State:** **MUST BE** valid Canadian province/territory code:
+   - Provinces: BC, AB, SK, MB, ON, QC, NB, NS, PE, NL
+   - Territories: YT, NT, NU, VE0, VY9
+4. **SKCC Number:** The remote operator's SKCC number (required)
+5. **Mode:** **MUST BE** "CW" (any other mode will be rejected)
+6. **Band:** **MUST BE** HF band (160M, 80M, 60M, 40M, 30M, 20M, 17M, 15M, 12M, or 10M)
+7. **Date (QSO Date):** **MUST BE:**
+   - For provinces: September 1, 2009 (20090901) or later
+   - For territories: January 2014 (20140101) or later
+8. **Key Type:** **MUST BE** mechanical key (STRAIGHT, BUG, or SIDESWIPER)
+   - Electronic paddles (ELECTRONIC, IAMBIC) will be REJECTED
+   - Leave blank to accept any key type
+9. **TX Power:** Your transmit power (important for Gold Maple award)
+
+**VALIDATION WORKFLOW:**
+
+When you save a contact, the application will:
+- ✅ Automatically validate against ALL Canadian Maple rules
+- ✅ Show error if any critical field is missing or invalid
+- ✅ Reject contact if date is before valid range
+- ✅ Reject contact if key type is invalid
+- ✅ Update your progress toward all four levels
+- ✅ Track province coverage
+- ✅ Calculate band diversity
+- ✅ Show which level(s) you've achieved
 
 ### Checking Your Progress
 
@@ -228,13 +266,46 @@ The application recognizes these HF bands:
 - 12M (24 MHz)
 - 10M (28 MHz)
 
+## Validation Rules & What Gets Rejected
+
+### Why Your Contact Was Rejected
+
+The application will automatically **REJECT** (not count) contacts that:
+
+1. **Mode is not CW** → Contact logged in SSB, FM, RTTY, etc.
+   - Fix: Change mode to "CW"
+
+2. **Country is not "Canada"** → Wrong country code
+   - Fix: Set country to exactly "Canada"
+
+3. **State code is invalid** → Misspelled or incorrect province code
+   - Fix: Use: BC, AB, SK, MB, ON, QC, NB, NS, PE, NL, YT, NT, NU, VE0, or VY9
+
+4. **SKCC Number is missing** → No remote operator SKCC number logged
+   - Fix: Add the remote operator's SKCC number
+
+5. **Band is not HF** → Used VHF, UHF, or non-HF band
+   - Fix: Log on: 160M, 80M, 60M, 40M, 30M, 20M, 17M, 15M, 12M, or 10M
+
+6. **Date is TOO OLD** → Contact before valid date for that region
+   - Fix: Check date is correct:
+     - Provinces: Sept 1, 2009 (20090901) or later
+     - Territories: Jan 2014 (20140101) or later
+
+7. **Key Type is electronic** → Used electronic paddle, not mechanical key
+   - Fix: Change key type to STRAIGHT, BUG, or SIDESWIPER
+   - Invalid types (ELECTRONIC, IAMBIC) will be rejected
+
 ## FAQ
 
-**Q: Can I count a contact before I have a SKCC number?**
-A: No - you must be an SKCC member to participate in SKCC awards, and the remote station must be a member too.
+**Q: What if I logged a contact before Sept 1, 2009?**
+A: Those contacts will NOT count toward Canadian Maple. Only contacts from Sept 1, 2009 (provinces) or Jan 2014 (territories) onward are valid.
+
+**Q: Can I count a contact from before I have a SKCC number?**
+A: You must be an SKCC member at time of contact AND log the remote operator's SKCC number. The remote station must also be an SKCC member.
 
 **Q: Can I use SSB or other modes?**
-A: No - Canadian Maple Award is CW-only per SKCC rules.
+A: No - Canadian Maple Award is CW-only per SKCC rules. SSB contacts will be rejected automatically.
 
 **Q: Can I count the same station multiple times?**
 A: Yes - you can work the same station multiple times (if from different provinces) and different times, and each counts toward the award.
