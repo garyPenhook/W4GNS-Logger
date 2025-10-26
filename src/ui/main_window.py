@@ -274,6 +274,7 @@ class MainWindow(QMainWindow):
         from src.ui.dx_award_progress_widget import DXAwardProgressWidget
         from src.ui.rag_chew_progress_widget import RagChewProgressWidget
         from src.ui.pfx_progress_widget import PFXProgressWidget
+        from src.ui.triple_key_progress_widget import TripleKeyProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -329,6 +330,13 @@ class MainWindow(QMainWindow):
         pfx_widget = PFXProgressWidget(self.db)
         pfx_scroll.setWidget(pfx_widget)
         awards_tabs.addTab(pfx_scroll, "PFX")
+
+        # Triple Key Award Tab
+        triplekey_scroll = QScrollArea()
+        triplekey_scroll.setWidgetResizable(True)
+        triplekey_widget = TripleKeyProgressWidget(self.db)
+        triplekey_scroll.setWidget(triplekey_widget)
+        awards_tabs.addTab(triplekey_scroll, "Triple Key")
 
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)
