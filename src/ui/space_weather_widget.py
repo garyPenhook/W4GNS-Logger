@@ -40,8 +40,8 @@ class SpaceWeatherWidget(QWidget):
 
         # Cache space weather data with 1-hour TTL (NOAA updates every 3 hours)
         self.cache = TTLCache(ttl_seconds=3600)
-        # Cache MUF predictions with 30-minute TTL
-        self.muf_cache = TTLCache(ttl_seconds=1800)
+        # Cache MUF predictions with 1-hour TTL (synced with space weather refresh)
+        self.muf_cache = TTLCache(ttl_seconds=3600)
 
         # Store MUF predictions for display
         self.current_muf_predictions: Dict[str, MUFPrediction] = {}
@@ -49,10 +49,10 @@ class SpaceWeatherWidget(QWidget):
         self._init_ui()
         self.refresh()
 
-        # Auto-refresh every 30 minutes (space weather updates every 3 hours)
+        # Auto-refresh every hour (space weather updates every 3 hours, hourly refresh ensures timely updates)
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh)
-        self.refresh_timer.start(1800000)  # 30 minutes
+        self.refresh_timer.start(3600000)  # 1 hour
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
