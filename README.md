@@ -10,7 +10,7 @@ A comprehensive ham radio contact logging application with support for ADIF impo
 
 - **Contact Logging**: Record complete QSO details with comprehensive field support
 - **ADIF Support**: Full ADIF 3.x compliant import/export (ADI and ADX formats)
-- **Award Tracking**: Track progress for DXCC, WAS, WAC, SKCC, IOTA, and SOTA awards
+- **Award Tracking**: Track progress for SKCC awards (Centurion, Tribune, Senator, QRP, Triple Key)
 - **DX Cluster Integration**: Real-time spot monitoring from multiple cluster nodes
 - **QRZ.com Integration**: Upload contacts to QRZ logbook
 - **Cross-Platform GUI**: Modern PyQt6 interface for Windows, macOS, and Linux
@@ -93,7 +93,7 @@ W4GNS Logger/
 │   │   └── serializer.py         # ADIF export
 │   ├── awards/                   # Award programs
 │   │   ├── base.py               # Abstract award class
-│   │   ├── dxcc.py               # DXCC implementation
+│   │   ├── skcc.py               # SKCC award implementation
 │   │   └── registry.py           # Award registry
 │   ├── ui/                       # PyQt6 GUI
 │   │   ├── main_window.py        # Main application window
@@ -119,7 +119,7 @@ W4GNS Logger/
 Configuration files are located in the `config/` directory:
 
 ### awards.yaml
-Define and enable/disable award programs (DXCC, WAS, SKCC, etc.)
+Configure SKCC award programs and tracking settings
 
 ### clusters.yaml
 Configure DX cluster node connections

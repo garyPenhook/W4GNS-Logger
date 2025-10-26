@@ -14,7 +14,7 @@ This index provides an overview of all award-related documentation and resources
 
 Overview of the entire award system:
 - Architecture patterns used
-- Current implementations (QRP, DXCC, SKCC)
+- Current implementations (QRP, SKCC Centurion, Tribune, Senator)
 - File structure and organization
 - Key insights and design decisions
 - Implementation readiness assessment
@@ -37,7 +37,7 @@ Overview of the entire award system:
 Comprehensive 900+ line technical reference:
 - Detailed database schema breakdown
 - Base class architecture and abstract methods
-- Complete DXCC award implementation walkthrough
+- Complete SKCC award implementation walkthrough
 - Repository pattern and database methods
 - UI widget structure and patterns
 - Award data flow diagrams
@@ -48,7 +48,7 @@ Comprehensive 900+ line technical reference:
 **Key Sections:**
 - Database Layer (AwardProgress, Contact models)
 - Award Program Base Class
-- DXCC Implementation Example
+- SKCC Centurion Implementation Pattern
 - Repository Methods Pattern
 - UI Components Pattern
 - Centurion Award Implementation (Complete Step-by-Step)
@@ -200,8 +200,8 @@ Quick reference for SKCC clubs:
 ### AwardProgress Table
 | Field | Type | Purpose |
 |-------|------|---------|
-| `award_program` | String | DXCC, SKCC, etc. |
-| `award_name` | String | Specific award name |
+| `award_program` | String | SKCC |
+| `award_name` | String | Specific award name (Centurion, Tribune, Senator, QRP, Triple Key, etc.) |
 | `award_mode` | String | MIXED, CW, PHONE |
 | `award_band` | String | Specific band or NULL |
 | `contact_count` | Integer | Current count |
@@ -218,11 +218,11 @@ Quick reference for SKCC clubs:
 
 ```
 AwardProgram (abstract base class)
-    ├── DXCCAward (DXCC - Mixed Mode)
-    ├── DXCCCWAward (DXCC - CW Mode)
-    └── CenturionAward (SKCC Centurion - To be implemented)
-        └── TribuneAward (SKCC Tribune - Future)
-            └── SenatorAward (SKCC Senator - Future)
+    ├── CenturionAward (SKCC Centurion)
+    ├── TribuneAward (SKCC Tribune)
+    ├── SenatorAward (SKCC Senator)
+    ├── QRPAward (QRP x1 and x2)
+    └── TripleKeyAward (Triple Key award)
 ```
 
 ### Repository Methods by Category
@@ -260,8 +260,8 @@ AwardProgram (abstract base class)
 
 awards/
     ├── base.py              # Abstract AwardProgram class
-    ├── dxcc.py              # DXCC award implementations
-    └── centurion.py         # TO CREATE
+    ├── skcc.py              # SKCC award implementations
+    └── registry.py          # Award registry
 
 database/
     ├── models.py            # SQLAlchemy models

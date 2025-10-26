@@ -5,10 +5,10 @@
 The W4GNS Logger uses a modular, plugin-based architecture for award tracking with three key layers:
 
 1. **Database Layer** - Award data model and repository methods
-2. **Business Logic Layer** - Award program implementations (currently DXCC)
+2. **Business Logic Layer** - Award program implementations (SKCC awards)
 3. **UI Layer** - Widgets and dialogs for displaying award progress
 
-A new **Centurion award** should follow the same pattern, with implementations at each layer.
+SKCC awards (Centurion, Tribune, Senator, QRP, Triple Key) follow this pattern with implementations at each layer.
 
 ---
 
@@ -24,7 +24,7 @@ class AwardProgress(Base):
     __tablename__ = "awards_progress"
     
     id = Column(Integer, primary_key=True)
-    award_program = Column(String(50), nullable=False, index=True)  # DXCC, SKCC, etc.
+    award_program = Column(String(50), nullable=False, index=True)  # SKCC
     award_name = Column(String(100), nullable=False)                # Specific award name
     award_mode = Column(String(20))                                  # MIXED, CW, PHONE, etc.
     award_band = Column(String(10))                                  # Specific band or NULL
@@ -54,7 +54,7 @@ rx_power = Column(Float)                   # Receive power (2-way QRP)
 distance = Column(Float)                   # Distance for MPW calculations
 
 # Geographic fields
-dxcc = Column(Integer, index=True)         # DXCC entity number
+dxcc = Column(Integer, index=True)         # Entity number (for contact logging)
 country = Column(String(100), index=True)  # Country name
 state = Column(String(2), index=True)      # US state
 
@@ -73,8 +73,8 @@ class AwardProgram(ABC):
     def __init__(self, name: str, program_id: str):
         """
         Args:
-            name: Human-readable name (e.g., "DXCC Mixed")
-            program_id: Unique ID (e.g., "DXCC_MIXED")
+            name: Human-readable name (e.g., "SKCC Centurion")
+            program_id: Unique ID (e.g., "SKCC_CENTURION")
         """
     
     @abstractmethod
@@ -123,69 +123,55 @@ class AwardProgram(ABC):
         """
 ```
 
-### Example: DXCC Award Implementation (src/awards/dxcc.py)
+### Example: SKCC Centurion Award Implementation (src/awards/skcc.py)
 
 ```python
-class DXCCAward(AwardProgram):
-    ENTITY_REQUIREMENT = 100
-    
+class CenturionAward(AwardProgram):
+    MEMBER_REQUIREMENT = 100
+
     def __init__(self):
-        super().__init__("DXCC Mixed", "DXCC_MIXED")
-    
+        super().__init__("SKCC Centurion", "SKCC_CENTURION")
+
     def validate(self, contact: Dict[str, Any]) -> bool:
-        """Contact must have DXCC entity and QSL/LoTW confirmation"""
-        if "dxcc" not in contact or not contact["dxcc"]:
+        """Contact must be with SKCC member (C/T/S suffix)"""
+        skcc = contact.get("skcc_number", "")
+        if not skcc:
             return False
-        
-        qsl_rcvd = contact.get("qsl_rcvd", "").upper() == "Y"
-        lotw_rcvd = contact.get("lotw_rcvd", "").upper() == "Y"
-        
-        return qsl_rcvd or lotw_rcvd
-    
+
+        # Valid suffixes: C, T, S, Cx2, Tx2, etc.
+        return any(suffix in skcc.upper() for suffix in ["C", "T", "S"])
+
     def calculate_progress(self, contacts: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Count unique confirmed DXCC entities"""
-        confirmed_entities = set()
-        
+        """Count unique SKCC members contacted"""
+        unique_members = set()
+
         for contact in contacts:
             if self.validate(contact):
-                confirmed_entities.add(contact.get("dxcc"))
-        
-        current = len(confirmed_entities)
-        required = self.ENTITY_REQUIREMENT
+                # Extract member number (remove suffix: 1234C -> 1234)
+                skcc = contact.get("skcc_number", "")
+                member_num = ''.join(filter(str.isdigit, skcc))
+                if member_num:
+                    unique_members.add(member_num)
+
+        current = len(unique_members)
+        required = self.MEMBER_REQUIREMENT
         achieved = current >= required
         progress_pct = min(100, (current / required) * 100) if required > 0 else 0
-        
+
         return {
             "current": current,
             "required": required,
             "achieved": achieved,
             "progress_pct": progress_pct,
-            "entities": list(confirmed_entities),
+            "unique_members": list(unique_members),
         }
-    
+
     def get_requirements(self) -> Dict[str, Any]:
         return {
-            "entity_count": self.ENTITY_REQUIREMENT,
-            "confirmation": True,
-            "mode": "MIXED",
-            "description": "Confirmed contacts with 100+ DXCC entities"
+            "member_count": self.MEMBER_REQUIREMENT,
+            "mode": "CW",
+            "description": "100 CW contacts with unique SKCC members"
         }
-    
-    def get_endorsements(self) -> List[Dict[str, Any]]:
-        """Return tiered endorsement levels"""
-        endorsements = [
-            {"level": 100, "description": "DXCC Certificate", "points": 100}
-        ]
-        
-        # Add 50-entity endorsements
-        for level in range(150, 301, 50):
-            endorsements.append({
-                "level": level,
-                "description": f"{level}-entity endorsement",
-                "points": level
-            })
-        
-        return endorsements
 ```
 
 ---
