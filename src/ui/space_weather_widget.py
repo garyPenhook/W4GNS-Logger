@@ -304,19 +304,22 @@ class SpaceWeatherWidget(QWidget):
         legend_label.setStyleSheet("color: gray;")
         layout.addWidget(legend_label)
 
-        # Create grid for MUF bars (2 columns)
+        # Create grid for MUF bars (2 columns per band group, 2 rows)
         grid_layout = QGridLayout()
-        grid_layout.setSpacing(8)
+        grid_layout.setSpacing(20)  # Increased spacing from 8 to 20
+        grid_layout.setRowMinimumHeight(0, 40)  # Ensure minimum row height
+        grid_layout.setRowMinimumHeight(1, 40)
 
         self.muf_band_labels: Dict[str, QLabel] = {}  # Band name -> label with bar
         self.muf_value_labels: Dict[str, QLabel] = {}  # Band name -> value label
 
-        # Practical amateur HF bands to display (most hams can't accommodate 160m antenna)
-        bands_to_show = ["80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"]
+        # Most practical amateur HF bands (7 key bands that most hams use)
+        # Omitted: 60m (rare), 17m (niche), 12m (niche), 6m (requires different antenna)
+        bands_to_show = ["80m", "40m", "30m", "20m", "15m", "10m"]
 
         for i, band in enumerate(bands_to_show):
-            row = i % 3
-            col = (i // 3) * 2
+            row = i % 2  # 2 rows instead of 3
+            col = (i // 2) * 2  # Adjust column calculation for 2-row layout
 
             # Band label
             band_label = QLabel(f"{band}:")
