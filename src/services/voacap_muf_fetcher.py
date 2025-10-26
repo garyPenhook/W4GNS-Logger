@@ -97,8 +97,11 @@ class VOACAPMUFFetcher:
         """
         try:
             if utc_time is None:
-                utc_time = datetime.now(timezone.utc)
+                # Use local system time (user's computer timezone) and convert to UTC
+                local_time = datetime.now().astimezone()  # Timezone-aware local time
+                utc_time = local_time.astimezone(timezone.utc)  # Convert to UTC
 
+            # utc_time is now in UTC timezone-aware format
             # Convert UTC to local solar time
             # Local solar time = UTC + (longitude / 15.0) hours
             local_offset_hours = longitude / 15.0
@@ -410,7 +413,11 @@ class VOACAPMUFFetcher:
         try:
             latitude = self._grid_to_latitude(home_grid)
             longitude = self._grid_to_longitude(home_grid)
-            utc_time = datetime.now(timezone.utc)
+
+            # Use local system time (user's computer is already configured with their timezone)
+            # Convert to UTC for solar calculations
+            local_time = datetime.now().astimezone()  # Timezone-aware local time
+            utc_time = local_time.astimezone(timezone.utc)  # Convert to UTC
 
             # Get solar zenith angle for time period identification
             zenith_angle = self._get_solar_zenith_angle(latitude, longitude, utc_time)
