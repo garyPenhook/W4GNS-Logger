@@ -37,7 +37,7 @@ class ContactsListWidget(QWidget):
 
         # Pagination state
         self.current_offset = 0
-        self.page_size = 100  # Load 100 contacts per page
+        self.page_size = 10000  # Load all contacts at once (10000 is effectively unlimited for 201 contacts)
         self.total_contacts = 0
 
         self._init_ui()
@@ -85,10 +85,12 @@ class ContactsListWidget(QWidget):
         pagination_layout = QHBoxLayout()
         self.pagination_label = QLabel("Page 1")
         self.pagination_label.setFont(QFont("Arial", 9))
+        self.pagination_label.hide()  # Hide - pagination not needed with all contacts loaded at once
         pagination_layout.addWidget(self.pagination_label)
 
         self.load_more_btn = QPushButton("Load More Contacts")
         self.load_more_btn.clicked.connect(self.load_next_page)
+        self.load_more_btn.hide()  # Hide - all contacts load at once now
         pagination_layout.addWidget(self.load_more_btn)
 
         pagination_layout.addStretch()
