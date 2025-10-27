@@ -101,7 +101,7 @@ class LoggingForm(QWidget):
             # Store minimum widths for resizing
             self.min_widths = {
                 'callsign': 80,
-                'datetime': 60,  # 50% narrower, visible and usable (was 120, now 60)
+                'datetime': 69,  # 15% wider for better time field visibility
                 'band': 56,  # 30% narrower (was 80, now 56)
                 'mode': 70,  # 30% narrower (was 100, now 70)
                 'frequency': 77,  # 10% wider (was 70, now 77)
