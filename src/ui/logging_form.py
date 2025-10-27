@@ -1029,9 +1029,9 @@ class LoggingForm(QWidget):
         try:
             # Only update if user is not actively editing the datetime field
             if not self.datetime_input_focus:
-                # Use UTC time, not local time
+                # Use UTC time, not local time (specify UTC timezone)
                 utc_now = get_utc_now()
-                q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()))
+                q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
                 self.datetime_input.setDateTime(q_datetime)
         except Exception as e:
             logger.error(f"Error updating clock: {e}", exc_info=True)
