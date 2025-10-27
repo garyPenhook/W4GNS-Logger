@@ -122,6 +122,10 @@ class LoggingForm(QWidget):
             }
 
             self._init_ui()
+
+            # Load last used band and power on initialization
+            self._restore_last_band_and_power()
+
             logger.info("LoggingForm initialized successfully")
 
         except (TypeError, Exception) as e:
@@ -826,6 +830,17 @@ class LoggingForm(QWidget):
                 self.db.add_contact(contact)
                 logger.info(f"Contact saved successfully: {contact.callsign} on {contact.band} {contact.mode}")
 
+                # Save last used band and power for next QSO
+                try:
+                    last_band = self.band_combo.currentText()
+                    last_power = self.power_input.value()
+                    self.config_manager.set('logging.last_band', last_band)
+                    self.config_manager.set('logging.last_power', last_power)
+                    logger.debug(f"Saved last band '{last_band}' and power '{last_power}' for next QSO")
+                except Exception as e:
+                    logger.warning(f"Failed to save last band/power: {e}")
+                    # Don't fail contact save if config save fails
+
             except Exception as e:
                 logger.error(f"Error saving to database: {e}", exc_info=True)
                 raise RuntimeError(f"Database error: {str(e)}")
@@ -877,11 +892,37 @@ class LoggingForm(QWidget):
                 f"Failed to save contact: {str(e)}"
             )
 
+    def _restore_last_band_and_power(self) -> None:
+        """
+        Restore last used band and power from config on form initialization
+
+        Loads previously saved band and power values so operator doesn't need
+        to re-enter them if working multiple QSOs on same band/power.
+        """
+        try:
+            # Restore last used band
+            last_band = self.config_manager.get('logging.last_band', None)
+            if last_band:
+                index = self.band_combo.findText(last_band)
+                if index >= 0:
+                    self.band_combo.setCurrentIndex(index)
+                    logger.debug(f"On init: Restored last band: {last_band}")
+
+            # Restore last used power
+            last_power = self.config_manager.get('logging.last_power', 0)
+            if last_power:
+                self.power_input.setValue(int(last_power))
+                logger.debug(f"On init: Restored last power: {last_power}W")
+        except Exception as e:
+            logger.warning(f"Failed to restore last band/power on init: {e}")
+            # Not critical - just use defaults if restore fails
+
     def clear_form(self) -> None:
         """
         Clear all form fields
 
         Resets all inputs to default/empty state and sets focus to callsign field.
+        Restores last used band and power to save user time.
         ALL TIMES ARE IN UTC.
         """
         try:
@@ -890,7 +931,23 @@ class LoggingForm(QWidget):
             utc_now = get_utc_now()
             q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
             self.datetime_input.setDateTime(q_datetime)
-            self.band_combo.setCurrentIndex(0)
+
+            # Restore last used band (or set to first if none saved)
+            try:
+                last_band = self.config_manager.get('logging.last_band', None)
+                if last_band:
+                    index = self.band_combo.findText(last_band)
+                    if index >= 0:
+                        self.band_combo.setCurrentIndex(index)
+                        logger.debug(f"Restored last band: {last_band}")
+                    else:
+                        self.band_combo.setCurrentIndex(0)
+                else:
+                    self.band_combo.setCurrentIndex(0)
+            except Exception as e:
+                logger.warning(f"Failed to restore last band: {e}")
+                self.band_combo.setCurrentIndex(0)
+
             self.mode_combo.setCurrentIndex(0)
             self.frequency_input.setValue(0.0)
             self.country_combo.setCurrentIndex(0)
@@ -905,7 +962,18 @@ class LoggingForm(QWidget):
             self.name_input.clear()
             self.county_input.clear()
             self.qrp_checkbox.setChecked(False)
-            self.power_input.setValue(0)
+
+            # Restore last used power (or set to 0 if none saved)
+            try:
+                last_power = self.config_manager.get('logging.last_power', 0)
+                if last_power:
+                    self.power_input.setValue(int(last_power))
+                    logger.debug(f"Restored last power: {last_power}W")
+                else:
+                    self.power_input.setValue(0)
+            except Exception as e:
+                logger.warning(f"Failed to restore last power: {e}")
+                self.power_input.setValue(0)
 
             # Reset QSO timing
             self.qso_start_time = None
