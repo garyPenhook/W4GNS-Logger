@@ -72,7 +72,7 @@ class ContactsListWidget(QWidget):
         self.view_mode_combo = QComboBox()
         self.view_mode_combo.addItem("All Contacts", "all")
         self.view_mode_combo.addItem("Last 10 Contacts", "last_10")
-        self.view_mode_combo.currentDataChanged.connect(self._on_view_mode_changed)
+        self.view_mode_combo.currentIndexChanged.connect(self._on_view_mode_changed)
         view_layout.addWidget(self.view_mode_combo)
         view_layout.addStretch()
         main_layout.addLayout(view_layout)
@@ -277,9 +277,9 @@ class ContactsListWidget(QWidget):
         else:
             self.load_more_btn.setText("All Contacts Loaded")
 
-    def _on_view_mode_changed(self, mode: str) -> None:
+    def _on_view_mode_changed(self) -> None:
         """Handle view mode change"""
-        self.view_mode = mode
+        self.view_mode = self.view_mode_combo.currentData()
         self.refresh()
 
     def _apply_filters(self) -> List[Contact]:
