@@ -191,8 +191,13 @@ class WASProgressWidget(QWidget):
             # Get all contacts
             from src.database.models import Contact
             contacts = session.query(Contact).all()
+            logger.info(f"WAS Award: Fetched {len(contacts)} total contacts from database")
+
             contact_dicts = [self._contact_to_dict(c) for c in contacts]
-            session.close()
+            logger.debug(f"WAS Award: Converted {len(contact_dicts)} contacts to dict format")
+
+            # Keep session open - some award classes may need it
+            # session.close()  # REMOVED: Session closed too early, causing issues
 
             # Calculate WAS progress
             was_award = WASAward(session)
@@ -204,6 +209,10 @@ class WASProgressWidget(QWidget):
             achieved = progress['achieved']
             current = progress['current']
             progress_pct = progress['progress_pct']
+
+            logger.info(f"WAS Award: Calculated progress - {current}/50 states worked, achieved={achieved}")
+            if current > 0:
+                logger.info(f"WAS Award: States worked: {', '.join(sorted(states_worked))}")
 
             # Update overall progress bar
             self.progress_bar.setValue(current)

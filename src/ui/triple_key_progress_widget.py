@@ -271,12 +271,23 @@ class TripleKeyProgressWidget(QWidget):
             # Get all contacts
             from src.database.models import Contact
             contacts = session.query(Contact).all()
+            logger.info(f"Triple Key Award: Fetched {len(contacts)} total contacts from database")
+
             contact_dicts = [self._contact_to_dict(c) for c in contacts]
-            session.close()
+            logger.debug(f"Triple Key Award: Converted {len(contact_dicts)} contacts to dict format")
+
+            # Keep session open - award class may need it
+            # session.close()  # REMOVED: Session closed too early
 
             # Calculate Triple Key progress
             triple_key_award = TripleKeyAward(session)
             progress = triple_key_award.calculate_progress(contact_dicts)
+
+            logger.info(f"Triple Key Award: SK={progress.get('straight_key_members', 0)}, "
+                       f"BUG={progress.get('bug_members', 0)}, "
+                       f"SS={progress.get('sideswiper_members', 0)}, "
+                       f"Total={progress.get('total_unique_members', 0)}, "
+                       f"achieved={progress.get('achieved', False)}")
 
             # Extract progress values
             sk_count = progress['straight_key_members']
