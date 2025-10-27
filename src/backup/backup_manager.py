@@ -9,7 +9,7 @@ import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 
 logger = logging.getLogger(__name__)
 
@@ -187,3 +187,133 @@ class BackupManager:
         except Exception as e:
             logger.warning(f"Unexpected error finding ADIF file: {e}", exc_info=True)
             return None
+
+    def create_adif_backup(
+        self,
+        contacts: List[Any],
+        my_skcc: Optional[str] = None,
+        backup_location: Optional[Path] = None,
+        max_backups: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Create timestamped ADIF backup and rotate old backups
+
+        Args:
+            contacts: List of Contact objects to export
+            my_skcc: Operator's SKCC number (optional)
+            backup_location: Directory to store backups (default: ~/.w4gns_logger/Logs)
+            max_backups: Maximum number of backup files to keep (default: 5)
+
+        Returns:
+            Dictionary with:
+            - success: True if backup created successfully
+            - backup_file: Path to created backup file
+            - total_backups: Number of backup files after cleanup
+            - message: Human-readable status message
+
+        Raises:
+            ValueError: If contacts list is empty
+            OSError: If file operations fail
+        """
+        try:
+            if not contacts:
+                raise ValueError("No contacts to export")
+
+            # Use default location if not specified
+            if backup_location is None:
+                backup_location = Path.home() / ".w4gns_logger" / "Logs"
+
+            # Ensure directory exists
+            backup_location.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Using backup location: {backup_location}")
+
+            # Create timestamped filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_location / f"{timestamp}.adi"
+
+            # Import ADIF exporter
+            try:
+                from src.adif.exporter import ADIFExporter
+            except ImportError:
+                logger.error("Failed to import ADIFExporter")
+                raise
+
+            # Export contacts to ADIF
+            try:
+                exporter = ADIFExporter()
+                exporter.export_to_file(
+                    filename=str(backup_file),
+                    contacts=contacts,
+                    my_skcc=my_skcc,
+                    include_fields=None  # Export all non-empty fields
+                )
+                logger.info(f"Created ADIF backup: {backup_file}")
+            except Exception as e:
+                logger.error(f"Failed to export ADIF file: {e}", exc_info=True)
+                raise
+
+            # Rotate old backups - keep only the most recent N files
+            try:
+                self._rotate_backups(backup_location, max_backups)
+            except Exception as e:
+                logger.warning(f"Error rotating old backups: {e}", exc_info=True)
+                # Don't fail the entire backup if rotation fails
+
+            # Count remaining backups
+            remaining_backups = len(list(backup_location.glob("*.adi")))
+
+            message = f"ADIF backup created: {backup_file.name} ({remaining_backups} total backups)"
+
+            return {
+                "success": True,
+                "backup_file": backup_file,
+                "total_backups": remaining_backups,
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"ADIF backup failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "backup_file": None,
+                "total_backups": 0,
+                "message": f"ADIF backup failed: {str(e)}"
+            }
+
+    def _rotate_backups(self, backup_location: Path, max_backups: int = 5) -> None:
+        """
+        Remove old backup files, keeping only the most recent N files
+
+        Args:
+            backup_location: Directory containing backup files
+            max_backups: Maximum number of files to keep
+
+        Raises:
+            OSError: If file deletion fails
+        """
+        try:
+            # Get all .adi files sorted by modification time (newest first)
+            adi_files = sorted(
+                backup_location.glob("*.adi"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )
+
+            # Remove files beyond the max_backups limit
+            if len(adi_files) > max_backups:
+                files_to_remove = adi_files[max_backups:]
+                for old_file in files_to_remove:
+                    try:
+                        old_file.unlink()
+                        logger.info(f"Removed old backup: {old_file.name}")
+                    except OSError as e:
+                        logger.warning(f"Failed to remove old backup {old_file}: {e}")
+                        # Continue with other files even if one fails
+
+                logger.info(f"Backup rotation completed: Kept {min(len(adi_files), max_backups)} recent backups")
+            else:
+                logger.debug(f"No backup rotation needed: {len(adi_files)} files <= {max_backups} limit")
+
+        except Exception as e:
+            logger.error(f"Error during backup rotation: {e}", exc_info=True)
+            raise

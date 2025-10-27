@@ -559,7 +559,33 @@ class MainWindow(QMainWindow):
                 except Exception as spot_error:
                     logger.error(f"Error stopping spot manager: {spot_error}", exc_info=True)
 
-                # Perform automatic backup if enabled and destination is configured
+                # Create ADIF backup on shutdown (always, to Logs folder)
+                try:
+                    logger.info("Creating ADIF backup on shutdown...")
+                    if hasattr(self, 'db') and self.db:
+                        # Get all contacts from database
+                        all_contacts = self.db.get_all_contacts()
+                        if all_contacts:
+                            backup_manager = BackupManager()
+                            my_skcc = self.config_manager.get("adif.my_skcc_number", "")
+
+                            result = backup_manager.create_adif_backup(
+                                contacts=all_contacts,
+                                my_skcc=my_skcc if my_skcc else None,
+                                backup_location=None,  # Uses default: ~/.w4gns_logger/Logs
+                                max_backups=5
+                            )
+
+                            if result["success"]:
+                                logger.info(f"ADIF backup created on shutdown: {result['message']}")
+                            else:
+                                logger.warning(f"ADIF backup on shutdown failed: {result['message']}")
+                        else:
+                            logger.warning("No contacts found for ADIF backup")
+                except Exception as adif_backup_error:
+                    logger.error(f"Error creating ADIF backup on shutdown: {adif_backup_error}", exc_info=True)
+
+                # Perform automatic database backup if enabled and destination is configured
                 try:
                     auto_backup_enabled = self.config_manager.get("database.auto_backup_on_shutdown", True)
                     backup_destination = self.config_manager.get("database.backup_destination", "")
@@ -567,7 +593,7 @@ class MainWindow(QMainWindow):
                     if auto_backup_enabled and backup_destination:
                         backup_dest_path = Path(backup_destination)
                         if backup_dest_path.exists() and backup_dest_path.is_dir():
-                            logger.info("Performing automatic backup on shutdown...")
+                            logger.info("Performing automatic database backup on shutdown...")
                             db_path = Path(self.config_manager.get("database.location"))
 
                             backup_manager = BackupManager()
@@ -577,13 +603,13 @@ class MainWindow(QMainWindow):
                             )
 
                             if result["success"]:
-                                logger.info(f"Auto-backup completed: {result['backup_dir']}")
+                                logger.info(f"Database auto-backup completed: {result['backup_dir']}")
                             else:
-                                logger.warning(f"Auto-backup failed: {result['message']}")
+                                logger.warning(f"Database auto-backup failed: {result['message']}")
                         else:
                             logger.warning(f"Backup destination not available or not a directory: {backup_destination}")
                 except Exception as backup_error:
-                    logger.error(f"Error during auto-backup: {backup_error}", exc_info=True)
+                    logger.error(f"Error during database auto-backup: {backup_error}", exc_info=True)
 
                 # Clean up database resources
                 try:

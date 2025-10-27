@@ -131,17 +131,8 @@ class ContactsListWidget(QWidget):
         layout.addWidget(QLabel("Band:"))
         self.band_filter = QComboBox()
         self.band_filter.addItem("All Bands", None)
-        self.band_filter.addItems(self._get_available_bands())
         self.band_filter.currentIndexChanged.connect(self.refresh)
         layout.addWidget(self.band_filter)
-
-        # Mode filter
-        layout.addWidget(QLabel("Mode:"))
-        self.mode_filter = QComboBox()
-        self.mode_filter.addItem("All Modes", None)
-        self.mode_filter.addItems(self._get_available_modes())
-        self.mode_filter.currentIndexChanged.connect(self.refresh)
-        layout.addWidget(self.mode_filter)
 
         # Refresh button
         refresh_btn = QPushButton("Refresh")
@@ -176,38 +167,71 @@ class ContactsListWidget(QWidget):
         try:
             # Reset to first page on refresh
             self.current_offset = 0
+            logger.debug(f"=== REFRESH START === view_mode={self.view_mode}")
 
             try:
                 # Get contacts for current page
                 self.contacts = self.db.get_all_contacts(limit=self.page_size, offset=self.current_offset)
+                logger.debug(f"Loaded {len(self.contacts)} contacts from database")
 
                 # Get total contact count for statistics
                 self.total_contacts = self.db.get_contact_count()
+                logger.debug(f"Total contacts in database: {self.total_contacts}")
 
                 # Filter by view mode
                 if self.view_mode == "last_10":
                     # Sort by date/time descending and take last 10
+                    logger.debug(f"Applying 'last_10' view mode - sorting by qso_date/time_on descending")
                     self.contacts.sort(key=lambda c: (c.qso_date or "", c.time_on or ""), reverse=True)
                     self.contacts = self.contacts[:10]
+                    logger.debug(f"After last_10 view mode: {len(self.contacts)} contacts")
+                else:
+                    logger.debug(f"Using 'all' view mode with {len(self.contacts)} contacts")
             except Exception as db_error:
                 logger.error(f"Database error refreshing contacts: {db_error}", exc_info=True)
                 self.contacts = []
                 self.total_contacts = 0
 
+            # Update band filter with available bands from loaded contacts
+            try:
+                current_band = self.band_filter.currentData()
+                self.band_filter.blockSignals(True)  # Prevent refresh signal while updating
+                # Keep "All Bands" option
+                self.band_filter.clear()
+                self.band_filter.addItem("All Bands", None)
+                # Add available bands
+                available_bands = self._get_available_bands()
+                if available_bands:
+                    self.band_filter.addItems(available_bands)
+                # Restore previous selection if it still exists
+                if current_band is not None:
+                    index = self.band_filter.findData(current_band)
+                    if index >= 0:
+                        self.band_filter.setCurrentIndex(index)
+                self.band_filter.blockSignals(False)
+                logger.debug(f"Band filter updated with bands: {available_bands}")
+            except Exception as e:
+                logger.error(f"Error updating band filter: {e}", exc_info=True)
+
             # Apply filters
             filtered = self._apply_filters()
+            logger.debug(f"After applying filters: {len(filtered)} contacts")
 
             # Update statistics
             total_pages = (self.total_contacts + self.page_size - 1) // self.page_size if self.total_contacts > 0 else 1
             self.total_label.setText(f"Total: {self.total_contacts}")
             self.filtered_label.setText(f"Displayed: {len(filtered)}")
             self.pagination_label.setText(f"Page 1 of {total_pages}")
+            logger.debug(f"Stats updated: total={self.total_contacts}, displayed={len(filtered)}")
 
             # Update table (clear and reload)
+            logger.debug(f"About to populate table with {len(filtered)} contacts")
             self._populate_table(filtered, clear_existing=True)
+            logger.debug(f"Table populated. Table now has {self.table.rowCount()} rows")
 
             # Update load more button state
             self._update_load_more_button()
+            logger.debug("=== REFRESH COMPLETE ===")
 
         except Exception as e:
             logger.error(f"Unexpected error refreshing contacts: {e}", exc_info=True)
@@ -299,11 +323,6 @@ class ContactsListWidget(QWidget):
         if band_filter:
             filtered = [c for c in filtered if c.band == band_filter]
 
-        # Mode filter
-        mode_filter = self.mode_filter.currentData()
-        if mode_filter:
-            filtered = [c for c in filtered if c.mode == mode_filter]
-
         return filtered
 
     def _populate_table(self, contacts: List[Contact], clear_existing: bool = True) -> None:
@@ -314,45 +333,53 @@ class ContactsListWidget(QWidget):
             contacts: List of contacts to display
             clear_existing: If True, clear existing rows. If False, append new rows.
         """
-        if clear_existing:
-            self.table.setRowCount(0)
-            start_row = 0
-        else:
-            start_row = self.table.rowCount()
-            self.table.setRowCount(start_row + len(contacts))
+        try:
+            if clear_existing:
+                self.table.setRowCount(len(contacts))
+                start_row = 0
+            else:
+                start_row = self.table.rowCount()
+                self.table.setRowCount(start_row + len(contacts))
 
-        for offset, contact in enumerate(contacts):
-            row = start_row + offset
-            # Callsign
-            self.table.setItem(row, 0, QTableWidgetItem(contact.callsign))
+            for offset, contact in enumerate(contacts):
+                row = start_row + offset
+                try:
+                    # Callsign
+                    self.table.setItem(row, 0, QTableWidgetItem(contact.callsign))
 
-            # Date
-            date_str = contact.qso_date
-            if len(date_str) == 8:
-                date_str = f"{date_str[4:6]}/{date_str[6:8]}/{date_str[:4]}"
-            self.table.setItem(row, 1, QTableWidgetItem(date_str))
+                    # Date
+                    date_str = contact.qso_date or ""
+                    if len(date_str) == 8:
+                        date_str = f"{date_str[4:6]}/{date_str[6:8]}/{date_str[:4]}"
+                    self.table.setItem(row, 1, QTableWidgetItem(date_str))
 
-            # Time
-            time_str = contact.time_on or ""
-            if len(time_str) == 4:
-                time_str = f"{time_str[:2]}:{time_str[2:]}"
-            self.table.setItem(row, 2, QTableWidgetItem(time_str))
+                    # Time
+                    time_str = contact.time_on or ""
+                    if len(time_str) == 4:
+                        time_str = f"{time_str[:2]}:{time_str[2:]}"
+                    self.table.setItem(row, 2, QTableWidgetItem(time_str))
 
-            # Band
-            self.table.setItem(row, 3, QTableWidgetItem(contact.band or ""))
+                    # Band
+                    self.table.setItem(row, 3, QTableWidgetItem(contact.band or ""))
 
-            # Mode
-            self.table.setItem(row, 4, QTableWidgetItem(contact.mode or ""))
+                    # Mode
+                    self.table.setItem(row, 4, QTableWidgetItem(contact.mode or ""))
 
-            # SKCC
-            skcc_str = contact.skcc_number or ""
-            self.table.setItem(row, 5, QTableWidgetItem(skcc_str))
+                    # SKCC
+                    skcc_str = contact.skcc_number or ""
+                    self.table.setItem(row, 5, QTableWidgetItem(skcc_str))
 
-            # Power
-            power_str = ""
-            if contact.tx_power is not None:
-                power_str = f"{contact.tx_power}W"
-            self.table.setItem(row, 6, QTableWidgetItem(power_str))
+                    # Power
+                    power_str = ""
+                    if contact.tx_power is not None:
+                        power_str = f"{contact.tx_power}W"
+                    self.table.setItem(row, 6, QTableWidgetItem(power_str))
+                except Exception as e:
+                    logger.error(f"Error populating row {row} for contact {contact.callsign}: {e}", exc_info=True)
+                    raise
+        except Exception as e:
+            logger.error(f"Error populating table: {e}", exc_info=True)
+            raise
 
     def _get_available_bands(self) -> List[str]:
         """Get list of available bands from contacts"""
@@ -365,13 +392,3 @@ class ContactsListWidget(QWidget):
         except Exception:
             return []
 
-    def _get_available_modes(self) -> List[str]:
-        """Get list of available modes from contacts"""
-        try:
-            modes = set()
-            for contact in self.contacts:
-                if contact.mode:
-                    modes.add(contact.mode)
-            return sorted(list(modes))
-        except Exception:
-            return []
