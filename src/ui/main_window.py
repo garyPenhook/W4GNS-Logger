@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.status_label = None
 
         # Setup UI
-        self.setWindowTitle("W4GNS Ham Radio Logger")
+        self.setWindowTitle("W4GNS SKCC Logger")
 
         # Set initial window size and position (allowing resizing)
         self.setGeometry(100, 100, 1400, 900)
@@ -429,7 +429,7 @@ class MainWindow(QMainWindow):
                 # Create a dialog with help text
                 from PyQt6.QtWidgets import QDialog, QTextEdit
                 help_dialog = QDialog(self)
-                help_dialog.setWindowTitle("Help - W4GNS Ham Radio Logger")
+                help_dialog.setWindowTitle("Help - W4GNS SKCC Logger")
                 help_dialog.setGeometry(100, 100, 700, 600)
 
                 text_edit = QTextEdit()
@@ -455,9 +455,9 @@ class MainWindow(QMainWindow):
         """Show about dialog"""
         QMessageBox.about(
             self,
-            "About W4GNS Ham Radio Logger",
-            "W4GNS Ham Radio Logger v1.0.0\n\n"
-            "A comprehensive ham radio contact logging application\n"
+            "About W4GNS SKCC Logger",
+            "W4GNS SKCC Logger v1.0.0\n\n"
+            "A comprehensive SKCC-focused ham radio contact logging application\n"
             "with ADIF support, award tracking, and DX cluster integration.\n\n"
             "Press F1 or go to Help → Help Contents for more information."
         )

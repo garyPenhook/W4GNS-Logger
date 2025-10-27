@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM Models for Ham Radio Logger Database
+SQLAlchemy ORM Models for W4GNS SKCC Logger Database
 
 Defines all database models for contacts, QSL records, awards, and cluster spots.
 """
