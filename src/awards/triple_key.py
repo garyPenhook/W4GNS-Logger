@@ -66,20 +66,24 @@ class TripleKeyAward(AwardProgram):
         Returns:
             True if contact qualifies for Triple Key award
         """
+        callsign = contact.get('callsign', 'UNKNOWN')
+
         # Must be CW mode
-        if contact.get('mode', '').upper() != 'CW':
-            logger.debug("Contact not in CW mode for Triple Key")
+        mode = contact.get('mode', '').upper()
+        if mode != 'CW':
+            logger.debug(f"Contact {callsign} not in CW mode for Triple Key: {mode}")
             return False
 
         # Must have SKCC number
-        if not contact.get('skcc_number'):
-            logger.debug("Contact missing SKCC number for Triple Key")
+        skcc_num = contact.get('skcc_number', '')
+        if not skcc_num:
+            logger.debug(f"Contact {callsign} missing SKCC number for Triple Key")
             return False
 
         # CRITICAL RULE: Must have valid mechanical key type (STRAIGHT, BUG, or SIDESWIPER)
         key_type = contact.get('key_type', '').upper()
         if key_type not in ['STRAIGHT', 'BUG', 'SIDESWIPER']:
-            logger.debug(f"Invalid or missing key type for Triple Key: {key_type}")
+            logger.debug(f"Contact {callsign} invalid or missing key type for Triple Key: {key_type}")
             return False
 
         # Get contact date for date-based validations
@@ -87,9 +91,10 @@ class TripleKeyAward(AwardProgram):
 
         # Check contact date (must be on/after November 10, 2018)
         if qso_date and qso_date < self.triple_key_effective_date_str:
-            logger.debug(f"Contact before Triple Key effective date: {qso_date}")
+            logger.debug(f"Contact {callsign} before Triple Key effective date: {qso_date}")
             return False
 
+        logger.debug(f"Contact {callsign} PASSED validation for Triple Key: mode={mode}, skcc={skcc_num}, key_type={key_type}, date={qso_date}")
         return True
 
     def calculate_progress(self, contacts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -125,12 +130,20 @@ class TripleKeyAward(AwardProgram):
         bug_members: Set[int] = set()
         sideswiper_members: Set[int] = set()
 
+        logger.debug(f"Triple Key: Starting calculate_progress with {len(contacts)} total contacts")
+        validation_passed = 0
+        validation_failed_no_keytypedata = 0
+
         for contact in contacts:
             if self.validate(contact):
+                validation_passed += 1
                 skcc_num_str = contact.get('skcc_number', '').strip()
                 key_type = contact.get('key_type', '').upper()
 
                 if not skcc_num_str or not key_type:
+                    validation_failed_no_keytypedata += 1
+                    logger.debug(f"Contact passed validation but missing skcc_number or key_type: "
+                               f"callsign={contact.get('callsign')}, skcc={skcc_num_str}, key_type={key_type}")
                     continue
 
                 # Extract numeric SKCC number (remove C/T/S/x suffixes)
@@ -141,6 +154,7 @@ class TripleKeyAward(AwardProgram):
                     base_number = base_number.split('x')[0]
 
                 if not base_number or not base_number.isdigit():
+                    logger.debug(f"Failed to extract numeric SKCC number: original={skcc_num_str}, base={base_number}")
                     continue
 
                 skcc_number_int = int(base_number)
@@ -151,8 +165,10 @@ class TripleKeyAward(AwardProgram):
                     straight_key_members.add(skcc_number_int)
                 elif key_type == 'BUG':
                     bug_members.add(skcc_number_int)
+                    logger.debug(f"Added BUG contact: {contact.get('callsign')} SKCC#{skcc_number_int}")
                 elif key_type == 'SIDESWIPER':
                     sideswiper_members.add(skcc_number_int)
+                    logger.debug(f"Added SIDESWIPER contact: {contact.get('callsign')} SKCC#{skcc_number_int}")
 
         # Calculate totals
         straight_count = len(straight_key_members)
@@ -162,6 +178,11 @@ class TripleKeyAward(AwardProgram):
         # Total unique members (union of all three sets)
         all_members = straight_key_members | bug_members | sideswiper_members
         total_unique = len(all_members)
+
+        logger.info(f"Triple Key calculate_progress: Validation passed={validation_passed}, "
+                   f"SK={straight_count}, BUG={bug_count}, SS={sideswiper_count}, "
+                   f"Total unique={total_unique}, "
+                   f"Failed no key/skcc data={validation_failed_no_keytypedata}")
 
         # Determine if award is achieved (all three key types must have 100+ members)
         achieved = (
