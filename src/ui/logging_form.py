@@ -233,9 +233,9 @@ class LoggingForm(QWidget):
 
         # Date/Time (UTC - ALL LOGGING IS IN UTC)
         self.datetime_input = QDateTimeEdit()
-        # Convert UTC to QDateTime
+        # Convert UTC to QDateTime (specify UTC timezone, not local)
         utc_now = get_utc_now()
-        q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()))
+        q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
         self.datetime_input.setDateTime(q_datetime)
         self.datetime_input.setDisplayFormat("MM-dd hh:mm (UTC)")  # Show UTC indicator
         self.datetime_input.focusInEvent = lambda event: self._on_datetime_focus_in()
@@ -462,10 +462,10 @@ class LoggingForm(QWidget):
         callsign_row = ResizableFieldRow("Callsign:", self.callsign_input)
         layout.addWidget(callsign_row)
 
-        # Date/Time (with always-running clock)
+        # Date/Time (with always-running clock) - UTC only
         self.datetime_input = QDateTimeEdit()
-        self.datetime_input.setDateTime(QDateTime.currentDateTime())
-        self.datetime_input.setDisplayFormat("yyyy-MM-dd hh:mm")
+        self.datetime_input.setDateTime(QDateTime.currentDateTimeUtc())
+        self.datetime_input.setDisplayFormat("yyyy-MM-dd hh:mm (UTC)")
         self.datetime_input.setMaximumWidth(180)
         # Track focus to avoid overwriting user input
         self.datetime_input.focusInEvent = lambda event: self._on_datetime_focus_in()
@@ -834,9 +834,9 @@ class LoggingForm(QWidget):
         """
         try:
             self.callsign_input.clear()
-            # Set datetime to current UTC time
+            # Set datetime to current UTC time (specify UTC timezone, not local)
             utc_now = get_utc_now()
-            q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()))
+            q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
             self.datetime_input.setDateTime(q_datetime)
             self.band_combo.setCurrentIndex(0)
             self.mode_combo.setCurrentIndex(0)
