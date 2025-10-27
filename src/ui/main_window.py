@@ -276,6 +276,7 @@ class MainWindow(QMainWindow):
         from src.ui.pfx_progress_widget import PFXProgressWidget
         from src.ui.triple_key_progress_widget import TripleKeyProgressWidget
         from src.ui.wac_progress_widget import WACProgressWidget
+        from src.ui.was_progress_widget import WASProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -345,6 +346,13 @@ class MainWindow(QMainWindow):
         wac_widget = WACProgressWidget(self.db)
         wac_scroll.setWidget(wac_widget)
         awards_tabs.addTab(wac_scroll, "WAC")
+
+        # WAS Award Tab
+        was_scroll = QScrollArea()
+        was_scroll.setWidgetResizable(True)
+        was_widget = WASProgressWidget(self.db)
+        was_scroll.setWidget(was_widget)
+        awards_tabs.addTab(was_scroll, "WAS")
 
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)
