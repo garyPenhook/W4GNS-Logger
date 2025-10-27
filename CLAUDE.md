@@ -1,1 +1,0 @@
-- always include exception hanling to all code

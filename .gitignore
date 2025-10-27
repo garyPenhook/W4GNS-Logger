@@ -38,9 +38,16 @@ test_*.py
 *.tmp
 .pytest_cache/
 
-# Database (keep in .w4gns_logger directory instead)
+# Database & Log Files (runtime generated)
+*.db
+*.sqlite
+*.sqlite3
 contacts.db
 main.adi
+main2.adi
+W4GNS_SKCC_Logger.db
+logs/
+src/logs/
 
 # Environment variables
 .env
@@ -60,7 +67,16 @@ Thumbs.db
 *.swo
 *~
 
-# Development documentation and session notes
+# Development/Internal Documentation (not needed for end users)
+docs/
+CLAUDE.md
+CODEBASE_ANALYSIS.md
+HELP_SYSTEM.md
+ONLINE_MUF_SOURCES.md
+PERFORMANCE_OPTIMIZATION_ROADMAP.md
+RUNNING_THE_APPLICATION.md
+SPACE_WEATHER_FIX.md
+QT_PLATFORM_TROUBLESHOOTING.md
 ANALYSIS_INDEX.md
 *_ANALYSIS*.md
 *_ANALYSIS*.txt
@@ -79,13 +95,6 @@ IMPLEMENTATION_*.md
 PERFORMANCE_*.md
 START_HERE*.md
 *_QUICK_START*.txt
-*_QUICK_START*.md
-*_QUICK_REFERENCE*.txt
-*_QUICK_REFERENCE*.md
-LAUNCHING_*.md
-LAUNCHER_*.md
-*_GUIDE.md
-*_UPDATE.md
 GRACEFUL_SHUTDOWN_IMPLEMENTATION.md
 DROPDOWN_RESIZING.md
 EXCEPTION_HANDLING.md
@@ -93,9 +102,7 @@ FIELD_SIZING.md
 RESIZABLE_FIELDS.md
 ALWAYS_RUNNING_CLOCK.md
 ANSWER_TO_YOUR_QUESTION.md
-*_REFERENCE.txt
 Ham_Radio_Logging_Program_Design_Document.txt
-QT_PLATFORM_TROUBLESHOOTING.md
 
 # Development and test files
 migrate_database.py
