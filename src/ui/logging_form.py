@@ -854,7 +854,14 @@ class LoggingForm(QWidget):
                         elif freq_mhz > 300:  # If in kHz
                             freq_mhz = freq_mhz / 1000
 
-                        # Upload asynchronously
+                        # Upload asynchronously with feedback callback
+                        def on_qrz_upload_complete(success: bool):
+                            """Callback when QRZ upload completes"""
+                            if success:
+                                logger.info(f"QRZ upload successful for {contact.callsign}")
+                            else:
+                                logger.warning(f"QRZ upload failed for {contact.callsign}")
+
                         self.qrz_service.upload_qso_async(
                             callsign=contact.callsign,
                             qso_date=contact.qso_date,
@@ -864,7 +871,8 @@ class LoggingForm(QWidget):
                             rst_sent=contact.rst_sent or "59",
                             rst_rcvd=contact.rst_rcvd or "59",
                             tx_power=contact.tx_power,
-                            notes=f"Key Type: {contact.key_type}" if contact.key_type else None
+                            notes=f"Key Type: {contact.key_type}" if contact.key_type else None,
+                            callback=on_qrz_upload_complete
                         )
                         logger.debug(f"Queued QSO for upload to QRZ: {contact.callsign}")
                 except Exception as e:
