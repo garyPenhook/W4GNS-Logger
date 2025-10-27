@@ -141,7 +141,13 @@ class CanadianMapleProgressWidget(QWidget):
     def refresh(self) -> None:
         """Refresh award progress from database"""
         try:
-            progress = self.db.get_canadian_maple_award_progress()
+            progress = self.db.get_canadian_maple_progress()
+
+            logger.info(f"Canadian Maple Award: Current level: {progress.get('current_level', 'Unknown')}")
+            logger.info(f"Canadian Maple Award: Yellow Maple - {progress['yellow'].get('current', 0)}/{progress['yellow'].get('required', 10)} provinces, achieved={progress['yellow'].get('achieved', False)}")
+            logger.info(f"Canadian Maple Award: Orange Maple - {progress['orange'].get('current', 0)}/{progress['orange'].get('required', 10)} per band, achieved={progress['orange'].get('achieved', False)}")
+            logger.info(f"Canadian Maple Award: Red Maple - {progress['red'].get('current', 0)}/{progress['red'].get('required', 90)} total, achieved={progress['red'].get('achieved', False)}")
+            logger.info(f"Canadian Maple Award: Gold Maple - {progress['gold'].get('current', 0)}/{progress['gold'].get('required', 90)} QRP, achieved={progress['gold'].get('achieved', False)}")
 
             # Update Yellow Maple
             yellow_current = progress['yellow']['current']
