@@ -408,36 +408,45 @@ class SpaceWeatherWidget(QWidget):
                     logger.debug("Using cached space weather data")
                     # Store data and marshal UI update back to main thread
                     self._pending_data = cached
-                    QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
+                    # Invoke method on main thread (thread-safe)
+                    result = QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
+                    if not result:
+                        logger.warning("Failed to invoke _on_data_fetched slot")
                     return
 
                 # Fetch new data (blocking network calls - but in background thread!)
                 logger.debug("Fetching current space weather data from NOAA (background thread)")
                 conditions = self.fetcher.get_current_conditions()
+                logger.debug(f"Fetched conditions: {conditions}")
                 solar = self.fetcher.get_solar_data()
+                logger.debug(f"Fetched solar data: {solar}")
+
+                if conditions is None or solar is None:
+                    logger.warning(f"Incomplete data fetch - conditions={conditions is not None}, solar={solar is not None}")
 
                 # Combine data
-                data = {**conditions, **solar}
+                data = {**(conditions or {}), **(solar or {})}
+                logger.debug(f"Combined data: {data}")
 
                 # Cache the results
                 self.cache.set("current_conditions", data)
 
                 # Store data and marshal UI update back to main thread
                 self._pending_data = data
-                QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
+                # Invoke method on main thread (thread-safe)
+                result = QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
+                if not result:
+                    logger.warning("Failed to invoke _on_data_fetched slot")
 
             except Exception as e:
                 logger.error(f"Error refreshing space weather: {e}", exc_info=True)
                 # Marshal error update back to main thread
+                error_msg = f"Error: {str(e)[:100]}"  # Increased from 50 to 100 chars for better error visibility
                 QMetaObject.invokeMethod(
                     self.update_status_label, "setText",
                     Qt.ConnectionType.QueuedConnection,
-                    f"Error: {str(e)[:50]}"
+                    error_msg
                 )
-
-        # Start background thread (daemon thread exits with main app)
-        thread = threading.Thread(target=background_refresh, daemon=True)
-        thread.start()
 
     @pyqtSlot()
     def _on_data_fetched(self) -> None:
