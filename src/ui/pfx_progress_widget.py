@@ -324,7 +324,7 @@ class PFXProgressWidget(QWidget):
             'mode': contact.mode,
             'band': contact.band,
             'qso_date': contact.qso_date,
-            'qso_time': contact.qso_time,
+            'qso_time': contact.time_on,
             'skcc_number': contact.skcc_number,
             'key_type': contact.key_type,
         }
