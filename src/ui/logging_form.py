@@ -244,7 +244,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.datetime_input.setFont(font)
         self.datetime_input.setMinimumHeight(35)
-        self.datetime_input.setMaximumWidth(60)  # 50% narrower, visible
+        self.datetime_input.setMaximumWidth(180)  # Wide enough for full time display
         row1.addWidget(create_label("Time:"))
         row1.addWidget(self.datetime_input, 0)
 
