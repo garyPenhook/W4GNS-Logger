@@ -381,6 +381,102 @@ class BackupManager:
                 "message": f"Database backup failed: {str(e)}"
             }
 
+    def backup_adif_to_secondary(
+        self,
+        adif_source_dir: Optional[Path] = None,
+        backup_destination: Optional[Path] = None,
+        max_backups: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Backup most recent ADIF file to secondary location (USB/external drive)
+
+        Args:
+            adif_source_dir: Directory containing ADIF backups (default: ~/.w4gns_logger/Logs)
+            backup_destination: Secondary backup destination directory
+            max_backups: Maximum number of backup files to keep at destination
+
+        Returns:
+            Dictionary with:
+            - success: True if backup created successfully
+            - backup_file: Path to created backup file
+            - total_backups: Number of backup files after cleanup
+            - message: Human-readable status message
+        """
+        try:
+            # Use default ADIF source location if not specified
+            if adif_source_dir is None:
+                adif_source_dir = Path.home() / ".w4gns_logger" / "Logs"
+
+            if not backup_destination:
+                raise ValueError("Backup destination is required")
+
+            backup_destination = Path(backup_destination)
+
+            if not backup_destination.exists():
+                raise ValueError(f"Backup destination directory not found: {backup_destination}")
+
+            if not backup_destination.is_dir():
+                raise ValueError(f"Backup destination must be a directory: {backup_destination}")
+
+            # Find most recent ADIF file
+            most_recent_adif = self._find_most_recent_adif(adif_source_dir)
+
+            if not most_recent_adif:
+                logger.warning(f"No ADIF files found in {adif_source_dir} to backup to secondary location")
+                return {
+                    "success": False,
+                    "backup_file": None,
+                    "total_backups": 0,
+                    "message": "No ADIF files found to backup to secondary location"
+                }
+
+            # Create timestamped filename at destination
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_destination / f"{timestamp}.adi"
+
+            # Handle filename collision by adding counter
+            counter = 1
+            base_name = timestamp
+            while backup_file.exists():
+                backup_file = backup_destination / f"{base_name}_{counter}.adi"
+                counter += 1
+
+            # Copy ADIF file to secondary location
+            try:
+                shutil.copy2(most_recent_adif, backup_file)
+                logger.info(f"ADIF backup copied to secondary location: {backup_file}")
+            except Exception as e:
+                logger.error(f"Failed to copy ADIF to secondary location: {e}", exc_info=True)
+                raise
+
+            # Rotate old ADIF backups at secondary location
+            try:
+                self._rotate_backups(backup_destination, max_backups)
+            except Exception as e:
+                logger.warning(f"Error rotating old ADIF backups at secondary location: {e}", exc_info=True)
+                # Don't fail the entire backup if rotation fails
+
+            # Count remaining backups
+            remaining_backups = len(list(backup_destination.glob("*.adi")))
+
+            message = f"ADIF backup to secondary location: {backup_file.name} ({remaining_backups} total backups)"
+
+            return {
+                "success": True,
+                "backup_file": backup_file,
+                "total_backups": remaining_backups,
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"ADIF backup to secondary location failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "backup_file": None,
+                "total_backups": 0,
+                "message": f"ADIF backup to secondary location failed: {str(e)}"
+            }
+
     def _rotate_db_backups(self, backup_location: Path, max_backups: int = 5) -> None:
         """
         Remove old database backup files, keeping only the most recent N files

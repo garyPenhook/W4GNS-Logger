@@ -613,18 +613,37 @@ class MainWindow(QMainWindow):
                         backup_dest_path = Path(backup_destination)
                         if backup_dest_path.exists() and backup_dest_path.is_dir():
                             logger.info("Performing additional backup to USB/external destination...")
-                            db_path = Path(self.config_manager.get("database.location"))
-
                             backup_manager = BackupManager()
-                            result = backup_manager.backup_to_location(
-                                database_path=db_path,
-                                backup_destination=backup_dest_path
-                            )
 
-                            if result["success"]:
-                                logger.info(f"USB/external backup completed: {result['backup_dir']}")
-                            else:
-                                logger.warning(f"USB/external backup failed: {result['message']}")
+                            # Backup database to secondary location
+                            try:
+                                db_path = Path(self.config_manager.get("database.location"))
+                                result = backup_manager.backup_to_location(
+                                    database_path=db_path,
+                                    backup_destination=backup_dest_path
+                                )
+
+                                if result["success"]:
+                                    logger.info(f"Database backup to secondary location completed: {result['backup_dir']}")
+                                else:
+                                    logger.warning(f"Database backup to secondary location failed: {result['message']}")
+                            except Exception as db_backup_error:
+                                logger.error(f"Error backing up database to secondary location: {db_backup_error}", exc_info=True)
+
+                            # Backup most recent ADIF to secondary location
+                            try:
+                                result = backup_manager.backup_adif_to_secondary(
+                                    adif_source_dir=None,  # Uses default: ~/.w4gns_logger/Logs
+                                    backup_destination=backup_dest_path,
+                                    max_backups=5
+                                )
+
+                                if result["success"]:
+                                    logger.info(f"ADIF backup to secondary location completed: {result['message']}")
+                                else:
+                                    logger.warning(f"ADIF backup to secondary location failed: {result['message']}")
+                            except Exception as adif_backup_error:
+                                logger.error(f"Error backing up ADIF to secondary location: {adif_backup_error}", exc_info=True)
                         else:
                             logger.warning(f"USB/external backup destination not available: {backup_destination}")
                 except Exception as backup_error:
