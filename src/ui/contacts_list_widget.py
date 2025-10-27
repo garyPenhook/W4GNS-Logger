@@ -209,16 +209,31 @@ class ContactsListWidget(QWidget):
             # Add to existing contacts
             self.contacts.extend(next_contacts)
 
-            # Apply filters to new contacts only
-            filtered = self._apply_filters()
+            # Apply filters (but only display the new page's contacts, not reload old ones)
+            # Get current filters
+            search_text = self.search_input.text().strip()
+            band_filter = self.band_filter.currentData()
+            mode_filter = self.mode_filter.currentData()
+
+            # Apply filters only to the new contacts
+            filtered_new = next_contacts
+            if search_text:
+                filtered_new = [c for c in filtered_new if search_text.lower() in c.callsign.lower()]
+            if band_filter:
+                filtered_new = [c for c in filtered_new if c.band == band_filter]
+            if mode_filter:
+                filtered_new = [c for c in filtered_new if c.mode == mode_filter]
 
             # Update pagination label
             current_page = (self.current_offset // self.page_size) + 1
             total_pages = (self.total_contacts + self.page_size - 1) // self.page_size
             self.pagination_label.setText(f"Page {current_page} of {total_pages}")
 
-            # Append to table instead of replacing
-            self._populate_table(filtered, clear_existing=False)
+            # Append only the NEW filtered contacts to table
+            self._populate_table(filtered_new, clear_existing=False)
+
+            # Update displayed count
+            self.filtered_label.setText(f"Displayed: {self.table.rowCount()}")
 
             # Update load more button state
             self._update_load_more_button()
