@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar,
     QPushButton, QGridLayout
 )
-from PyQt6.QtCore import QTimer, Qt, QMetaObject, pyqtSlot
+from PyQt6.QtCore import QTimer, Qt, QMetaObject, pyqtSlot, pyqtSignal
 from PyQt6.QtGui import QFont
 import threading
 
@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 class SpaceWeatherWidget(QWidget):
     """Displays current space weather conditions and HF propagation status"""
+
+    # Signal emitted when data is fetched and ready to display (thread-safe)
+    data_fetched = pyqtSignal(dict)
 
     # Default font size multipliers for consistent scaling
     FONT_SMALL = 0.95  # 9-10pt equivalent
@@ -71,10 +74,14 @@ class SpaceWeatherWidget(QWidget):
 
         self._init_ui()
 
+        # Connect data_fetched signal to slot (thread-safe way to update UI from background thread)
+        self.data_fetched.connect(self._on_data_fetched_signal)
+
         # Defer initial refresh to avoid blocking GUI initialization
         # Uses QTimer.singleShot to defer until event loop is running
         # This allows the window to render immediately while network data loads in background
-        QTimer.singleShot(100, self._refresh_in_background)
+        # Use 500ms delay to ensure event loop is fully active during startup
+        QTimer.singleShot(500, self._refresh_in_background)
 
         # Auto-refresh every 15 minutes (MUF changes frequently with solar conditions)
         self.refresh_timer = QTimer()
@@ -257,24 +264,74 @@ class SpaceWeatherWidget(QWidget):
         # No color style - uses system palette text color
         recommendation_vbox.addWidget(self.best_band_reason)
 
-        # MUF and margin info - uses system palette
-        self.best_band_muf_info = QLabel("MUF: -- MHz | Margin: -- MHz")
-        self.best_band_muf_info.setFont(self._get_font(self.FONT_SMALL, bold=True))
-        # No color style - uses system palette text color
-        recommendation_vbox.addWidget(self.best_band_muf_info)
+        # MUF and margin info - displayed on separate lines for clarity
+        muf_info_layout = QVBoxLayout()
+        muf_info_layout.setSpacing(5)
+
+        # Top line: MUF display with large spacing
+        muf_line_layout = QHBoxLayout()
+        muf_line_layout.setContentsMargins(0, 0, 0, 0)
+        muf_line_layout.setSpacing(30)
+
+        muf_label = QLabel("MUF:")
+        muf_label.setFont(self._get_font(self.FONT_SMALL, bold=True))
+        muf_line_layout.addWidget(muf_label)
+
+        self.best_band_muf_value = QLabel("-- MHz")
+        self.best_band_muf_value.setFont(self._get_font(self.FONT_LARGE, bold=True))
+        self.best_band_muf_value.setMinimumWidth(100)
+        muf_line_layout.addWidget(self.best_band_muf_value)
+
+        muf_line_layout.addStretch()
+        muf_info_layout.addLayout(muf_line_layout)
+
+        # Bottom line: Margin display with large spacing
+        margin_line_layout = QHBoxLayout()
+        margin_line_layout.setContentsMargins(0, 0, 0, 0)
+        margin_line_layout.setSpacing(30)
+
+        margin_label = QLabel("Margin:")
+        margin_label.setFont(self._get_font(self.FONT_SMALL, bold=True))
+        margin_line_layout.addWidget(margin_label)
+
+        self.best_band_margin_value = QLabel("-- MHz")
+        self.best_band_margin_value.setFont(self._get_font(self.FONT_LARGE, bold=True))
+        self.best_band_margin_value.setMinimumWidth(100)
+        margin_line_layout.addWidget(self.best_band_margin_value)
+
+        margin_desc = QLabel("above band edge")
+        margin_desc.setFont(self._get_font(self.FONT_SMALL))
+        margin_line_layout.addWidget(margin_desc)
+
+        margin_line_layout.addStretch()
+        muf_info_layout.addLayout(margin_line_layout)
+
+        recommendation_vbox.addLayout(muf_info_layout)
 
         best_band_layout.addLayout(recommendation_vbox)
         best_band_layout.addStretch()
         layout.addLayout(best_band_layout)
 
-        # Top 3 bands section
+        # Top 3 bands section - with proper spacing layout
         layout.addWidget(QLabel("Next best options:"))
-        self.best_band_top3_label = QLabel("Loading...")
-        self.best_band_top3_label.setFont(self._get_font(self.FONT_SMALL))
-        # Use palette-aware styling with padding only, no explicit colors
-        self.best_band_top3_label.setStyleSheet("padding: 5px;")
-        self.best_band_top3_label.setWordWrap(True)
-        layout.addWidget(self.best_band_top3_label)
+
+        # Create a horizontal layout for top 3 bands with spacing
+        top3_layout = QHBoxLayout()
+        top3_layout.setSpacing(20)  # Spread bands apart
+
+        self.best_band_top3_labels = []
+        for i in range(3):
+            band_label = QLabel("--")
+            band_label.setFont(self._get_font(self.FONT_SMALL))
+            self.best_band_top3_labels.append(band_label)
+            top3_layout.addWidget(band_label)
+
+            # Add spacer between bands except after the last one
+            if i < 2:
+                top3_layout.addSpacing(15)
+
+        top3_layout.addStretch()  # Push bands to the left
+        layout.addLayout(top3_layout)
 
         group.setLayout(layout)
         return group
@@ -406,12 +463,8 @@ class SpaceWeatherWidget(QWidget):
                 cached = self.cache.get("current_conditions")
                 if cached is not None:
                     logger.debug("Using cached space weather data")
-                    # Store data and marshal UI update back to main thread
-                    self._pending_data = cached
-                    # Invoke method on main thread (thread-safe)
-                    result = QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
-                    if not result:
-                        logger.warning("Failed to invoke _on_data_fetched slot")
+                    # Emit signal to update UI on main thread (thread-safe)
+                    self.data_fetched.emit(cached)
                     return
 
                 # Fetch new data (blocking network calls - but in background thread!)
@@ -431,33 +484,25 @@ class SpaceWeatherWidget(QWidget):
                 # Cache the results
                 self.cache.set("current_conditions", data)
 
-                # Store data and marshal UI update back to main thread
-                self._pending_data = data
-                # Invoke method on main thread (thread-safe)
-                result = QMetaObject.invokeMethod(self, "_on_data_fetched", Qt.ConnectionType.QueuedConnection)
-                if not result:
-                    logger.warning("Failed to invoke _on_data_fetched slot")
+                # Emit signal to update UI on main thread (thread-safe)
+                logger.info("✓ Emitting data_fetched signal to main thread")
+                self.data_fetched.emit(data)
 
             except Exception as e:
                 logger.error(f"Error refreshing space weather: {e}", exc_info=True)
-                # Marshal error update back to main thread
+                # Update status label with error on main thread
                 error_msg = f"Error: {str(e)[:100]}"  # Increased from 50 to 100 chars for better error visibility
-                QMetaObject.invokeMethod(
-                    self.update_status_label, "setText",
-                    Qt.ConnectionType.QueuedConnection,
-                    error_msg
-                )
+                QMetaObject.invokeMethod(self.update_status_label, "setText", Qt.ConnectionType.QueuedConnection, error_msg)
 
-    @pyqtSlot()
-    def _on_data_fetched(self) -> None:
-        """Slot called when space weather data is fetched (runs on main thread)"""
-        if not hasattr(self, '_pending_data') or self._pending_data is None:
-            return
+        # Start the background thread to fetch data
+        thread = threading.Thread(target=background_refresh, daemon=True)
+        thread.start()
 
+    @pyqtSlot(dict)
+    def _on_data_fetched_signal(self, data: dict) -> None:
+        """Slot called when data_fetched signal is emitted (runs on main thread, thread-safe)"""
+        logger.info("✓ _on_data_fetched_signal received data - signal/slot working!")
         try:
-            data = self._pending_data
-            self._pending_data = None
-
             # Update UI with fetched data
             self._update_ui(data)
             self._update_muf_display(data)
@@ -779,6 +824,7 @@ class SpaceWeatherWidget(QWidget):
     def _update_best_band_now(self, predictions: Dict[str, 'MUFPrediction'],
                               home_grid: str, sfi: int, k_index: int) -> None:
         """Update 'Best Band NOW' section with time-aware recommendation"""
+        logger.info("✓ _update_best_band_now called - updating all best band labels")
         try:
             # Get best band recommendation
             best_band_data = self.muf_fetcher.get_best_band_now(
@@ -812,22 +858,28 @@ class SpaceWeatherWidget(QWidget):
             if best_band_data['band'] and best_band_data['muf'] is not None:
                 margin_str = f"{best_band_data['margin']:.1f}" if best_band_data['margin'] else "--"
                 muf_str = f"{best_band_data['muf']:.1f}"
-                self.best_band_muf_info.setText(
-                    f"MUF: {muf_str} MHz | Margin: {margin_str} MHz above band edge"
-                )
+                logger.info(f"✓ Setting MUF labels: MUF={muf_str} MHz, Margin={margin_str} MHz")
+                self.best_band_muf_value.setText(f"{muf_str} MHz")
+                self.best_band_margin_value.setText(f"{margin_str} MHz")
             else:
-                self.best_band_muf_info.setText("MUF: -- MHz | Margin: -- MHz")
+                self.best_band_muf_value.setText("-- MHz")
+                self.best_band_margin_value.setText("-- MHz")
 
             # Update top 3 bands
             if best_band_data['top_3_bands']:
-                top_3_items = []
-                for b in best_band_data['top_3_bands']:
-                    marginal_indicator = " ⚠" if b.get('marginal', False) else ""
-                    top_3_items.append(f"{b['band']} ({b['muf']:.1f}M, {b['margin']:+.1f}){marginal_indicator}")
-                top_3_text = "  " + " | ".join(top_3_items)
-                self.best_band_top3_label.setText(top_3_text)
+                logger.info(f"✓ Setting top 3 bands: {[b['band'] for b in best_band_data['top_3_bands']]}")
+                for i, label in enumerate(self.best_band_top3_labels):
+                    if i < len(best_band_data['top_3_bands']):
+                        b = best_band_data['top_3_bands'][i]
+                        marginal_indicator = " ⚠" if b.get('marginal', False) else ""
+                        text = f"{b['band']}\n({b['muf']:.1f}M, {b['margin']:+.1f}){marginal_indicator}"
+                        label.setText(text)
+                        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                    else:
+                        label.setText("--")
             else:
-                self.best_band_top3_label.setText("(No usable bands at this time)")
+                for label in self.best_band_top3_labels:
+                    label.setText("--")
 
             logger.info(f"Best band now: {best_band_data['band']} ({best_band_data['time_period']})")
 

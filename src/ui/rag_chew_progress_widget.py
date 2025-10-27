@@ -243,7 +243,7 @@ class RagChewProgressWidget(QWidget):
 
             # Update main progress bar
             self.progress_bar.setMaximum(max(300, required))
-            self.progress_bar.setValue(current_minutes)
+            self.progress_bar.setValue(int(current_minutes))
 
             # Update status label
             self.status_label.setText(

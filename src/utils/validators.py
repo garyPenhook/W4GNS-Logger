@@ -198,3 +198,70 @@ def validate_grid(grid: str) -> Tuple[bool, str]:
         return False, "Invalid grid square format"
 
     return True, ""
+
+
+def extract_skcc_base_number(skcc_number: str) -> Tuple[str, bool]:
+    """
+    Extract base SKCC number from raw SKCC field value.
+    Enables O(1) per-contact parsing instead of repeated string operations.
+
+    SKCC numbers can have various formats:
+    - "12345" - base number
+    - "12345x50" - with endorsement level suffix
+    - "12345 x50" - with space before suffix
+    - "12345 Additional Text" - with notes after spaces
+
+    Extracts just the base numeric portion (12345 in all cases above).
+
+    Args:
+        skcc_number: Raw SKCC number field from contact record
+
+    Returns:
+        Tuple of (base_number_str, is_valid)
+        - base_number_str: The extracted numeric base (e.g., "12345") or empty string if invalid
+        - is_valid: Boolean indicating if valid SKCC base number was found
+    """
+    if not skcc_number:
+        return "", False
+
+    # Strip whitespace
+    skcc_clean = skcc_number.strip()
+    if not skcc_clean:
+        return "", False
+
+    # Split by whitespace and take first part
+    # This handles both "12345x50" and "12345 x50" formats
+    skcc_base = skcc_clean.split()[0]
+
+    # Remove 'x' suffix and everything after it (e.g., "12345x50" -> "12345")
+    # This handles endorsement suffixes like x50, x100, etc.
+    if 'x' in skcc_base:
+        skcc_base = skcc_base.split('x')[0]
+
+    # Validate it's all digits
+    if skcc_base and skcc_base.isdigit():
+        return skcc_base, True
+
+    return "", False
+
+
+def validate_skcc_number(skcc_number: str) -> Tuple[bool, str]:
+    """
+    Validate SKCC membership number format.
+
+    Args:
+        skcc_number: SKCC number to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    base_number, is_valid = extract_skcc_base_number(skcc_number)
+
+    if not is_valid:
+        return False, "Invalid SKCC number format (must be numeric base)"
+
+    # SKCC numbers are typically 5-6 digits
+    if not (4 <= len(base_number) <= 7):
+        return False, f"SKCC number out of valid range (got {base_number})"
+
+    return True, ""
