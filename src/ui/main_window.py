@@ -585,7 +585,26 @@ class MainWindow(QMainWindow):
                 except Exception as adif_backup_error:
                     logger.error(f"Error creating ADIF backup on shutdown: {adif_backup_error}", exc_info=True)
 
-                # Perform automatic database backup if enabled and destination is configured
+                # Create database backup on shutdown (always, to Logs folder)
+                try:
+                    logger.info("Creating database backup on shutdown...")
+                    db_path = Path(self.config_manager.get("database.location"))
+                    backup_manager = BackupManager()
+
+                    result = backup_manager.create_database_backup(
+                        database_path=db_path,
+                        backup_location=None,  # Uses default: ~/.w4gns_logger/Logs
+                        max_backups=5
+                    )
+
+                    if result["success"]:
+                        logger.info(f"Database backup created on shutdown: {result['message']}")
+                    else:
+                        logger.warning(f"Database backup on shutdown failed: {result['message']}")
+                except Exception as db_backup_error:
+                    logger.error(f"Error creating database backup on shutdown: {db_backup_error}", exc_info=True)
+
+                # Perform additional USB/external backup if destination is configured
                 try:
                     auto_backup_enabled = self.config_manager.get("database.auto_backup_on_shutdown", True)
                     backup_destination = self.config_manager.get("database.backup_destination", "")
@@ -593,7 +612,7 @@ class MainWindow(QMainWindow):
                     if auto_backup_enabled and backup_destination:
                         backup_dest_path = Path(backup_destination)
                         if backup_dest_path.exists() and backup_dest_path.is_dir():
-                            logger.info("Performing automatic database backup on shutdown...")
+                            logger.info("Performing additional backup to USB/external destination...")
                             db_path = Path(self.config_manager.get("database.location"))
 
                             backup_manager = BackupManager()
@@ -603,13 +622,13 @@ class MainWindow(QMainWindow):
                             )
 
                             if result["success"]:
-                                logger.info(f"Database auto-backup completed: {result['backup_dir']}")
+                                logger.info(f"USB/external backup completed: {result['backup_dir']}")
                             else:
-                                logger.warning(f"Database auto-backup failed: {result['message']}")
+                                logger.warning(f"USB/external backup failed: {result['message']}")
                         else:
-                            logger.warning(f"Backup destination not available or not a directory: {backup_destination}")
+                            logger.warning(f"USB/external backup destination not available: {backup_destination}")
                 except Exception as backup_error:
-                    logger.error(f"Error during database auto-backup: {backup_error}", exc_info=True)
+                    logger.error(f"Error during USB/external backup: {backup_error}", exc_info=True)
 
                 # Clean up database resources
                 try:

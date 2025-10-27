@@ -228,8 +228,16 @@ class BackupManager:
             logger.info(f"Using backup location: {backup_location}")
 
             # Create timestamped filename
+            # Add counter suffix if file already exists (in case of rapid backups in same second)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = backup_location / f"{timestamp}.adi"
+
+            # Handle filename collision by adding counter
+            counter = 1
+            base_name = timestamp
+            while backup_file.exists():
+                backup_file = backup_location / f"{base_name}_{counter}.adi"
+                counter += 1
 
             # Import ADIF exporter
             try:
@@ -279,6 +287,137 @@ class BackupManager:
                 "total_backups": 0,
                 "message": f"ADIF backup failed: {str(e)}"
             }
+
+    def create_database_backup(
+        self,
+        database_path: Path,
+        backup_location: Optional[Path] = None,
+        max_backups: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Create timestamped database backup and rotate old backups
+
+        Args:
+            database_path: Path to the contacts.db file
+            backup_location: Directory to store backups (default: ~/.w4gns_logger/Logs)
+            max_backups: Maximum number of backup files to keep (default: 5)
+
+        Returns:
+            Dictionary with:
+            - success: True if backup created successfully
+            - backup_file: Path to created backup file
+            - total_backups: Number of backup files after cleanup
+            - message: Human-readable status message
+
+        Raises:
+            ValueError: If database_path doesn't exist
+            OSError: If file operations fail
+        """
+        try:
+            database_path = Path(database_path)
+
+            if not database_path.exists():
+                raise ValueError(f"Database file not found: {database_path}")
+
+            # Use default location if not specified
+            if backup_location is None:
+                backup_location = Path.home() / ".w4gns_logger" / "Logs"
+
+            # Ensure directory exists
+            backup_location.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Creating database backup in: {backup_location}")
+
+            # Create timestamped filename (contacts_YYYYMMDD_HHMMSS.db)
+            # Add counter suffix if file already exists (in case of rapid backups in same second)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_location / f"contacts_{timestamp}.db"
+
+            # Handle filename collision by adding counter
+            counter = 1
+            base_name = f"contacts_{timestamp}"
+            while backup_file.exists():
+                backup_file = backup_location / f"{base_name}_{counter}.db"
+                counter += 1
+
+            # Copy database file
+            try:
+                shutil.copy2(database_path, backup_file)
+                logger.info(f"Created database backup: {backup_file}")
+            except FileNotFoundError as e:
+                logger.error(f"Database file not found during backup: {e}")
+                raise
+            except PermissionError as e:
+                logger.error(f"Permission denied reading database: {e}")
+                raise
+            except IOError as e:
+                logger.error(f"IO error during database backup: {e}")
+                raise
+
+            # Rotate old backups - keep only the most recent N files
+            try:
+                self._rotate_db_backups(backup_location, max_backups)
+            except Exception as e:
+                logger.warning(f"Error rotating old database backups: {e}", exc_info=True)
+                # Don't fail the entire backup if rotation fails
+
+            # Count remaining backups
+            remaining_backups = len(list(backup_location.glob("contacts_*.db")))
+
+            message = f"Database backup created: {backup_file.name} ({remaining_backups} total backups)"
+
+            return {
+                "success": True,
+                "backup_file": backup_file,
+                "total_backups": remaining_backups,
+                "message": message
+            }
+
+        except Exception as e:
+            logger.error(f"Database backup failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "backup_file": None,
+                "total_backups": 0,
+                "message": f"Database backup failed: {str(e)}"
+            }
+
+    def _rotate_db_backups(self, backup_location: Path, max_backups: int = 5) -> None:
+        """
+        Remove old database backup files, keeping only the most recent N files
+
+        Args:
+            backup_location: Directory containing backup files
+            max_backups: Maximum number of files to keep
+
+        Raises:
+            OSError: If file deletion fails
+        """
+        try:
+            # Get all contacts_*.db files sorted by modification time (newest first)
+            db_files = sorted(
+                backup_location.glob("contacts_*.db"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )
+
+            # Remove files beyond the max_backups limit
+            if len(db_files) > max_backups:
+                files_to_remove = db_files[max_backups:]
+                for old_file in files_to_remove:
+                    try:
+                        old_file.unlink()
+                        logger.info(f"Removed old database backup: {old_file.name}")
+                    except OSError as e:
+                        logger.warning(f"Failed to remove old database backup {old_file}: {e}")
+                        # Continue with other files even if one fails
+
+                logger.info(f"Database backup rotation completed: Kept {min(len(db_files), max_backups)} recent backups")
+            else:
+                logger.debug(f"No database backup rotation needed: {len(db_files)} files <= {max_backups} limit")
+
+        except Exception as e:
+            logger.error(f"Error during database backup rotation: {e}", exc_info=True)
+            raise
 
     def _rotate_backups(self, backup_location: Path, max_backups: int = 5) -> None:
         """
