@@ -233,6 +233,8 @@ class LoggingForm(QWidget):
 
         # Date/Time (UTC - ALL LOGGING IS IN UTC)
         self.datetime_input = QDateTimeEdit()
+        # Set widget to UTC timezone (not local)
+        self.datetime_input.setTimeSpec(Qt.TimeSpec.UTC)
         # Convert UTC to QDateTime (specify UTC timezone, not local)
         utc_now = get_utc_now()
         q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
@@ -464,6 +466,8 @@ class LoggingForm(QWidget):
 
         # Date/Time (with always-running clock) - UTC only
         self.datetime_input = QDateTimeEdit()
+        # Set widget to UTC timezone (not local)
+        self.datetime_input.setTimeSpec(Qt.TimeSpec.UTC)
         self.datetime_input.setDateTime(QDateTime.currentDateTimeUtc())
         self.datetime_input.setDisplayFormat("yyyy-MM-dd hh:mm (UTC)")
         self.datetime_input.setMaximumWidth(180)
