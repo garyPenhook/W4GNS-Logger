@@ -381,7 +381,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.qth_input.setFont(font)
         self.qth_input.setMinimumHeight(35)
-        self.qth_input.setMaximumWidth(96)  # QTH field width
+        self.qth_input.setMaximumWidth(150)  # QTH field width (wider for city names)
         row3.addWidget(create_label("QTH:"))
         row3.addWidget(self.qth_input, 0)
 
@@ -394,6 +394,7 @@ class LoggingForm(QWidget):
         self.skcc_number_input.setFont(font)
         self.skcc_number_input.setMinimumHeight(35)
         self.skcc_number_input.setMaximumWidth(60)  # SKCC number field (prevent over-expansion)
+        row3.addSpacing(30)  # Add spacing to move SKCC field to the right
         row3.addWidget(create_label("SKCC:"))
         row3.addWidget(self.skcc_number_input, 0)
 
@@ -580,7 +581,7 @@ class LoggingForm(QWidget):
         # QTH
         self.qth_input = QLineEdit()
         self.qth_input.setPlaceholderText("City/Location")
-        self.qth_input.setMaximumWidth(96)  # QTH field width (increased by 20%)
+        self.qth_input.setMaximumWidth(150)  # QTH field width (wider for city names)
         qth_row = ResizableFieldRow("QTH:", self.qth_input)
         layout.addWidget(qth_row)
 
@@ -615,8 +616,15 @@ class LoggingForm(QWidget):
         self.skcc_number_input.setMaxLength(20)
         self.skcc_number_input.setMaximumWidth(60)  # SKCC number field (prevent over-expansion)
         self.skcc_number_input.setToolTip("Straight Key Century Club member number")
-        skcc_row = ResizableFieldRow("SKCC Number:", self.skcc_number_input)
-        layout.addWidget(skcc_row)
+        skcc_row = ResizableFieldRow("SKCC:", self.skcc_number_input)
+        # Add left spacing to move SKCC field to the right
+        skcc_layout = QHBoxLayout()
+        skcc_layout.addSpacing(60)  # Indent SKCC field to the right
+        skcc_layout.addWidget(skcc_row)
+        skcc_layout.addStretch()
+        skcc_container = QWidget()
+        skcc_container.setLayout(skcc_layout)
+        layout.addWidget(skcc_container)
 
         # Key Type
         self.key_type_combo = QComboBox()
