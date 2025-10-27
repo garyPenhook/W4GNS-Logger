@@ -621,7 +621,7 @@ class LoggingForm(QWidget):
         # Key Type
         self.key_type_combo = QComboBox()
         self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER", "NONE"])
-        self.key_type_combo.setMaximumWidth(30)
+        self.key_type_combo.setMaximumWidth(33)
         self.key_type_combo.setToolTip("Type of mechanical key used (for Triple Key Award, or NONE if paddle used)")
         key_type_row = ResizableFieldRow("Key Type:", self.key_type_combo)
         layout.addWidget(key_type_row)
