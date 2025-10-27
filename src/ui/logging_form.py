@@ -409,7 +409,7 @@ class LoggingForm(QWidget):
         # Key Type
         self.key_type_combo = QComboBox()
         self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER", "NONE"])
-        self.key_type_combo.setMaximumWidth(49)
+        self.key_type_combo.setMaximumWidth(120)
         font = self.key_type_combo.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.key_type_combo.setFont(font)
