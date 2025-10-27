@@ -96,6 +96,11 @@ class LoggingForm(QWidget):
             self.callsign_stable_timer.timeout.connect(self._on_callsign_stable)
             self.callsign_stable_timer.setSingleShot(True)
 
+            # Callsign debounce timer (for previous QSOs widget - 500ms after typing stops)
+            self.callsign_debounce_timer = QTimer()
+            self.callsign_debounce_timer.timeout.connect(self._on_callsign_debounce)
+            self.callsign_debounce_timer.setSingleShot(True)
+
             # Connect QRZ data signal to populate method for thread-safe UI updates
             self.qrz_data_ready.connect(self._populate_from_qrz_info)
 
@@ -1090,31 +1095,40 @@ class LoggingForm(QWidget):
         Handle callsign input changes
 
         When callsign is entered and remains stable for 5 seconds,
-        record the QSO start time. Also updates the previous QSOs widget
-        to show any previous contacts with this callsign.
+        record the QSO start time. Updates previous QSOs widget with
+        debounce (500ms after typing stops) for better performance.
 
         Args:
             text: Current callsign input text
         """
-        # Update previous QSOs widget immediately
-        try:
-            if hasattr(self, 'previous_qsos_widget'):
-                self.previous_qsos_widget.update_callsign(text)
-        except Exception as e:
-            logger.error(f"Error updating previous QSOs widget: {e}", exc_info=True)
-
-        # Stop existing timer
+        # Stop existing timers
         self.callsign_stable_timer.stop()
+        self.callsign_debounce_timer.stop()
 
-        # If callsign changed, restart the 5-second timer
+        # If callsign changed, restart timers
         if text != self.last_callsign:
             self.last_callsign = text
             if text.strip():  # Only start timer if not empty
-                self.callsign_stable_timer.start(5000)  # 5 seconds
-                logger.debug(f"Callsign changed to '{text}', waiting 5 seconds...")
+                self.callsign_stable_timer.start(5000)  # 5 seconds for QSO timing
+                self.callsign_debounce_timer.start(500)  # 500ms for previous QSOs lookup
+                logger.debug(f"Callsign changed to '{text}', debounce timer started")
             else:
                 # Callsign cleared
                 logger.debug("Callsign cleared, QSO start time reset")
+
+    def _on_callsign_debounce(self) -> None:
+        """
+        Handle previous QSOs widget update after callsign typing stops
+
+        This is called 500ms after the user stops typing to avoid
+        excessive database queries during typing.
+        """
+        try:
+            if hasattr(self, 'previous_qsos_widget'):
+                self.previous_qsos_widget.update_callsign(self.last_callsign)
+                logger.debug(f"Previous QSOs updated for {self.last_callsign}")
+        except Exception as e:
+            logger.error(f"Error updating previous QSOs widget: {e}", exc_info=True)
 
     def _on_callsign_focus_lost(self) -> None:
         """
