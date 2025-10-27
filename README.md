@@ -1,261 +1,202 @@
-# W4GNS SKCC Logger
+# W4GNS SKCC Logger v1.8
 
-A comprehensive SKCC-focused ham radio contact logging application with support for ADIF import/export, award tracking, DX cluster integration, and QRZ.com synchronization.
+A comprehensive SKCC-focused ham radio contact logging application. Track QSOs, manage awards (Centurion, Tribune, Senator), and export to ADIF format.
 
-**Version**: 1.8
-**Python**: 3.14.0 (managed by UV)
-**Package Manager**: UV (100x faster than pip)
+---
 
-## Features
+## Running the Application
 
-- **Contact Logging**: Record complete QSO details with comprehensive field support
-- **ADIF Support**: Full ADIF 3.x compliant import/export (ADI and ADX formats)
-- **Award Tracking**: Track progress for SKCC awards (Centurion, Tribune, Senator, QRP, Triple Key)
-- **DX Cluster Integration**: Real-time spot monitoring from multiple cluster nodes
-- **QRZ.com Integration**: Upload contacts to QRZ logbook
-- **Cross-Platform GUI**: Modern PyQt6 interface for Windows, macOS, and Linux
-- **Database**: SQLite backend with comprehensive contact management
-- **Reproducible Builds**: UV lock file ensures identical installs everywhere
+### Windows
 
-## Requirements
+1. **Download and extract** the W4GNS Logger folder
+2. **Double-click** `run.bat` in the folder
+3. The app will download Python, install dependencies, and start automatically
 
-- **Python**: 3.14+ (automatically downloaded and managed by UV)
-- **UV**: Modern Python package manager (already installed)
-- **PyQt6**: GUI framework
-- **SQLAlchemy**: Database ORM
-- All other dependencies in `requirements.txt`
-
-## Quick Start
-
-### Automatic Setup (Recommended)
-
-```bash
+**Or from Command Prompt**:
+```cmd
 cd "W4GNS Logger"
-./run.sh              # Linux/macOS
-# OR
-run.bat               # Windows
+run.bat
 ```
 
-This will automatically:
-- Download Python 3.14 (if not already available)
-- Create a virtual environment
-- Install all dependencies
-- Launch the application
+### macOS & Linux
 
-### Manual Setup
+1. **Download and extract** the W4GNS Logger folder
+2. **Open Terminal** in the folder
+3. **Run**:
+```bash
+./run.sh
+```
+
+The app will download Python 3.14, install dependencies, and start automatically.
+
+### Alternative: Manual Python Setup
+
+If you have Python 3.14+ installed:
 
 ```bash
 cd "W4GNS Logger"
-
-# Create virtual environment with Python 3.14
-uv venv --python 3.14 venv
-
-# Activate it
-source venv/bin/activate  # Linux/macOS
-# OR
-venv\Scripts\activate.bat # Windows
-
-# Install dependencies
-uv pip install --python ./venv/bin/python -r requirements.txt
-
-# Run the application
 python src/main.py
 ```
 
-### Using Reproducible Lock File
+---
 
-For guaranteed identical installs across team/CI:
+## Using the Application
 
-```bash
-cd "W4GNS Logger"
-uv venv --python 3.14 venv
-source venv/bin/activate
+### Getting Started
 
-# Install from lock file (fast & reproducible)
-uv pip install --python ./venv/bin/python --require-hashes -r uv.lock
-
-python src/main.py
-```
-
-## Project Structure
-
-```
-W4GNS Logger/
-├── src/                          # Main source code
-│   ├── main.py                   # Application entry point
-│   ├── config/                   # Configuration management
-│   │   └── settings.py
-│   ├── database/                 # Database layer
-│   │   ├── models.py             # SQLAlchemy ORM models
-│   │   └── repository.py         # Data access layer
-│   ├── adif/                     # ADIF handling
-│   │   ├── parser.py             # ADIF parser
-│   │   └── serializer.py         # ADIF export
-│   ├── awards/                   # Award programs
-│   │   ├── base.py               # Abstract award class
-│   │   ├── skcc.py               # SKCC award implementation
-│   │   └── registry.py           # Award registry
-│   ├── ui/                       # PyQt6 GUI
-│   │   ├── main_window.py        # Main application window
-│   │   ├── tabs/                 # Tab implementations
-│   │   └── dialogs/              # Custom dialogs
-│   ├── business_logic/           # Business logic services
-│   ├── utils/                    # Utility modules
-│   │   └── validators.py         # Data validators
-│   └── tests/                    # Unit tests
-│
-├── config/                       # Configuration files
-│   ├── awards.yaml               # Award definitions
-│   ├── clusters.yaml             # DX cluster nodes
-│   └── qrz.yaml                  # QRZ settings
-│
-├── requirements.txt              # Python dependencies
-├── venv/                         # Virtual environment
-└── README.md                     # This file
-```
-
-## Configuration
-
-Configuration files are located in the `config/` directory:
-
-### awards.yaml
-Configure SKCC award programs and tracking settings
-
-### clusters.yaml
-Configure DX cluster node connections
-
-### qrz.yaml
-QRZ.com API settings
-
-### User Settings
-User-specific settings are stored in:
-- **Linux/macOS**: `~/.w4gns_logger/config.yaml`
-- **Windows**: `%USERPROFILE%\.w4gns_logger\config.yaml`
-
-## Development
-
-### Running Tests
-
-```bash
-pytest src/tests/
-```
-
-### Code Quality
-
-```bash
-black src/                   # Format code
-flake8 src/                  # Lint
-mypy src/                    # Type checking
-```
-
-## Database
-
-The application uses SQLite for data storage. Database location is configurable in settings:
-- Default: `~/.w4gns_logger/contacts.db`
-
-### Database Schema
-
-- **contacts**: QSO records
-- **qsl_records**: QSL confirmation history
-- **awards_progress**: Award progress tracking
-- **cluster_spots**: Optional cluster spot logging
-- **configuration**: Application settings
-
-## Usage
+1. **Settings Tab** - Configure your callsign and grid square first
+2. **Logging Tab** - Enter QSOs (contacts)
+3. **Contacts Tab** - View all logged contacts
+4. **Awards Tab** - Track your progress toward awards
 
 ### Logging a Contact
 
-1. Go to the **Logging** tab
-2. Enter contact details:
-   - Callsign
-   - Date/Time
-   - Band & Frequency
-   - Mode
-   - Signal reports
-3. Click **Save**
+1. Go to **Logging** tab
+2. Enter callsign and contact details
+3. The **Previous QSOs panel** (right side) shows all past contacts with this call
+4. Click **Save Contact**
 
-### Importing ADIF
+**Fields**:
+- **Callsign** - Remote station call (required)
+- **Date/Time** - When contact was made (automatic UTC)
+- **Band** - Frequency band (required)
+- **Mode** - CW, SSB, FM, etc. (required)
+- **Frequency** - MHz (auto-fills from band)
+- **RST Sent/Received** - Signal reports (default 599)
+- **Country/State** - Station location
+- **Grid/QTH** - Grid square and city
+- **SKCC #** - SKCC member number (if applicable)
+- **Power** - Transmit power in watts
 
-1. Go to **File** → **Import ADIF**
-2. Select ADIF file (ADI or ADX format)
-3. Review import preview
-4. Click **Import**
+### Editing a Contact
+
+1. Go to **Contacts** tab
+2. **Double-click** the contact you want to edit
+3. Make corrections in the edit dialog
+4. Click **Save Changes**
+
+### Searching Contacts
+
+1. Go to **Contacts** tab
+2. Type callsign in **Search** field (auto-filters)
+3. Select **Band** to filter by band
+4. Select **View Mode**: "All Contacts" or "Last 10"
 
 ### Tracking Awards
 
 1. Go to **Awards** tab
-2. Select award program
-3. View current progress
-4. Click on award for details
+2. Select award type (Centurion, Tribune, Senator, etc.)
+3. View your progress and required items
+4. Log more contacts to advance
 
-### DX Cluster
+### Exporting Contacts
 
-1. Configure cluster nodes in **config/clusters.yaml**
-2. Go to **DX Cluster** tab
-3. Click **Connect**
-4. Monitor real-time spots
+1. Go to **File** → **Export ADIF**
+2. Select location to save
+3. File saved as ADIF format for other logging software
 
-## Dependencies
+### Importing Contacts
 
-### Core
-- PyQt6 - GUI framework
-- SQLAlchemy - Database ORM
-- adif_io - ADIF file handling
-
-### Network
-- requests - HTTP client
-- asyncio - Async I/O for cluster connections
-
-### Configuration
-- PyYAML - YAML configuration
-
-### Security
-- cryptography - Credential encryption
-
-### Development
-- pytest - Testing framework
-- black - Code formatter
-- mypy - Type checker
-- flake8 - Linter
-
-See `requirements.txt` for complete list and versions.
-
-## Important Guides
-
-### For Understanding UV Setup
-→ Read **ANSWER_TO_YOUR_QUESTION.md** for detailed explanation of why UV can download Python while pip cannot.
-
-### For UV Commands Reference
-→ Read **UV_GUIDE.md** for complete command reference, workflows, and examples.
-
-### For Design Specifications
-→ Read **Ham_Radio_Logging_Program_Design_Document.txt** for comprehensive technical requirements.
-
-## License
-
-This project is designed for ham radio operators. Please respect applicable regulations and licensing requirements.
-
-## Support
-
-For issues, feature requests, or questions:
-- Check the Design Document for detailed specifications
-- Review ANSWER_TO_YOUR_QUESTION.md for UV/Python setup issues
-- Check UV_GUIDE.md for dependency and installation help
-- Review existing code structure
-- Submit issues through your development workflow
-
-## Contributing
-
-When adding new features:
-1. Follow existing code structure
-2. Add tests for new functionality
-3. Update relevant configuration files
-4. Maintain ADIF standard compliance
-5. Keep uv.lock updated: `uv pip compile requirements.txt --python 3.14 -o uv.lock`
+1. Go to **File** → **Import ADIF**
+2. Select ADIF file from another logger
+3. Contacts are added to database
 
 ---
 
-**Version**: 1.0.0
-**Python**: 3.14.0 (managed by UV)
-**Package Manager**: UV (100x faster than pip)
-**Last Updated**: October 20, 2025
+## Features
+
+✓ **Contact Logging** - Complete QSO details with previous QSOs panel
+✓ **Award Tracking** - Centurion, Tribune, Senator, QRP, and others
+✓ **Contact Editing** - Double-click to correct mistakes
+✓ **Previous QSOs Display** - Shows callsign history with date, time, band, mode, SKCC#, state, city
+✓ **ADIF Import/Export** - Share with other logging software
+✓ **Power Tracking** - Monitor QRP and power usage
+✓ **Space Weather** - Solar flux, K-index, A-index monitoring
+✓ **QRZ Integration** - Auto-fill callsign data
+✓ **SKCC Database** - Auto-lookup SKCC member numbers
+✓ **Cross-Platform** - Windows, macOS, Linux
+
+---
+
+## Help & Documentation
+
+For complete documentation and step-by-step guides:
+
+- **HELP.md** - Full user guide with interactive navigation
+- **QUICK_START.md** - 5-minute quick start guide
+- **SETTINGS_REFERENCE.md** - Configuration options
+- **USER_SETTINGS_GUIDE.md** - Detailed settings explanation
+
+**Access Help in App**:
+- Press **F1** (or Help → Help Contents)
+- Opens interactive HELP.md with clickable navigation
+
+---
+
+## System Requirements
+
+- **Windows 10+** (64-bit recommended)
+- **macOS 10.13+** (Intel or Apple Silicon)
+- **Linux** - Ubuntu 18.04+, Debian, Fedora, etc.
+- **RAM** - 2GB minimum (4GB recommended)
+- **Storage** - 500MB for installation
+- **Display** - 1024x768 minimum (1920x1080 recommended)
+
+---
+
+## First Time Setup
+
+1. **Run the app** (see above)
+2. Go to **Settings** tab
+3. Enter your **Operator Callsign**
+4. Enter your **Home Grid Square**
+5. (Optional) Configure **QRZ Integration** for auto-fill
+6. Click **Save Settings**
+7. Start logging contacts!
+
+---
+
+## Data Backup
+
+The application automatically:
+- Backs up your database on shutdown
+- Creates ADIF backups in the Logs folder
+- Stores backups in multiple locations
+
+**Manual Backup**:
+1. Go to **Contacts** tab
+2. Click **Export ADIF**
+3. Save to external drive or cloud storage
+
+---
+
+## Support
+
+If you encounter issues:
+
+1. **Check HELP.md** - Press F1 in the app
+   - Interactive navigation with all features explained
+   - Troubleshooting section with solutions
+   - Keyboard shortcuts reference
+
+2. **Review Settings**
+   - Settings tab → Check your configuration
+   - Ensure callsign and grid square are set
+
+3. **Verify Database**
+   - Settings tab → Check database location
+   - Ensure write permissions to database folder
+
+---
+
+## License
+
+Ham Radio application for Straight Key Century Club (SKCC) operators.
+
+---
+
+**Version**: 1.8
+**Last Updated**: October 2025
+**Python**: 3.14+
+
+**73 de W4GNS** 🎙️
