@@ -84,7 +84,7 @@ def main():
         app = QApplication(sys.argv)
         _app = app  # Store for signal handler access
         app.setApplicationName("W4GNS SKCC Logger")
-        app.setApplicationVersion("1.0.0")
+        app.setApplicationVersion("1.8")
 
         # Apply stored theme
         theme = config.get("ui", {}).get("theme", "light")

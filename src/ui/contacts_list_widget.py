@@ -8,7 +8,7 @@ import logging
 from typing import Optional, List
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTableWidget,
-    QTableWidgetItem, QLabel, QComboBox, QGroupBox
+    QTableWidgetItem, QLabel, QComboBox, QGroupBox, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -16,6 +16,7 @@ from PyQt6.QtGui import QFont
 from src.database.repository import DatabaseRepository
 from src.database.models import Contact
 from src.ui.signals import get_app_signals
+from src.ui.contact_edit_dialog import ContactEditDialog
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,8 @@ class ContactsListWidget(QWidget):
         self.table.setColumnWidth(6, 70)
         self.table.setSelectionBehavior(self.table.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
+        # Connect double-click to edit dialog
+        self.table.doubleClicked.connect(self._on_table_double_click)
         main_layout.addWidget(self.table, 1)  # Give table stretch factor of 1
 
         # Pagination controls
@@ -344,8 +347,10 @@ class ContactsListWidget(QWidget):
             for offset, contact in enumerate(contacts):
                 row = start_row + offset
                 try:
-                    # Callsign
-                    self.table.setItem(row, 0, QTableWidgetItem(contact.callsign))
+                    # Callsign - also store contact ID in this item
+                    callsign_item = QTableWidgetItem(contact.callsign)
+                    callsign_item.setData(Qt.ItemDataRole.UserRole, contact.id)  # Store contact ID
+                    self.table.setItem(row, 0, callsign_item)
 
                     # Date
                     date_str = contact.qso_date or ""
@@ -391,4 +396,41 @@ class ContactsListWidget(QWidget):
             return sorted(list(bands))
         except Exception:
             return []
+
+    def _on_table_double_click(self, index) -> None:
+        """Handle double-click on table row to open edit dialog"""
+        try:
+            row = index.row()
+            if row < 0:
+                return
+
+            # Get contact ID from the callsign item (column 0)
+            callsign_item = self.table.item(row, 0)
+            if not callsign_item:
+                return
+
+            contact_id = callsign_item.data(Qt.ItemDataRole.UserRole)
+            if not contact_id:
+                logger.warning(f"No contact ID found for row {row}")
+                return
+
+            # Fetch the contact from database
+            try:
+                contact = self.db.get_contact(contact_id)
+                if not contact:
+                    logger.error(f"Contact with ID {contact_id} not found")
+                    return
+
+                # Open edit dialog
+                dialog = ContactEditDialog(contact, self.db, self)
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    # Dialog accepted and changes saved, refresh the table
+                    logger.info(f"Contact {contact.callsign} updated, refreshing table")
+                    self.refresh()
+
+            except Exception as e:
+                logger.error(f"Error fetching contact {contact_id}: {e}", exc_info=True)
+
+        except Exception as e:
+            logger.error(f"Error in _on_table_double_click: {e}", exc_info=True)
 

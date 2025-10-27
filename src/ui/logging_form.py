@@ -22,6 +22,7 @@ from src.database.skcc_membership import SKCCMembershipManager
 from src.ui.dropdown_data import DropdownData
 from src.ui.field_manager import FieldManager
 from src.ui.resizable_field import ResizableFieldRow
+from src.ui.previous_qsos_widget import PreviousQSOsWidget
 from src.qrz import get_qrz_service
 from src.config.settings import get_config_manager
 from src.utils.timezone_utils import (
@@ -123,19 +124,43 @@ class LoggingForm(QWidget):
             raise
 
     def _init_ui(self) -> None:
-        """Initialize UI components with compact grid layout"""
+        """Initialize UI components with compact grid layout and previous QSOs panel"""
         try:
             main_layout = QVBoxLayout()
             main_layout.setContentsMargins(5, 5, 5, 5)
             main_layout.setSpacing(2)
 
-            # Create compact grid form
+            # Create horizontal layout for form and previous QSOs
+            form_and_qsos_layout = QHBoxLayout()
+            form_and_qsos_layout.setContentsMargins(0, 0, 0, 0)
+            form_and_qsos_layout.setSpacing(10)
+
+            # Create compact grid form (left side)
             try:
                 compact_section = self._create_compact_grid_section()
                 logger.debug("Compact grid section created")
             except Exception as e:
                 logger.error(f"Error creating compact grid section: {e}", exc_info=True)
                 raise
+
+            # Create previous QSOs widget (right side)
+            try:
+                self.previous_qsos_widget = PreviousQSOsWidget(self.db)
+                logger.debug("Previous QSOs widget created")
+            except Exception as e:
+                logger.error(f"Error creating previous QSOs widget: {e}", exc_info=True)
+                raise
+
+            # Add form to left side (stretchable)
+            form_and_qsos_layout.addWidget(compact_section, 1)
+
+            # Add previous QSOs to right side (fixed width)
+            form_and_qsos_layout.addWidget(self.previous_qsos_widget, 1)
+
+            # Add horizontal layout to main layout
+            form_container = QWidget()
+            form_container.setLayout(form_and_qsos_layout)
+            main_layout.addWidget(form_container)
 
             try:
                 buttons_section = self._create_buttons_section()
@@ -144,8 +169,7 @@ class LoggingForm(QWidget):
                 logger.error(f"Error creating buttons section: {e}", exc_info=True)
                 raise
 
-            # Add sections to main layout
-            main_layout.addWidget(compact_section)
+            # Add buttons section
             main_layout.addLayout(buttons_section)
             main_layout.addStretch()
 
@@ -714,15 +738,15 @@ class LoggingForm(QWidget):
                 if datetime_edit is None:
                     raise ValueError("Invalid datetime value")
 
-                # QDateTime.toPython() returns naive datetime
+                # QDateTime.toPyDateTime() returns naive datetime
                 # QDateTime stores as local system time, so we need to interpret it as UTC
-                qso_datetime = datetime_edit.toPython()
+                qso_datetime = datetime_edit.toPyDateTime()
                 if qso_datetime is None:
                     raise ValueError("Failed to convert QDateTime to Python datetime")
 
                 # Make datetime UTC-aware
                 # Since we're using QDateTime.fromSecsSinceEpoch (which is UTC),
-                # the toPython() result should be treated as UTC
+                # the toPyDateTime() result should be treated as UTC
                 if qso_datetime.tzinfo is None:
                     qso_datetime = qso_datetime.replace(tzinfo=timezone.utc)
 
@@ -743,6 +767,20 @@ class LoggingForm(QWidget):
                 if not callsign:
                     raise ValueError("Callsign is empty after stripping")
 
+                # Build comment from SKCC info
+                skcc_num = self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None
+                contact_name = self.name_input.text().strip() if self.name_input.text().strip() else None
+                contact_state = self.state_combo.currentText() if self.state_combo.currentText() else None
+                contact_country = self.country_combo.currentText() if self.country_combo.currentText() else None
+                location = contact_state or contact_country or "UNKNOWN"
+
+                if skcc_num and contact_name:
+                    comment = f"SKCC: {skcc_num} - {contact_name} - {location}"
+                elif skcc_num:
+                    comment = f"SKCC: {skcc_num} - {location}"
+                else:
+                    comment = None
+
                 contact = Contact(
                     callsign=callsign,
                     qso_date=qso_date,
@@ -751,18 +789,23 @@ class LoggingForm(QWidget):
                     band=self.band_combo.currentText(),
                     mode=self.mode_combo.currentText(),
                     frequency=self.frequency_input.value(),
-                    country=self.country_combo.currentText() if self.country_combo.currentText() else None,
-                    state=self.state_combo.currentText() if self.state_combo.currentText() else None,
+                    country=contact_country if contact_country else None,
+                    state=contact_state if contact_state else None,
                     county=self.county_input.text().strip() if self.county_input.text().strip() else None,
                     gridsquare=self.grid_input.text().strip() if self.grid_input.text().strip() else None,
                     qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
                     rst_sent=str(self.rst_sent_input.value()),
                     rst_rcvd=str(self.rst_rcvd_input.value()),
-                    skcc_number=self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None,
+                    skcc_number=skcc_num,
                     key_type=self.key_type_combo.currentText(),
                     paddle=self.paddle_combo.currentText() if self.paddle_combo.currentText().strip() else None,
-                    name=self.name_input.text().strip() if self.name_input.text().strip() else None,
+                    name=contact_name,
                     tx_power=self.power_input.value() if self.power_input.value() > 0 else None,
+                    # Add operator and station information from config
+                    operator=self.config_manager.get('general.operator_callsign', 'W4GNS'),
+                    station_callsign=self.config_manager.get('general.operator_callsign', 'W4GNS'),
+                    my_gridsquare=self.config_manager.get('general.home_grid', 'FM06'),
+                    comment=comment,
                 )
                 logger.debug(f"Contact object created: {callsign}")
 
@@ -1047,11 +1090,19 @@ class LoggingForm(QWidget):
         Handle callsign input changes
 
         When callsign is entered and remains stable for 5 seconds,
-        record the QSO start time.
+        record the QSO start time. Also updates the previous QSOs widget
+        to show any previous contacts with this callsign.
 
         Args:
             text: Current callsign input text
         """
+        # Update previous QSOs widget immediately
+        try:
+            if hasattr(self, 'previous_qsos_widget'):
+                self.previous_qsos_widget.update_callsign(text)
+        except Exception as e:
+            logger.error(f"Error updating previous QSOs widget: {e}", exc_info=True)
+
         # Stop existing timer
         self.callsign_stable_timer.stop()
 

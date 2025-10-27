@@ -456,7 +456,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About W4GNS SKCC Logger",
-            "W4GNS SKCC Logger v1.0.0\n\n"
+            "W4GNS SKCC Logger v1.8\n\n"
             "A comprehensive SKCC-focused ham radio contact logging application\n"
             "with ADIF support, award tracking, and DX cluster integration.\n\n"
             "Press F1 or go to Help → Help Contents for more information."

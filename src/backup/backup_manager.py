@@ -221,7 +221,9 @@ class BackupManager:
 
             # Use default location if not specified
             if backup_location is None:
-                backup_location = Path.home() / ".w4gns_logger" / "Logs"
+                # Default to project root logs directory
+                project_root = Path(__file__).parent.parent.parent
+                backup_location = project_root / "logs"
 
             # Ensure directory exists
             backup_location.mkdir(parents=True, exist_ok=True)
@@ -321,7 +323,9 @@ class BackupManager:
 
             # Use default location if not specified
             if backup_location is None:
-                backup_location = Path.home() / ".w4gns_logger" / "Logs"
+                # Default to project root logs directory
+                project_root = Path(__file__).parent.parent.parent
+                backup_location = project_root / "logs"
 
             # Ensure directory exists
             backup_location.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 
 A comprehensive SKCC-focused ham radio contact logging application with support for ADIF import/export, award tracking, DX cluster integration, and QRZ.com synchronization.
 
-**Version**: 1.0.0
+**Version**: 1.8
 **Python**: 3.14.0 (managed by UV)
 **Package Manager**: UV (100x faster than pip)
 

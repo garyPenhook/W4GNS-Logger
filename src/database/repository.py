@@ -1237,7 +1237,8 @@ class DatabaseRepository:
                 Contact.callsign, Contact.skcc_number, Contact.qso_date, Contact.band
             ).filter(
                 Contact.mode == "CW",
-                Contact.skcc_number.isnot(None)
+                Contact.skcc_number.isnot(None),
+                Contact.key_type.in_(["STRAIGHT", "BUG", "SIDESWIPER"])  # SKCC mechanical key policy
             ).all()
 
             # Collect unique SKCC members (base number without suffixes)

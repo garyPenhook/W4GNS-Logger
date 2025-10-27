@@ -2,21 +2,18 @@
 SKCC Centurion Award Progress Widget
 
 Displays Centurion award progress with visual progress bars and endorsement levels.
-The Centurion list is automatically synced daily from SKCC.
 """
 
 import logging
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar, QTableWidget,
-    QTableWidgetItem, QPushButton
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 
 from src.database.repository import DatabaseRepository
-from src.services.centurion_fetcher import CenturionFetcher
 from src.ui.signals import get_app_signals
 
 logger = logging.getLogger(__name__)
@@ -42,20 +39,12 @@ class CenturionProgressWidget(QWidget):
         self._init_ui()
         self.refresh()
 
-        # Connect to signals instead of polling timer for refresh
+        # Connect to signals for refresh on contact changes
         signals = get_app_signals()
         signals.contacts_changed.connect(self.refresh)
         signals.contact_added.connect(self.refresh)
         signals.contact_modified.connect(self.refresh)
         signals.contact_deleted.connect(self.refresh)
-
-        # Auto-update Centurion list daily (keep as scheduled timer)
-        self.update_list_timer = QTimer()
-        self.update_list_timer.timeout.connect(self._update_centurion_list)
-        self.update_list_timer.start(3600000)  # Every hour, check if update needed
-
-        # Initial update of Centurion list
-        self._update_centurion_list()
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -70,10 +59,6 @@ class CenturionProgressWidget(QWidget):
         # Endorsements Section
         endorsement_group = self._create_endorsement_section()
         main_layout.addWidget(endorsement_group)
-
-        # List Status Section
-        status_group = self._create_status_section()
-        main_layout.addWidget(status_group)
 
         main_layout.addStretch()
         self.setLayout(main_layout)
@@ -168,30 +153,6 @@ class CenturionProgressWidget(QWidget):
         group.setLayout(layout)
         return group
 
-    def _create_status_section(self) -> QGroupBox:
-        """Create Centurion list status section"""
-        group = QGroupBox("Member List Status")
-        layout = QVBoxLayout()
-
-        # Status information
-        status_layout = QHBoxLayout()
-
-        self.list_status_label = QLabel("Member list: Unknown")
-        self.list_status_label.setFont(QFont("Arial", 9))
-        status_layout.addWidget(self.list_status_label)
-
-        # Manual refresh button
-        refresh_btn = QPushButton("Update List Now")
-        refresh_btn.setMaximumWidth(120)
-        refresh_btn.clicked.connect(self._manual_update_centurion_list)
-        status_layout.addWidget(refresh_btn)
-
-        status_layout.addStretch()
-        layout.addLayout(status_layout)
-
-        group.setLayout(layout)
-        return group
-
     def refresh(self) -> None:
         """Refresh award progress from database"""
         try:
@@ -237,45 +198,3 @@ class CenturionProgressWidget(QWidget):
                 label.setText(label.text().replace("☑", "☐"))
                 label.setStyleSheet("color: #666666;")
 
-    def _update_centurion_list(self) -> None:
-        """Update Centurion member list from SKCC if needed"""
-        try:
-            session = self.db.get_session()
-            success = CenturionFetcher.refresh_centurion_list(session, force=False)
-            session.close()
-
-            if success:
-                member_count = CenturionFetcher.get_centurion_member_count(session)
-                self.list_status_label.setText(f"✓ Member list updated • {member_count} on record")
-                logger.info(f"Centurion list refreshed: {member_count} members")
-            else:
-                self.list_status_label.setText("Member list update failed")
-
-        except Exception as e:
-            logger.error(f"Error updating Centurion list: {e}")
-            self.list_status_label.setText(f"Error updating list: {str(e)}")
-
-    def _manual_update_centurion_list(self) -> None:
-        """Manually trigger Centurion list update"""
-        try:
-            self.list_status_label.setText("Updating member list...")
-
-            session = self.db.get_session()
-            success = CenturionFetcher.refresh_centurion_list(session, force=True)
-            session.close()
-
-            if success:
-                member_count = CenturionFetcher.get_centurion_member_count(session)
-                self.list_status_label.setText(f"✓ List updated • {member_count} members")
-                logger.info(f"Manual Centurion list update: {member_count} members")
-            else:
-                self.list_status_label.setText("Update failed - check network connection")
-
-        except Exception as e:
-            logger.error(f"Error in manual Centurion list update: {e}")
-            self.list_status_label.setText(f"Update error: {str(e)}")
-
-    def closeEvent(self, event):
-        """Cleanup timers on close"""
-        self.update_list_timer.stop()
-        super().closeEvent(event)

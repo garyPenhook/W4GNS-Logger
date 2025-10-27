@@ -29,44 +29,9 @@ class DropdownData:
         ("23cm", 1240.0),
     ]
 
-    # OPERATING MODES
+    # OPERATING MODES (CW only for SKCC)
     MODES = [
         "CW",
-        "SSB",
-        "FM",
-        "AM",
-        "RTTY",
-        "PSK31",
-        "PSK63",
-        "PSKFSK8",
-        "MFSK",
-        "OLIVIA",
-        "HELL",
-        "JT65",
-        "JT9",
-        "JT4",
-        "ISCAT",
-        "MSK144",
-        "WSPR",
-        "FSK441",
-        "4A",
-        "8FSK",
-        "AFSK1200",
-        "ATV",
-        "C4FM",
-        "DSTAR",
-        "DIGI",
-        "DIGITALVOICE",
-        "DCN",
-        "ARDOP",
-        "DOMINO",
-        "PAX",
-        "PAC",
-        "PACKET",
-        "AMTOR",
-        "ASCI",
-        "PACTOR",
-        "MT63",
     ]
 
     # US STATES
