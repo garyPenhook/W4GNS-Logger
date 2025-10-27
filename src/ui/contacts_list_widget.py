@@ -40,6 +40,9 @@ class ContactsListWidget(QWidget):
         self.page_size = 10000  # Load all contacts at once (10000 is effectively unlimited for 201 contacts)
         self.total_contacts = 0
 
+        # View mode state
+        self.view_mode = "all"  # "all" or "last_10"
+
         self._init_ui()
         self.refresh()
 
@@ -59,6 +62,20 @@ class ContactsListWidget(QWidget):
         # Search and filter section
         search_group = self._create_search_section()
         main_layout.addWidget(search_group)
+
+        # View mode selector
+        view_layout = QHBoxLayout()
+        view_label = QLabel("View:")
+        view_label.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        view_layout.addWidget(view_label)
+
+        self.view_mode_combo = QComboBox()
+        self.view_mode_combo.addItem("All Contacts", "all")
+        self.view_mode_combo.addItem("Last 10 Contacts", "last_10")
+        self.view_mode_combo.currentDataChanged.connect(self._on_view_mode_changed)
+        view_layout.addWidget(self.view_mode_combo)
+        view_layout.addStretch()
+        main_layout.addLayout(view_layout)
 
         # Statistics section
         stats_group = self._create_stats_section()
@@ -166,6 +183,12 @@ class ContactsListWidget(QWidget):
 
                 # Get total contact count for statistics
                 self.total_contacts = self.db.get_contact_count()
+
+                # Filter by view mode
+                if self.view_mode == "last_10":
+                    # Sort by date/time descending and take last 10
+                    self.contacts.sort(key=lambda c: (c.qso_date or "", c.time_on or ""), reverse=True)
+                    self.contacts = self.contacts[:10]
             except Exception as db_error:
                 logger.error(f"Database error refreshing contacts: {db_error}", exc_info=True)
                 self.contacts = []
@@ -253,6 +276,11 @@ class ContactsListWidget(QWidget):
             self.load_more_btn.setText(f"Load More ({remaining} remaining)")
         else:
             self.load_more_btn.setText("All Contacts Loaded")
+
+    def _on_view_mode_changed(self, mode: str) -> None:
+        """Handle view mode change"""
+        self.view_mode = mode
+        self.refresh()
 
     def _apply_filters(self) -> List[Contact]:
         """Apply search and filter criteria"""
