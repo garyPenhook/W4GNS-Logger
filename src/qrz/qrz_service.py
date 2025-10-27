@@ -43,16 +43,19 @@ class QRZService:
         api_key = self.config_manager.get("qrz.api_key", "")
 
         if not username or not password:
-            logger.warning("QRZ callsign lookup credentials not configured")
+            logger.error("QRZ callsign lookup credentials not configured (username or password missing)")
             return False
 
         try:
             # API key is optional - only needed for logbook uploads
             self.api_client = QRZAPIClient(username, password, api_key)
-            logger.debug(f"QRZ client initialized with callsign lookup credentials{' and logbook API key' if api_key else ''}")
+            if api_key:
+                logger.info(f"QRZ client initialized with credentials and logbook API key: {api_key[:8]}...")
+            else:
+                logger.warning("QRZ client initialized but no API key provided (logbook uploads will fail)")
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize QRZ client: {e}")
+            logger.error(f"Failed to initialize QRZ client: {e}", exc_info=True)
             return False
 
     def authenticate(self) -> bool:
@@ -134,19 +137,30 @@ class QRZService:
         Returns:
             True if upload successful
         """
-        if not self.is_enabled() or not self.config_manager.get("qrz.auto_upload", False):
+        if not self.is_enabled():
+            logger.debug("QRZ upload skipped: QRZ integration disabled")
+            return False
+
+        if not self.config_manager.get("qrz.auto_upload", False):
+            logger.debug("QRZ upload skipped: Auto-upload disabled")
             return False
 
         if not self.authenticated:
+            logger.debug("QRZ not authenticated, attempting authentication...")
             if not self.authenticate():
+                logger.error("QRZ upload failed: Authentication failed")
                 return False
+            logger.info("QRZ authenticated successfully")
 
         try:
+            logger.debug(f"Uploading QSO to QRZ: {callsign} on {qso_date}")
             with self._lock:
-                return self.api_client.upload_qso(
+                result = self.api_client.upload_qso(
                     callsign, qso_date, time_on, freq, mode,
                     rst_sent, rst_rcvd, tx_power, notes
                 )
+                logger.info(f"QRZ upload result for {callsign}: {result}")
+                return result
         except QRZError as e:
             logger.error(f"QSO upload failed: {e}")
             return False
