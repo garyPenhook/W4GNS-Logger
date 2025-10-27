@@ -177,6 +177,7 @@ class ImportWorkerThread(QThread):
 
             'SKCC': 'skcc_number',
             'KEY_TYPE': 'key_type',
+            'APP_SKCCLOGGER_KEYTYPE': 'key_type',  # Custom SKCC Logger field for key type
 
             'PROPAGATION_MODE': 'propagation_mode',
             'SAT_NAME': 'sat_name',
@@ -220,6 +221,20 @@ class ImportWorkerThread(QThread):
                 else:
                     # Include unmapped fields as-is (might be custom fields)
                     mapped[adif_key.lower()] = value
+
+            # Normalize key_type field: convert SKCC Logger abbreviations to standard names
+            if 'key_type' in mapped and mapped['key_type']:
+                key_type = mapped['key_type'].upper().strip()
+                # SKCC Logger uses: SK, BUG, SS
+                # Standard uses: STRAIGHT, BUG, SIDESWIPER
+                if key_type == 'SK':
+                    mapped['key_type'] = 'STRAIGHT'
+                elif key_type == 'SS':
+                    mapped['key_type'] = 'SIDESWIPER'
+                elif key_type == 'BUG':
+                    mapped['key_type'] = 'BUG'  # Already correct
+                else:
+                    mapped['key_type'] = key_type.upper()  # Keep other values as-is
 
             mapped_records.append(mapped)
 
