@@ -62,7 +62,7 @@ class ADIFParser:
         "ARRL_SECT", "AWARD_SUBMITTED", "AWARD_GRANTED",
         "CONTEST_ID", "CLASS", "CHECK", "POWER",
         "POTA_REF", "POTA_PARKS", "SOTA_PARKS",
-        "VUCC_GRIDS"
+        "VUCC_GRIDS", "KEY_TYPE", "SKCC"
     }
 
     # QSL/Confirmation Fields
