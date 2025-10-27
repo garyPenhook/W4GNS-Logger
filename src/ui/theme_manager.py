@@ -1,5 +1,5 @@
 """
-Theme Manager for W4GNS Logger
+Theme Manager for W4GNS SKCC Logger
 
 Handles light and dark theme application to the entire application.
 Provides functions to switch themes and apply stored theme on startup.

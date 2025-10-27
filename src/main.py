@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Ham Radio Logging Program - Main Application Entry Point
+W4GNS SKCC Logger - Main Application Entry Point
 
-A comprehensive ham radio contact logging application with support for:
+A comprehensive SKCC-focused ham radio contact logging application with support for:
 - ADIF import/export
-- Award tracking (DXCC, WAS, SKCC, etc.)
+- Award tracking (SKCC, DXCC, WAS, etc.)
 - DX Cluster integration
 - QRZ.com synchronization
 - Cross-platform GUI (PyQt6)
@@ -83,7 +83,7 @@ def main():
         # Create Qt application
         app = QApplication(sys.argv)
         _app = app  # Store for signal handler access
-        app.setApplicationName("W4GNS Ham Radio Logger")
+        app.setApplicationName("W4GNS SKCC Logger")
         app.setApplicationVersion("1.0.0")
 
         # Apply stored theme

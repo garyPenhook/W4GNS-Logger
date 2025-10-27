@@ -1,6 +1,6 @@
-# W4GNS Ham Radio Logger
+# W4GNS SKCC Logger
 
-A comprehensive ham radio contact logging application with support for ADIF import/export, award tracking, DX cluster integration, and QRZ.com synchronization.
+A comprehensive SKCC-focused ham radio contact logging application with support for ADIF import/export, award tracking, DX cluster integration, and QRZ.com synchronization.
 
 **Version**: 1.0.0
 **Python**: 3.14.0 (managed by UV)

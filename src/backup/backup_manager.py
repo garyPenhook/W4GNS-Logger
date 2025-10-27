@@ -1,7 +1,7 @@
 """
 Backup manager for database and ADIF file backups
 
-Handles backing up the W4GNS Logger database and ADIF exports to a user-selected
+Handles backing up the W4GNS SKCC Logger database and ADIF exports to a user-selected
 location (e.g., USB drive, external hard drive, cloud storage).
 """
 

@@ -169,7 +169,7 @@ class ADIFExporter:
         """
         header_lines = []
         header_lines.append("ADIF specification by N0TA Version 3.1.5")
-        header_lines.append(f"<PROGRAMID:10>W4GNS Logger")
+        header_lines.append(f"<PROGRAMID:17>W4GNS SKCC Logger")
         header_lines.append(f"<PROGRAMVERSION:6>1.0.0")
         header_lines.append(f"<CREATED_TIMESTAMP:{len(datetime.utcnow().isoformat())}>{datetime.utcnow().isoformat()}")
 
