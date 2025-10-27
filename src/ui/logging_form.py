@@ -418,18 +418,6 @@ class LoggingForm(QWidget):
         row4.addWidget(self.key_type_combo, 0)
         row4.addSpacing(10)
 
-        # Paddle
-        self.paddle_combo = QComboBox()
-        self.paddle_combo.addItems(["", "ELECTRONIC", "SEMI-AUTO", "IAMBIC", "MECHANICAL"])
-        self.paddle_combo.setMaximumWidth(90)
-        font = self.paddle_combo.font()
-        font.setPointSize(int(font.pointSize() * 1.15))
-        self.paddle_combo.setFont(font)
-        self.paddle_combo.setMinimumHeight(35)
-        row4.addWidget(create_label("Paddle:"))
-        row4.addWidget(self.paddle_combo, 0)
-        row4.addSpacing(10)
-
         # Operator Name
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Operator name")
@@ -807,7 +795,6 @@ class LoggingForm(QWidget):
                     rst_rcvd=str(self.rst_rcvd_input.value()),
                     skcc_number=skcc_num,
                     key_type=self.key_type_combo.currentText(),
-                    paddle=self.paddle_combo.currentText() if self.paddle_combo.currentText().strip() else None,
                     name=contact_name,
                     tx_power=self.power_input.value() if self.power_input.value() > 0 else None,
                     # Add operator and station information from config
@@ -984,7 +971,6 @@ class LoggingForm(QWidget):
                 logger.warning(f"Failed to restore last key type: {e}")
                 self.key_type_combo.setCurrentIndex(0)
 
-            self.paddle_combo.setCurrentIndex(0)  # Reset to empty
             self.name_input.clear()
             self.county_input.clear()
             self.qrp_checkbox.setChecked(False)
