@@ -1089,6 +1089,11 @@ class DatabaseRepository:
                 f"Failed: {stats['failed']}"
             )
 
+            # Emit signal to refresh all widgets after successful import
+            if stats['imported'] > 0 or stats['updated'] > 0:
+                self.signals.contacts_changed.emit()
+                logger.info("Emitted contacts_changed signal to refresh widgets")
+
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Database error during import: {e}")
