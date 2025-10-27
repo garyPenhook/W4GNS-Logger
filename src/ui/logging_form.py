@@ -870,6 +870,14 @@ class LoggingForm(QWidget):
                 f"Contact with {contact.callsign} saved successfully!"
             )
 
+            # Clear previous QSOs panel
+            try:
+                if hasattr(self, 'previous_qsos_widget'):
+                    self.previous_qsos_widget.update_callsign("")
+                    logger.debug("Previous QSOs panel cleared after successful save")
+            except Exception as e:
+                logger.warning(f"Failed to clear previous QSOs widget: {e}")
+
             # Clear form
             self.clear_form()
 
