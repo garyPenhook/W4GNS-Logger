@@ -1645,9 +1645,14 @@ class DatabaseRepository:
                     base_number = base_number.split('x')[0]
 
                 if base_number and (base_number in tribune_member_set or base_number in senator_member_set):
-                    # Only add if contacted after Tribune x8 date
-                    if tribune_x8_achievement_date and contact.qso_date > tribune_x8_achievement_date:
-                        unique_senators.add(base_number)
+                    # Only add if user has achieved Tribune x8 first
+                    # Use official SKCC date if available, otherwise require local achievement
+                    if is_tribune_x8:
+                        # User has achieved Tribune x8 locally (400+ Tribune contacts)
+                        # Count Senator contacts only on or after Senator eligible date
+                        if contact.qso_date >= senator_eligible_date:
+                            unique_senators.add(base_number)
+                    # If not Tribune x8 yet, don't count any Senator contacts (prerequisite not met)
 
             # For endorsement calculation, only count Tribune/Senator members contacted AFTER x8
             senator_count_for_endorsement = len(unique_senators)

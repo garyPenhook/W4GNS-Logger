@@ -216,19 +216,23 @@ class SenatorAward(AwardProgram):
 
         for contact in contacts:
             if self.validate(contact):
-                # Only count if after Tribune x8 date
-                if tribune_x8_date and contact.get('qso_date', '') > tribune_x8_date:
-                    skcc_number = contact.get('skcc_number', '').strip()
-                    if skcc_number:
-                        # Extract base number
-                        base_number = skcc_number.split()[0]
-                        if base_number and base_number[-1] in 'CTS':
-                            base_number = base_number[:-1]
-                        if base_number and 'x' in base_number:
-                            base_number = base_number.split('x')[0]
-                        # Only add if it's a valid number
-                        if base_number and base_number.isdigit():
-                            unique_senators.add(base_number)
+                # Only count if user has achieved Tribune x8 first (prerequisite)
+                if is_tribune_x8:
+                    # User has achieved Tribune x8 (400+ Tribune contacts)
+                    # Count Senator contacts on or after Senate eligible date
+                    qso_date = contact.get('qso_date', '')
+                    if qso_date >= self.senator_effective_date_str:
+                        skcc_number = contact.get('skcc_number', '').strip()
+                        if skcc_number:
+                            # Extract base number
+                            base_number = skcc_number.split()[0]
+                            if base_number and base_number[-1] in 'CTS':
+                                base_number = base_number[:-1]
+                            if base_number and 'x' in base_number:
+                                base_number = base_number.split('x')[0]
+                            # Only add if it's a valid number
+                            if base_number and base_number.isdigit():
+                                unique_senators.add(base_number)
 
         current_count = len(unique_senators)
         required_count = 200
