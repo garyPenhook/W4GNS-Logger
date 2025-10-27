@@ -230,8 +230,12 @@ class DXAwardProgressWidget(QWidget):
             # Get all contacts
             from src.database.models import Contact
             contacts = session.query(Contact).all()
+            logger.info(f"DX Award: Fetched {len(contacts)} total contacts from database")
             contact_dicts = [self._contact_to_dict(c) for c in contacts]
-            session.close()
+            logger.debug(f"DX Award: Converted {len(contact_dicts)} contacts to dict format")
+
+            # Keep session open - award class may need it
+            # session.close()  # REMOVED: Session closed too early
 
             # Calculate DXQ progress
             dxq_award = DXQAward(session)
