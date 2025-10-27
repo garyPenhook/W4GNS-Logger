@@ -284,3 +284,14 @@ class WASAward(AwardProgram):
                 'All 50 US states required (AL through WY)',
             ]
         }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return WAS endorsement levels"""
+        return [
+            {'level': 'WAS', 'states': 50, 'description': 'All 50 US states'},
+            {'level': 'WAS-160M', 'states': 50, 'description': 'All 50 states on 160M'},
+            {'level': 'WAS-80M', 'states': 50, 'description': 'All 50 states on 80M'},
+            {'level': 'WAS-40M', 'states': 50, 'description': 'All 50 states on 40M'},
+            {'level': 'WAS-20M', 'states': 50, 'description': 'All 50 states on 20M'},
+            {'level': 'WAS-QRP', 'states': 50, 'description': 'All 50 states at QRP (≤5W)'},
+        ]

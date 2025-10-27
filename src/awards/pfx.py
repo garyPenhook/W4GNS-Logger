@@ -338,3 +338,15 @@ class PFXAward(AwardProgram):
                 'Only the highest SKCC number per prefix contributes to points'
             ]
         }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return PFX endorsement levels"""
+        return [
+            {'level': 'PX1', 'points': 500000, 'description': '500,000 points'},
+            {'level': 'PX2', 'points': 1000000, 'description': '1,000,000 points'},
+            {'level': 'PX3', 'points': 1500000, 'description': '1,500,000 points'},
+            {'level': 'PX5', 'points': 2500000, 'description': '2,500,000 points'},
+            {'level': 'PX10', 'points': 5000000, 'description': '5,000,000 points'},
+            {'level': 'PX15', 'points': 7500000, 'description': '7,500,000 points'},
+            {'level': 'PX20', 'points': 10000000, 'description': '10,000,000 points'},
+        ]

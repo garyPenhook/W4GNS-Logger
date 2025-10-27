@@ -221,3 +221,13 @@ class TripleKeyAward(AwardProgram):
                 'Exchanges should include key type (SK, BUG, or SS acceptable)'
             ]
         }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return Triple Key endorsement levels"""
+        return [
+            {'level': 'Base', 'members': 300, 'description': '300 unique members (100 per key type)'},
+            {'level': 'x2', 'members': 600, 'description': '600 unique members (200 per key type)'},
+            {'level': 'x3', 'members': 900, 'description': '900 unique members (300 per key type)'},
+            {'level': 'x5', 'members': 1500, 'description': '1500 unique members (500 per key type)'},
+            {'level': 'x10', 'members': 3000, 'description': '3000 unique members (1000 per key type)'},
+        ]

@@ -227,6 +227,15 @@ class DXQAward(AwardProgram):
             'dxcc_entity_required': True
         }
 
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return DXQ endorsement levels"""
+        return [
+            {'level': 'DXQ-10', 'countries': 10, 'description': '10 DXCC entities'},
+            {'level': 'DXQ-25', 'countries': 25, 'description': '25 DXCC entities'},
+            {'level': 'DXQ-50', 'countries': 50, 'description': '50 DXCC entities'},
+            {'level': 'DXQ-100', 'countries': 100, 'description': '100 DXCC entities'},
+        ]
+
 
 class DXCAward(AwardProgram):
     """SKCC DX Award (Country-based) - Each country counts only once"""
@@ -409,3 +418,12 @@ class DXCAward(AwardProgram):
             'mechanical_key': True,
             'dxcc_entity_required': True
         }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return DXC endorsement levels"""
+        return [
+            {'level': 'DXC-10', 'countries': 10, 'description': '10 DXCC entities'},
+            {'level': 'DXC-25', 'countries': 25, 'description': '25 DXCC entities'},
+            {'level': 'DXC-50', 'countries': 50, 'description': '50 DXCC entities'},
+            {'level': 'DXC-100', 'countries': 100, 'description': '100 DXCC entities'},
+        ]

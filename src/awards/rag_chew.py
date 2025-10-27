@@ -329,3 +329,16 @@ class RagChewAward(AwardProgram):
                 'RST, name, location, and SKCC number must be exchanged'
             ]
         }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return Rag Chew endorsement levels"""
+        return [
+            {'level': 'Base', 'minutes': 300, 'description': '300 minutes'},
+            {'level': 'x2', 'minutes': 600, 'description': '600 minutes'},
+            {'level': 'x3', 'minutes': 900, 'description': '900 minutes'},
+            {'level': 'x4', 'minutes': 1200, 'description': '1200 minutes'},
+            {'level': 'x5', 'minutes': 1500, 'description': '1500 minutes'},
+            {'level': 'x10', 'minutes': 3000, 'description': '3000 minutes'},
+            {'level': 'x15', 'minutes': 4500, 'description': '4500 minutes'},
+            {'level': 'x20', 'minutes': 6000, 'description': '6000 minutes'},
+        ]

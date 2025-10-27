@@ -320,3 +320,14 @@ class WACAward(AwardProgram):
                 'Remote stations do not need to be participating in the award',
             ]
         }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return WAC endorsement levels"""
+        return [
+            {'level': 'WAC', 'continents': 6, 'description': 'All 6 continents'},
+            {'level': 'WAC-160M', 'continents': 6, 'description': 'All 6 continents on 160M'},
+            {'level': 'WAC-80M', 'continents': 6, 'description': 'All 6 continents on 80M'},
+            {'level': 'WAC-40M', 'continents': 6, 'description': 'All 6 continents on 40M'},
+            {'level': 'WAC-20M', 'continents': 6, 'description': 'All 6 continents on 20M'},
+            {'level': 'WAC-QRP', 'continents': 6, 'description': 'All 6 continents at QRP (≤5W)'},
+        ]

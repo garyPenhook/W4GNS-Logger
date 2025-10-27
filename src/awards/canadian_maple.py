@@ -368,3 +368,28 @@ class CanadianMapleAward(AwardProgram):
             if state in CANADIAN_REGIONS:
                 provinces[state] = provinces.get(state, 0) + 1
         return provinces
+
+    def get_requirements(self) -> Dict[str, Any]:
+        """Return Canadian Maple award requirements"""
+        return {
+            'name': 'SKCC Canadian Maple Award',
+            'description': 'Contact SKCC members from Canadian provinces and territories',
+            'levels': [
+                {'level': 'Yellow Maple', 'requirement': '10 provinces/territories'},
+                {'level': 'Orange Maple', 'requirement': '10 provinces per band (one per band)'},
+                {'level': 'Red Maple', 'requirement': '90 total: 10 from each province across 9 bands'},
+                {'level': 'Gold Maple', 'requirement': '90 QRP (≤5W) across 9 bands'},
+            ],
+            'modes': ['CW'],
+            'mechanical_key': True,
+            'valid_from': 'Sept 1, 2009 (provinces), Jan 2014 (territories)',
+        }
+
+    def get_endorsements(self) -> List[Dict[str, Any]]:
+        """Return Canadian Maple endorsement levels"""
+        return [
+            {'level': 'Yellow Maple', 'contacts': 10, 'description': '10 provinces/territories'},
+            {'level': 'Orange Maple', 'contacts': 10, 'description': '10 provinces per band'},
+            {'level': 'Red Maple', 'contacts': 90, 'description': '90 total across 9 bands'},
+            {'level': 'Gold Maple', 'contacts': 90, 'description': '90 QRP ≤5W across 9 bands'},
+        ]
