@@ -830,15 +830,17 @@ class LoggingForm(QWidget):
                 self.db.add_contact(contact)
                 logger.info(f"Contact saved successfully: {contact.callsign} on {contact.band} {contact.mode}")
 
-                # Save last used band and power for next QSO
+                # Save last used band, power, and key type for next QSO
                 try:
                     last_band = self.band_combo.currentText()
                     last_power = self.power_input.value()
+                    last_key_type = self.key_type_combo.currentText()
                     self.config_manager.set('logging.last_band', last_band)
                     self.config_manager.set('logging.last_power', last_power)
-                    logger.debug(f"Saved last band '{last_band}' and power '{last_power}' for next QSO")
+                    self.config_manager.set('logging.last_key_type', last_key_type)
+                    logger.debug(f"Saved last band '{last_band}', power '{last_power}', and key type '{last_key_type}' for next QSO")
                 except Exception as e:
-                    logger.warning(f"Failed to save last band/power: {e}")
+                    logger.warning(f"Failed to save last band/power/key_type: {e}")
                     # Don't fail contact save if config save fails
 
             except Exception as e:
@@ -894,10 +896,10 @@ class LoggingForm(QWidget):
 
     def _restore_last_band_and_power(self) -> None:
         """
-        Restore last used band and power from config on form initialization
+        Restore last used band, power, and key type from config on form initialization
 
-        Loads previously saved band and power values so operator doesn't need
-        to re-enter them if working multiple QSOs on same band/power.
+        Loads previously saved band, power, and key type values so operator doesn't need
+        to re-enter them if working multiple QSOs on same band/power/key_type.
         """
         try:
             # Restore last used band
@@ -913,8 +915,16 @@ class LoggingForm(QWidget):
             if last_power:
                 self.power_input.setValue(int(last_power))
                 logger.debug(f"On init: Restored last power: {last_power}W")
+
+            # Restore last used key type
+            last_key_type = self.config_manager.get('logging.last_key_type', None)
+            if last_key_type:
+                index = self.key_type_combo.findText(last_key_type)
+                if index >= 0:
+                    self.key_type_combo.setCurrentIndex(index)
+                    logger.debug(f"On init: Restored last key type: {last_key_type}")
         except Exception as e:
-            logger.warning(f"Failed to restore last band/power on init: {e}")
+            logger.warning(f"Failed to restore last band/power/key_type on init: {e}")
             # Not critical - just use defaults if restore fails
 
     def clear_form(self) -> None:
@@ -957,7 +967,23 @@ class LoggingForm(QWidget):
             self.rst_sent_input.setValue(599)  # Reset to 599 (5,9,9)
             self.rst_rcvd_input.setValue(599)  # Reset to 599 (5,9,9)
             self.skcc_number_input.clear()
-            self.key_type_combo.setCurrentIndex(0)  # Reset to STRAIGHT
+
+            # Restore last used key type (or set to first if none saved)
+            try:
+                last_key_type = self.config_manager.get('logging.last_key_type', None)
+                if last_key_type:
+                    index = self.key_type_combo.findText(last_key_type)
+                    if index >= 0:
+                        self.key_type_combo.setCurrentIndex(index)
+                        logger.debug(f"Restored last key type: {last_key_type}")
+                    else:
+                        self.key_type_combo.setCurrentIndex(0)
+                else:
+                    self.key_type_combo.setCurrentIndex(0)
+            except Exception as e:
+                logger.warning(f"Failed to restore last key type: {e}")
+                self.key_type_combo.setCurrentIndex(0)
+
             self.paddle_combo.setCurrentIndex(0)  # Reset to empty
             self.name_input.clear()
             self.county_input.clear()
