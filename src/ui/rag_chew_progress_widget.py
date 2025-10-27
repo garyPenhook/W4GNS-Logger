@@ -313,8 +313,52 @@ class RagChewProgressWidget(QWidget):
 
             self.band_table.setItem(row, 2, status_item)
 
+    def _calculate_duration(self, time_on: str, time_off: str) -> Optional[int]:
+        """
+        Calculate QSO duration in minutes from time_on and time_off (HHMM format)
+
+        Args:
+            time_on: Start time in HHMM format (e.g., "1430")
+            time_off: End time in HHMM format (e.g., "1500")
+
+        Returns:
+            Duration in minutes, or None if calculation fails
+        """
+        try:
+            if not time_on or not time_off:
+                return None
+
+            # Parse HHMM format
+            on_hours = int(time_on[:2])
+            on_minutes = int(time_on[2:4])
+            off_hours = int(time_off[:2])
+            off_minutes = int(time_off[2:4])
+
+            # Convert to total minutes since midnight
+            on_total = on_hours * 60 + on_minutes
+            off_total = off_hours * 60 + off_minutes
+
+            # Calculate duration
+            if off_total >= on_total:
+                # Same day
+                duration = off_total - on_total
+            else:
+                # Wrapped to next day (e.g., 2300 to 0030)
+                duration = (1440 - on_total) + off_total  # 1440 = 24 * 60 minutes
+
+            # Return duration in minutes (minimum 0)
+            return max(0, duration)
+        except (ValueError, IndexError):
+            logger.debug(f"Failed to calculate duration from {time_on} to {time_off}")
+            return None
+
     def _contact_to_dict(self, contact) -> dict:
         """Convert Contact ORM object to dictionary"""
+        # Calculate duration from time_on and time_off
+        duration = None
+        if contact.time_on and contact.time_off:
+            duration = self._calculate_duration(contact.time_on, contact.time_off)
+
         return {
             'callsign': contact.callsign,
             'mode': contact.mode,
@@ -323,5 +367,5 @@ class RagChewProgressWidget(QWidget):
             'qso_time': contact.time_on,
             'skcc_number': contact.skcc_number,
             'key_type': contact.key_type,
-            'duration': contact.duration if hasattr(contact, 'duration') else None,
+            'duration': duration,
         }
