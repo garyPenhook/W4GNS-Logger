@@ -342,7 +342,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.country_combo.setFont(font)
         self.country_combo.setMinimumHeight(35)
-        self.country_combo.setMaximumWidth(84)  # 30% narrower
+        self.country_combo.setMaximumWidth(140)  # Increased for better visibility of country names
         row2.addWidget(create_label("Country:"))
         row2.addWidget(self.country_combo, 0)
 
