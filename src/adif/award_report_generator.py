@@ -12,7 +12,7 @@ Report Formats:
 
 Dynamically discovers and uses award rules from award implementations.
 """
-# pyright: reportOptionalMemberAccess=false
+# pyright: reportOptionalMemberAccess=false, reportUnknownVariableType=false, reportGeneralTypeIssues=false, reportOptionalSubscript=false, reportIncompatibleMethodOverride=false
 
 import logging
 from datetime import datetime

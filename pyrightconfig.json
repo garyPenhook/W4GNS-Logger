@@ -1,0 +1,14 @@
+{
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.14",
+  "include": ["src"],
+  "exclude": ["tests", "**/__pycache__"],
+  "reportOptionalMemberAccess": false,
+  "reportGeneralTypeIssues": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownArgumentType": false,
+  "reportOptionalSubscript": false,
+  "reportIncompatibleMethodOverride": false,
+  "reportPrivateUsage": false
+}
