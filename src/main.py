@@ -10,7 +10,8 @@ A comprehensive SKCC-focused ham radio contact logging application with support 
 - Cross-platform GUI (PyQt6)
 """
 
-# pyright: disable=reportUnknownParameterType, reportUnknownArgumentType
+# pyright: reportUnknownParameterType=false
+# pyright: reportUnknownArgumentType=false
 
 import sys
 import logging

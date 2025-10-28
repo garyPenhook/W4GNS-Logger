@@ -12,6 +12,7 @@ Report Formats:
 
 Dynamically discovers and uses award rules from award implementations.
 """
+# pyright: reportOptionalMemberAccess=false
 
 import logging
 from datetime import datetime
@@ -54,7 +55,7 @@ class AwardReportGenerator:
         self.db = db
         self.my_callsign = my_callsign
         self.my_skcc = my_skcc
-        self._award_classes_cache: Dict[str, Type] = {}
+        self._award_classes_cache: Dict[str, Type[Any]] = {}
 
     def get_available_awards(self) -> List[str]:
         """
@@ -83,7 +84,7 @@ class AwardReportGenerator:
 
         return sorted(awards)
 
-    def get_award_class(self, award_name: str) -> Optional[Type]:
+    def get_award_class(self, award_name: str) -> Optional[Type[Any]]:
         """
         Get award class for a given award name
 
