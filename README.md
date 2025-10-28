@@ -139,7 +139,7 @@ For complete documentation and step-by-step guides:
 - **macOS 10.13+** (Intel or Apple Silicon)
 - **Linux** - Ubuntu 18.04+, Debian, Fedora, etc.
 - **RAM** - 2GB minimum (4GB recommended)
-- **Storage** - 500MB for installation
+- **Storage** - ~200-250MB (includes Python 3.14 + dependencies; app code only is ~3MB)
 - **Display** - 1024x768 minimum (1920x1080 recommended)
 
 ---
