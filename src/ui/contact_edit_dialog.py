@@ -253,7 +253,7 @@ class ContactEditDialog(QDialog):
             self.name_input.setText(self.contact.name or "")
             self.skcc_number_input.setText(self.contact.skcc_number or "")
             self.county_input.setText(self.contact.county or "")
-            self.power_input.setValue(self.contact.tx_power or 0)
+            self.power_input.setValue(int(self.contact.tx_power or 0))
             self.my_rig_make_input.setText(self.contact.my_rig_make or "")
             self.my_rig_model_input.setText(self.contact.my_rig_model or "")
             self.my_antenna_make_input.setText(self.contact.my_antenna_make or "")
