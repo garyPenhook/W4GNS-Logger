@@ -74,9 +74,13 @@ class Contact(Base):
     operator = Column(String(100))
     station_callsign = Column(String(12))
     my_rig = Column(String(100))
+    my_rig_make = Column(String(50))  # My rig manufacturer (e.g., Yaesu, Kenwood, ICOM)
+    my_rig_model = Column(String(50))  # My rig model number
     rig_make = Column(String(50))
     rig_model = Column(String(50))
     my_antenna = Column(String(100))
+    my_antenna_make = Column(String(50))  # My antenna manufacturer
+    my_antenna_model = Column(String(50))  # My antenna model
     antenna_make = Column(String(50))
     antenna_model = Column(String(50))
 

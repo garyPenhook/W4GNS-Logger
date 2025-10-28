@@ -78,6 +78,10 @@ class SenatorProgressWidget(QWidget):
         status_group = self._create_status_section()
         main_layout.addWidget(status_group)
 
+        # Actions Section
+        actions_group = self._create_actions_section()
+        main_layout.addWidget(actions_group)
+
         main_layout.addStretch()
         self.setLayout(main_layout)
 
@@ -343,6 +347,49 @@ class SenatorProgressWidget(QWidget):
         except Exception as e:
             logger.error(f"Error in manual Senator list update: {e}")
             self.list_status_label.setText(f"Update error: {str(e)}")
+
+    def _create_actions_section(self) -> QGroupBox:
+        """Create actions section with report and application generation buttons"""
+        group = QGroupBox("Actions")
+        layout = QHBoxLayout()
+
+        report_btn = QPushButton("Create Award Report")
+        report_btn.setToolTip("Generate a Senator award report to submit to the award manager")
+        report_btn.clicked.connect(self._open_award_report_dialog)
+        layout.addWidget(report_btn)
+
+        app_btn = QPushButton("Generate Application")
+        app_btn.setToolTip("Generate a Senator award application to submit to the award manager")
+        app_btn.clicked.connect(self._open_award_application_dialog)
+        layout.addWidget(app_btn)
+
+        layout.addStretch()
+        group.setLayout(layout)
+        return group
+
+    def _open_award_report_dialog(self) -> None:
+        """Open award report dialog"""
+        try:
+            from src.ui.dialogs.award_report_dialog import AwardReportDialog
+            dialog = AwardReportDialog(self.db, award_type='Senator', parent=self)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award report dialog: {e}", exc_info=True)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open report dialog: {str(e)}")
+
+    def _open_award_application_dialog(self) -> None:
+        """Open award application dialog"""
+        try:
+            from src.ui.dialogs.award_application_dialog import AwardApplicationDialog
+            dialog = AwardApplicationDialog(self.db, parent=self)
+            # Pre-select Senator award
+            dialog.award_combo.setCurrentText('Senator')
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award application dialog: {e}", exc_info=True)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open application dialog: {str(e)}")
 
     def closeEvent(self, event):
         """Cleanup timers on close"""

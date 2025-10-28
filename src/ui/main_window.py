@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QTabWidget,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QMenuBar, QToolBar, QStatusBar, QMessageBox
 )
 from PyQt6.QtCore import Qt
@@ -266,7 +266,7 @@ class MainWindow(QMainWindow):
 
     def _create_awards_tab(self) -> QWidget:
         """Create awards dashboard tab"""
-        from PyQt6.QtWidgets import QTabWidget, QScrollArea
+        from PyQt6.QtWidgets import QTabWidget, QScrollArea, QPushButton
         from src.ui.centurion_progress_widget import CenturionProgressWidget
         from src.ui.tribune_progress_widget import TribuneProgressWidget
         from src.ui.senator_progress_widget import SenatorProgressWidget
@@ -280,6 +280,15 @@ class MainWindow(QMainWindow):
 
         widget = QWidget()
         layout = QVBoxLayout()
+
+        # Add application button toolbar
+        toolbar_layout = QHBoxLayout()
+        app_button = QPushButton("Generate Award Application")
+        app_button.setToolTip("Create award application form for submission to award manager")
+        app_button.clicked.connect(self._open_award_application_dialog)
+        toolbar_layout.addWidget(app_button)
+        toolbar_layout.addStretch()
+        layout.addLayout(toolbar_layout)
 
         # Create tab widget for different awards
         awards_tabs = QTabWidget()
@@ -500,6 +509,16 @@ class MainWindow(QMainWindow):
         dialog = ExportDialog(self.db, self.config, self)
         dialog.exec()
 
+    def _open_award_application_dialog(self) -> None:
+        """Open award application dialog"""
+        try:
+            from src.ui.dialogs.award_application_dialog import AwardApplicationDialog
+            dialog = AwardApplicationDialog(self.db, self)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award application dialog: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to open award application dialog: {str(e)}")
+
     def _on_spot_selected(self, callsign: str, frequency: float) -> None:
         """
         Handle SKCC spot selection from DX Cluster tab
@@ -568,10 +587,12 @@ class MainWindow(QMainWindow):
                         if all_contacts:
                             backup_manager = BackupManager()
                             my_skcc = self.config_manager.get("adif.my_skcc_number", "")
+                            my_callsign = self.config_manager.get("general.operator_callsign", "")
 
                             result = backup_manager.create_adif_backup(
                                 contacts=all_contacts,
                                 my_skcc=my_skcc if my_skcc else None,
+                                my_callsign=my_callsign if my_callsign and my_callsign != 'MYCALL' else None,
                                 backup_location=None,  # Uses default: ~/.w4gns_logger/Logs
                                 max_backups=5
                             )

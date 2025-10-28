@@ -6,7 +6,7 @@ Provides abstraction for database operations.
 
 import logging
 from typing import List, Optional, Dict, Any
-from sqlalchemy import create_engine, func, pool
+from sqlalchemy import create_engine, func, pool, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -49,6 +49,9 @@ class DatabaseRepository:
             # Create tables if they don't exist
             Base.metadata.create_all(self.engine)
 
+            # Perform schema migrations
+            self._migrate_schema()
+
             # Initialize SKCC membership manager
             self.skcc_members = SKCCMembershipManager(db_path)
 
@@ -69,6 +72,45 @@ class DatabaseRepository:
     def get_session(self) -> Session:
         """Get a new database session"""
         return self.SessionLocal()
+
+    def _migrate_schema(self) -> None:
+        """
+        Perform schema migrations by adding missing columns to existing tables.
+
+        This handles cases where the model definition has been updated with new columns
+        but the existing database hasn't been updated yet.
+        """
+        session = self.get_session()
+        try:
+            # Define columns that need to exist in the contacts table
+            columns_to_add = [
+                ("my_rig_make", "VARCHAR(50)", "My rig manufacturer"),
+                ("my_rig_model", "VARCHAR(50)", "My rig model number"),
+                ("my_antenna_make", "VARCHAR(50)", "My antenna manufacturer"),
+                ("my_antenna_model", "VARCHAR(50)", "My antenna model"),
+            ]
+
+            # Check which columns are missing and add them
+            for column_name, column_type, _description in columns_to_add:
+                try:
+                    # Try to query the column to see if it exists
+                    session.execute(text(f"SELECT {column_name} FROM contacts LIMIT 1"))
+                except Exception as e:
+                    # Column doesn't exist, add it
+                    try:
+                        session.execute(text(f"ALTER TABLE contacts ADD COLUMN {column_name} {column_type}"))
+                        session.commit()
+                        logger.info(f"Added missing column '{column_name}' to contacts table")
+                    except Exception as alter_error:
+                        logger.error(f"Failed to add column '{column_name}': {alter_error}", exc_info=True)
+                        session.rollback()
+
+            logger.info("Schema migration completed successfully")
+        except Exception as e:
+            logger.error(f"Error during schema migration: {e}", exc_info=True)
+            session.rollback()
+        finally:
+            session.close()
 
     # ==================== Contact Operations ====================
 

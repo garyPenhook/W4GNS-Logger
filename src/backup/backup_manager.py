@@ -193,7 +193,8 @@ class BackupManager:
         contacts: List[Any],
         my_skcc: Optional[str] = None,
         backup_location: Optional[Path] = None,
-        max_backups: int = 5
+        max_backups: int = 5,
+        my_callsign: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create timestamped ADIF backup and rotate old backups
@@ -203,6 +204,7 @@ class BackupManager:
             my_skcc: Operator's SKCC number (optional)
             backup_location: Directory to store backups (default: ~/.w4gns_logger/Logs)
             max_backups: Maximum number of backup files to keep (default: 5)
+            my_callsign: Operator's callsign (optional)
 
         Returns:
             Dictionary with:
@@ -255,6 +257,7 @@ class BackupManager:
                     filename=str(backup_file),
                     contacts=contacts,
                     my_skcc=my_skcc,
+                    my_callsign=my_callsign,
                     include_fields=None  # Export all non-empty fields
                 )
                 logger.info(f"Created ADIF backup: {backup_file}")

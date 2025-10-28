@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar
+    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar, QPushButton
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -59,6 +59,10 @@ class CenturionProgressWidget(QWidget):
         # Endorsements Section
         endorsement_group = self._create_endorsement_section()
         main_layout.addWidget(endorsement_group)
+
+        # Actions Section
+        actions_group = self._create_actions_section()
+        main_layout.addWidget(actions_group)
 
         main_layout.addStretch()
         self.setLayout(main_layout)
@@ -197,4 +201,47 @@ class CenturionProgressWidget(QWidget):
                 # Not achieved - show empty box
                 label.setText(label.text().replace("☑", "☐"))
                 label.setStyleSheet("color: #666666;")
+
+    def _create_actions_section(self) -> QGroupBox:
+        """Create actions section with report and application generation buttons"""
+        group = QGroupBox("Actions")
+        layout = QHBoxLayout()
+
+        report_btn = QPushButton("Create Award Report")
+        report_btn.setToolTip("Generate a Centurion award report to submit to the award manager")
+        report_btn.clicked.connect(self._open_award_report_dialog)
+        layout.addWidget(report_btn)
+
+        app_btn = QPushButton("Generate Application")
+        app_btn.setToolTip("Generate a Centurion award application to submit to the award manager")
+        app_btn.clicked.connect(self._open_award_application_dialog)
+        layout.addWidget(app_btn)
+
+        layout.addStretch()
+        group.setLayout(layout)
+        return group
+
+    def _open_award_report_dialog(self) -> None:
+        """Open award report dialog"""
+        try:
+            from src.ui.dialogs.award_report_dialog import AwardReportDialog
+            dialog = AwardReportDialog(self.db, award_type='Centurion', parent=self)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award report dialog: {e}", exc_info=True)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open report dialog: {str(e)}")
+
+    def _open_award_application_dialog(self) -> None:
+        """Open award application dialog"""
+        try:
+            from src.ui.dialogs.award_application_dialog import AwardApplicationDialog
+            dialog = AwardApplicationDialog(self.db, parent=self)
+            # Pre-select Centurion award
+            dialog.award_combo.setCurrentText('Centurion')
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award application dialog: {e}", exc_info=True)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open application dialog: {str(e)}")
 

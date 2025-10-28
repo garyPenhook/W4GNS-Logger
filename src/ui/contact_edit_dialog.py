@@ -183,6 +183,34 @@ class ContactEditDialog(QDialog):
             form_layout.addWidget(self.power_input, row, 1)
             row += 1
 
+            # My Rig Make
+            form_layout.addWidget(QLabel("My Rig Make:"), row, 0)
+            self.my_rig_make_input = QLineEdit()
+            self.my_rig_make_input.setPlaceholderText("e.g., Yaesu, Kenwood, ICOM")
+            form_layout.addWidget(self.my_rig_make_input, row, 1)
+            row += 1
+
+            # My Rig Model
+            form_layout.addWidget(QLabel("My Rig Model:"), row, 0)
+            self.my_rig_model_input = QLineEdit()
+            self.my_rig_model_input.setPlaceholderText("e.g., FT-891, TS-590SG")
+            form_layout.addWidget(self.my_rig_model_input, row, 1)
+            row += 1
+
+            # My Antenna Make
+            form_layout.addWidget(QLabel("My Antenna Make:"), row, 0)
+            self.my_antenna_make_input = QLineEdit()
+            self.my_antenna_make_input.setPlaceholderText("e.g., Yagi, Dipole, End-fed")
+            form_layout.addWidget(self.my_antenna_make_input, row, 1)
+            row += 1
+
+            # My Antenna Model
+            form_layout.addWidget(QLabel("My Antenna Model:"), row, 0)
+            self.my_antenna_model_input = QLineEdit()
+            self.my_antenna_model_input.setPlaceholderText("e.g., 3-element 40m, 80m Doublet")
+            form_layout.addWidget(self.my_antenna_model_input, row, 1)
+            row += 1
+
             main_layout.addLayout(form_layout)
 
             # Buttons
@@ -226,6 +254,10 @@ class ContactEditDialog(QDialog):
             self.skcc_number_input.setText(self.contact.skcc_number or "")
             self.county_input.setText(self.contact.county or "")
             self.power_input.setValue(self.contact.tx_power or 0)
+            self.my_rig_make_input.setText(self.contact.my_rig_make or "")
+            self.my_rig_model_input.setText(self.contact.my_rig_model or "")
+            self.my_antenna_make_input.setText(self.contact.my_antenna_make or "")
+            self.my_antenna_model_input.setText(self.contact.my_antenna_model or "")
 
             logger.debug(f"Form fields populated for {self.contact.callsign}")
         except Exception as e:
@@ -263,6 +295,10 @@ class ContactEditDialog(QDialog):
                 'skcc_number': self.skcc_number_input.text().strip() or None,
                 'county': self.county_input.text().strip() or None,
                 'tx_power': self.power_input.value() if self.power_input.value() > 0 else None,
+                'my_rig_make': self.my_rig_make_input.text().strip() or None,
+                'my_rig_model': self.my_rig_model_input.text().strip() or None,
+                'my_antenna_make': self.my_antenna_make_input.text().strip() or None,
+                'my_antenna_model': self.my_antenna_model_input.text().strip() or None,
             }
 
             try:

@@ -34,12 +34,14 @@ class ExportWorkerThread(QThread):
         file_path: str,
         db: DatabaseRepository,
         my_skcc: Optional[str],
-        filters: Dict[str, Any]
+        filters: Dict[str, Any],
+        my_callsign: Optional[str] = None
     ):
         super().__init__()
         self.file_path = file_path
         self.db = db
         self.my_skcc = my_skcc
+        self.my_callsign = my_callsign
         self.filters = filters
 
     def run(self):
@@ -63,7 +65,8 @@ class ExportWorkerThread(QThread):
             exporter.export_to_file(
                 self.file_path,
                 contacts,
-                my_skcc=self.my_skcc
+                my_skcc=self.my_skcc,
+                my_callsign=self.my_callsign
             )
 
             self.progress.emit(90)
@@ -155,14 +158,30 @@ class ExportDialog(QDialog):
         """Initialize UI components"""
         main_layout = QVBoxLayout()
 
-        # Operator SKCC section
+        # Operator info section (callsign and SKCC)
+        operator_group = QGroupBox("Operator Information")
+        operator_layout = QVBoxLayout()
+
+        # Callsign display (from settings)
+        callsign_layout = QHBoxLayout()
+        callsign_label = QLabel("Your Callsign:")
+        self.callsign_display = QLabel("(Not set in settings)")
+        self.callsign_display.setStyleSheet("color: gray;")
+        callsign_layout.addWidget(callsign_label)
+        callsign_layout.addWidget(self.callsign_display, 1)
+        operator_layout.addLayout(callsign_layout)
+
+        # SKCC number (editable)
         skcc_layout = QHBoxLayout()
         skcc_label = QLabel("Your SKCC Number:")
         self.skcc_input = QLineEdit()
         self.skcc_input.setPlaceholderText("e.g., 14276T")
         skcc_layout.addWidget(skcc_label)
         skcc_layout.addWidget(self.skcc_input)
-        main_layout.addLayout(skcc_layout)
+        operator_layout.addLayout(skcc_layout)
+
+        operator_group.setLayout(operator_layout)
+        main_layout.addWidget(operator_group)
 
         # File selection section
         file_layout = QHBoxLayout()
@@ -258,6 +277,16 @@ class ExportDialog(QDialog):
 
     def _load_config(self) -> None:
         """Load configuration values"""
+        # Load callsign from settings
+        my_callsign = self.config.get('general', {}).get('operator_callsign', '')
+        if my_callsign and my_callsign != 'MYCALL':
+            self.callsign_display.setText(my_callsign)
+            self.callsign_display.setStyleSheet("")  # Reset to default color
+        else:
+            self.callsign_display.setText("(Not set in settings)")
+            self.callsign_display.setStyleSheet("color: gray;")
+
+        # Load SKCC number from settings
         my_skcc = self.config.get('adif', {}).get('my_skcc_number', '')
         if my_skcc:
             self.skcc_input.setText(my_skcc)
@@ -308,12 +337,16 @@ class ExportDialog(QDialog):
         if self.skcc_only_checkbox.isChecked():
             filters['skcc_only'] = True
 
+        # Get callsign from config
+        my_callsign = self.config.get('general', {}).get('operator_callsign')
+
         # Create and start worker thread
         self.export_thread = ExportWorkerThread(
             self.export_file,
             self.db,
             self.skcc_input.text() or None,
-            filters
+            filters,
+            my_callsign
         )
         self.export_thread.progress.connect(self._on_progress)
         self.export_thread.status.connect(self._on_status)

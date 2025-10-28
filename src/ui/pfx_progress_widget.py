@@ -11,7 +11,7 @@ from typing import Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar, QTableWidget,
-    QTableWidgetItem, QHeaderView
+    QTableWidgetItem, QHeaderView, QPushButton
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
@@ -71,6 +71,10 @@ class PFXProgressWidget(QWidget):
         # Statistics Section
         stats_group = self._create_stats_section()
         main_layout.addWidget(stats_group)
+
+        # Actions Section
+        actions_group = self._create_actions_section()
+        main_layout.addWidget(actions_group)
 
         main_layout.addStretch()
         self.setLayout(main_layout)
@@ -320,6 +324,49 @@ class PFXProgressWidget(QWidget):
             points_item.setFont(QFont("Arial", 9))
             points_item.setForeground(QColor(PFX_COLOR))
             self.prefix_table.setItem(row, 2, points_item)
+
+    def _create_actions_section(self) -> QGroupBox:
+        """Create actions section with report and application generation buttons"""
+        group = QGroupBox("Actions")
+        layout = QHBoxLayout()
+
+        report_btn = QPushButton("Create Award Report")
+        report_btn.setToolTip("Generate a PFX award report to submit to the award manager")
+        report_btn.clicked.connect(self._open_award_report_dialog)
+        layout.addWidget(report_btn)
+
+        app_btn = QPushButton("Generate Application")
+        app_btn.setToolTip("Generate a PFX award application to submit to the award manager")
+        app_btn.clicked.connect(self._open_award_application_dialog)
+        layout.addWidget(app_btn)
+
+        layout.addStretch()
+        group.setLayout(layout)
+        return group
+
+    def _open_award_report_dialog(self) -> None:
+        """Open award report dialog"""
+        try:
+            from src.ui.dialogs.award_report_dialog import AwardReportDialog
+            dialog = AwardReportDialog(self.db, award_type='PFX', parent=self)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award report dialog: {e}", exc_info=True)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open report dialog: {str(e)}")
+
+    def _open_award_application_dialog(self) -> None:
+        """Open award application dialog"""
+        try:
+            from src.ui.dialogs.award_application_dialog import AwardApplicationDialog
+            dialog = AwardApplicationDialog(self.db, parent=self)
+            # Pre-select PFX award
+            dialog.award_combo.setCurrentText('PFX')
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening award application dialog: {e}", exc_info=True)
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open application dialog: {str(e)}")
 
     def _contact_to_dict(self, contact) -> dict:
         """Convert Contact ORM object to dictionary"""

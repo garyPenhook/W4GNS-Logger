@@ -108,32 +108,42 @@ class TribuneAward(AwardProgram):
                 )
                 return False
 
-        # Remote station must be Tribune or higher
-        # Check if contacted station is on Tribune/Senator list
+        # Remote station must be Tribune or higher (Tribune/Senator members)
+        # Check if contacted station is on Tribune or Senator list
         from src.services.tribune_fetcher import TribuneFetcher
-        from src.database.models import TribuneeMember
+        from src.services.senator_fetcher import SenatorFetcher
+        from src.database.models import TribuneeMember, SenatorMember
         try:
-            if not TribuneFetcher.is_tribune_member(self.db, contact.get('skcc_number', '')):
+            skcc_num = contact.get('skcc_number', '')
+            # Must be either Tribune OR Senator member
+            is_tribune = TribuneFetcher.is_tribune_member(self.db, skcc_num)
+            is_senator = SenatorFetcher.is_senator_member(self.db, skcc_num)
+            
+            if not (is_tribune or is_senator):
                 return False
 
             # Verify remote operator held Tribune+ membership at time of contact
-            skcc_num = contact.get('skcc_number', '').strip()
             if skcc_num:
                 session = self.db
-                base_number = skcc_num.split()[0]
+                base_number = skcc_num.strip().split()[0]
                 if base_number and base_number[-1] in 'CTS':
                     base_number = base_number[:-1]
                 if base_number and 'x' in base_number:
                     base_number = base_number.split('x')[0]
 
-                # Query Tribune member list by base SKCC number
+                # Query Tribune or Senator member lists by base SKCC number
                 member = session.query(TribuneeMember).filter(
                     TribuneeMember.skcc_number == base_number
                 ).first()
 
                 if not member:
+                    member = session.query(SenatorMember).filter(
+                        SenatorMember.skcc_number == base_number
+                    ).first()
+
+                if not member:
                     logger.debug(
-                        f"Remote operator SKCC {skcc_num} not found in Tribune member list. "
+                        f"Remote operator SKCC {skcc_num} not found in Tribune/Senator member lists. "
                         f"Contact will be counted but may require verification."
                     )
 
