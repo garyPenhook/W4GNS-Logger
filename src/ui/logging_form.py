@@ -82,11 +82,14 @@ class LoggingForm(QWidget):
             self.qso_end_time: Optional[datetime] = None
             self.last_callsign = ""  # Track last callsign for 5-second stable detection
 
-            # Always-running clock timer (updates every 500ms)
+            # Always-running clock timer (updates every 1000ms for better performance)
             self.clock_timer = QTimer()
             self.clock_timer.timeout.connect(self._update_clock)
-            self.clock_timer.start(500)  # Update 2x per second for smooth display
+            self.clock_timer.start(1000)  # Update 1x per second (was 500ms, now optimized)
             logger.debug("Always-running clock timer started")
+
+            # Track last clock update to avoid redundant updates
+            self.last_clock_time: Optional[str] = None
 
             # Track if user is editing datetime to avoid overwriting their input
             self.datetime_input_focus = False
@@ -1178,7 +1181,8 @@ class LoggingForm(QWidget):
         """
         Update datetime display to show current UTC time (always-running clock)
 
-        Called by clock_timer every 500ms to keep datetime display current.
+        Called by clock_timer every 1000ms to keep datetime display current.
+        Only updates when the second actually changes (avoids redundant UI updates).
         Respects user focus - stops updating when user is actively editing the time.
         ALL TIMES ARE IN UTC.
         """
@@ -1187,8 +1191,14 @@ class LoggingForm(QWidget):
             if not self.datetime_input_focus:
                 # Use UTC time, not local time (specify UTC timezone)
                 utc_now = get_utc_now()
-                q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
-                self.datetime_input.setDateTime(q_datetime)
+                # Format time string to check if it's different from last update
+                current_time_str = utc_now.strftime("%Y%m%d%H%M%S")
+
+                # Only update UI if time has actually changed
+                if current_time_str != self.last_clock_time:
+                    self.last_clock_time = current_time_str
+                    q_datetime = QDateTime.fromSecsSinceEpoch(int(utc_now.timestamp()), Qt.TimeSpec.UTC)
+                    self.datetime_input.setDateTime(q_datetime)
         except Exception as e:
             logger.error(f"Error updating clock: {e}", exc_info=True)
 
