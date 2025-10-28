@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
-    QMenuBar, QToolBar, QStatusBar, QMessageBox
+    QMenuBar, QToolBar, QStatusBar, QMessageBox, QProgressDialog, QApplication
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
@@ -560,8 +560,21 @@ class MainWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
+                # Create progress dialog for backup operations
+                progress = QProgressDialog("Preparing to exit...", None, 0, 100, self)
+                progress.setWindowTitle("Closing Application")
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setMinimumDuration(0)  # Show immediately
+                progress.setCancelButton(None)  # Can't cancel shutdown
+                progress.setValue(0)
+                QApplication.processEvents()  # Show the dialog
+
                 # Save window geometry for next session
                 try:
+                    progress.setLabelText("Saving window settings...")
+                    progress.setValue(5)
+                    QApplication.processEvents()
+                    
                     geometry = self.geometry()
                     # Store as list (YAML-serializable) not tuple
                     geometry_list = [geometry.x(), geometry.y(), geometry.width(), geometry.height()]
@@ -572,6 +585,10 @@ class MainWindow(QMainWindow):
 
                 # Stop spot manager BEFORE closing database to prevent background thread errors
                 try:
+                    progress.setLabelText("Stopping background services...")
+                    progress.setValue(10)
+                    QApplication.processEvents()
+                    
                     if hasattr(self, 'spot_manager') and self.spot_manager:
                         logger.info("Stopping SKCC spot manager...")
                         self.spot_manager.stop()
@@ -579,6 +596,10 @@ class MainWindow(QMainWindow):
                     logger.error(f"Error stopping spot manager: {spot_error}", exc_info=True)
 
                 # Create ADIF backup on shutdown (always, to Logs folder)
+                progress.setLabelText("Creating ADIF backup...")
+                progress.setValue(20)
+                QApplication.processEvents()
+                
                 try:
                     logger.info("Creating ADIF backup on shutdown...")
                     if hasattr(self, 'db') and self.db:
@@ -607,6 +628,10 @@ class MainWindow(QMainWindow):
                     logger.error(f"Error creating ADIF backup on shutdown: {adif_backup_error}", exc_info=True)
 
                 # Create database backup on shutdown (always, to Logs folder)
+                progress.setLabelText("Creating database backup...")
+                progress.setValue(40)
+                QApplication.processEvents()
+                
                 try:
                     logger.info("Creating database backup on shutdown...")
                     db_path = Path(self.config_manager.get("database.location"))
@@ -633,6 +658,10 @@ class MainWindow(QMainWindow):
                     if auto_backup_enabled and backup_destination:
                         backup_dest_path = Path(backup_destination)
                         if backup_dest_path.exists() and backup_dest_path.is_dir():
+                            progress.setLabelText("Backing up to external location...")
+                            progress.setValue(60)
+                            QApplication.processEvents()
+                            
                             logger.info("Performing additional backup to USB/external destination...")
                             backup_manager = BackupManager()
 
@@ -652,6 +681,10 @@ class MainWindow(QMainWindow):
                                 logger.error(f"Error backing up database to secondary location: {db_backup_error}", exc_info=True)
 
                             # Backup most recent ADIF to secondary location
+                            progress.setLabelText("Backing up ADIF to external location...")
+                            progress.setValue(80)
+                            QApplication.processEvents()
+                            
                             try:
                                 result = backup_manager.backup_adif_to_secondary(
                                     adif_source_dir=None,  # Uses default: ~/.w4gns_logger/Logs
@@ -671,6 +704,10 @@ class MainWindow(QMainWindow):
                     logger.error(f"Error during USB/external backup: {backup_error}", exc_info=True)
 
                 # Clean up database resources
+                progress.setLabelText("Closing database connection...")
+                progress.setValue(90)
+                QApplication.processEvents()
+                
                 try:
                     if hasattr(self, 'db') and self.db:
                         self.db.engine.dispose()
@@ -678,6 +715,10 @@ class MainWindow(QMainWindow):
                 except Exception as db_error:
                     logger.error(f"Error closing database connection: {db_error}", exc_info=True)
 
+                progress.setLabelText("Finishing up...")
+                progress.setValue(100)
+                QApplication.processEvents()
+                
                 logger.info("Application exiting gracefully")
                 event.accept()
             else:
