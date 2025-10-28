@@ -88,13 +88,13 @@ class ContactsListWidget(QWidget):
         self.table.setHorizontalHeaderLabels([
             "Callsign", "Date (UTC)", "Time (UTC)", "Band", "Mode", "SKCC", "Power"
         ])
-        self.table.setColumnWidth(0, 100)
-        self.table.setColumnWidth(1, 90)
-        self.table.setColumnWidth(2, 60)
-        self.table.setColumnWidth(3, 70)
-        self.table.setColumnWidth(4, 60)
-        self.table.setColumnWidth(5, 100)
-        self.table.setColumnWidth(6, 70)
+        self.table.setColumnWidth(0, 70)  # Callsign (reduced from 100)
+        self.table.setColumnWidth(1, 90)  # Date
+        self.table.setColumnWidth(2, 60)  # Time
+        self.table.setColumnWidth(3, 70)  # Band
+        self.table.setColumnWidth(4, 60)  # Mode
+        self.table.setColumnWidth(5, 100)  # SKCC
+        self.table.setColumnWidth(6, 70)  # Power
         self.table.setSelectionBehavior(self.table.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         # Connect double-click to edit dialog
