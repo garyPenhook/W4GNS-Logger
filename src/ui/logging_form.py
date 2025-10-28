@@ -846,7 +846,14 @@ class LoggingForm(QWidget):
                 raise RuntimeError(f"Database error: {str(e)}")
 
             # Auto-upload to QRZ if enabled
-            if self.config_manager.get("qrz.auto_upload", False):
+            qrz_enabled = self.config_manager.get("qrz.enabled", False)
+            qrz_auto_upload = self.config_manager.get("qrz.auto_upload", False)
+
+            if not qrz_enabled:
+                logger.debug("QRZ auto-upload skipped: QRZ integration not enabled in settings")
+            elif not qrz_auto_upload:
+                logger.debug("QRZ auto-upload skipped: Auto-upload disabled in settings (check QRZ.com tab)")
+            else:
                 try:
                     # Convert frequency to MHz if needed
                     freq_mhz = contact.frequency
@@ -865,10 +872,16 @@ class LoggingForm(QWidget):
                             else:
                                 logger.warning(f"QRZ upload failed for {contact.callsign}")
 
+                        # Convert ADIF date format (YYYYMMDD) to API format (YYYY-MM-DD)
+                        api_qso_date = f"{contact.qso_date[0:4]}-{contact.qso_date[4:6]}-{contact.qso_date[6:8]}" if contact.qso_date else ""
+
+                        # Convert ADIF time format (HHMM) to API format (HH:MM:SS)
+                        api_time_on = f"{contact.time_on[0:2]}:{contact.time_on[2:4]}:00" if contact.time_on else ""
+
                         self.qrz_service.upload_qso_async(
                             callsign=contact.callsign,
-                            qso_date=contact.qso_date,
-                            time_on=contact.time_on,
+                            qso_date=api_qso_date,
+                            time_on=api_time_on,
                             freq=freq_mhz,
                             mode=contact.mode,
                             rst_sent=contact.rst_sent or "59",

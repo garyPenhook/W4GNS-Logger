@@ -349,7 +349,9 @@ class QRZAPIClient:
             QRZError: If upload fails or API Key not configured
         """
         if not self.api_key:
-            logger.warning("Cannot upload QSO: API Key not configured")
+            logger.error("Cannot upload QSO to QRZ logbook: API Key not configured. "
+                        "Go to Settings → QRZ.com tab and enter your API Key from https://www.qrz.com "
+                        "(Settings → Account → API → Logbook API Key)")
             return False
 
         try:
