@@ -17,6 +17,7 @@ from src.database.repository import DatabaseRepository
 from src.database.models import Contact
 from src.ui.signals import get_app_signals
 from src.ui.contact_edit_dialog import ContactEditDialog
+from src.ui.dropdown_data import DropdownData
 
 logger = logging.getLogger(__name__)
 
@@ -196,24 +197,24 @@ class ContactsListWidget(QWidget):
                 self.contacts = []
                 self.total_contacts = 0
 
-            # Update band filter with available bands from loaded contacts
+            # Update band filter with all available bands
             try:
                 current_band = self.band_filter.currentData()
                 self.band_filter.blockSignals(True)  # Prevent refresh signal while updating
                 # Keep "All Bands" option
                 self.band_filter.clear()
                 self.band_filter.addItem("All Bands", None)
-                # Add available bands
-                available_bands = self._get_available_bands()
-                if available_bands:
-                    self.band_filter.addItems(available_bands)
+                # Add all bands from DropdownData (not just bands in current contacts)
+                all_bands = DropdownData.get_bands()
+                if all_bands:
+                    self.band_filter.addItems(all_bands)
                 # Restore previous selection if it still exists
                 if current_band is not None:
                     index = self.band_filter.findData(current_band)
                     if index >= 0:
                         self.band_filter.setCurrentIndex(index)
                 self.band_filter.blockSignals(False)
-                logger.debug(f"Band filter updated with bands: {available_bands}")
+                logger.debug(f"Band filter updated with all bands: {all_bands}")
             except Exception as e:
                 logger.error(f"Error updating band filter: {e}", exc_info=True)
 
