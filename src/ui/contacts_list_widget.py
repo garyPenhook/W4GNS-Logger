@@ -127,6 +127,7 @@ class ContactsListWidget(QWidget):
         layout.addWidget(QLabel("Callsign:"))
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search callsigns...")
+        self.search_input.setMaximumWidth(100)  # Reduced by 80% from unrestricted width
         self.search_input.textChanged.connect(self.refresh)
         layout.addWidget(self.search_input)
 
