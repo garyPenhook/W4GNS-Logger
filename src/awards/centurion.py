@@ -20,6 +20,12 @@ from typing import Dict, List, Any, Set
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
+from src.utils.skcc_number import extract_base_skcc_number
+from src.awards.constants import (
+    CENTURION_ENDORSEMENTS,
+    get_endorsement_level,
+    get_next_endorsement_threshold
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,24 +165,16 @@ class CenturionAward(AwardProgram):
             if self.validate(contact):
                 skcc_number = contact.get('skcc_number', '').strip()
                 if skcc_number:
-                    # Extract base number (remove suffix like C, T, S, x10, etc.)
-                    # SKCC numbers are: digits optionally followed by letter (C, T, S) or x number
-                    base_number = skcc_number.split()[0]  # Remove any spaces first
-                    # Remove letter suffix if present (C, T, S at the end)
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    # Remove x multiplier if present (xN at the end)
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    # Only add if it's a valid number
-                    if base_number and base_number.isdigit():
+                    base_number = extract_base_skcc_number(skcc_number)
+                    if base_number:
                         unique_members.add(base_number)
 
         current_count = len(unique_members)
         required_count = 100
 
-        # Determine endorsement level
-        endorsement_level = self._get_endorsement_level(current_count)
+        # Determine endorsement level using constants
+        endorsement_level = get_endorsement_level(current_count, CENTURION_ENDORSEMENTS)
+        next_level = get_next_endorsement_threshold(current_count, CENTURION_ENDORSEMENTS)
 
         return {
             'current': current_count,
@@ -185,111 +183,10 @@ class CenturionAward(AwardProgram):
             'progress_pct': min(100.0, (current_count / required_count) * 100),
             'endorsement': endorsement_level,
             'unique_members': unique_members,
-            'next_level_count': self._get_next_endorsement_level(current_count)
+            'next_level_count': next_level
         }
 
-    def _get_endorsement_level(self, count: int) -> str:
-        """
-        Calculate endorsement level based on contact count
 
-        Levels:
-        - Base: 100 (Centurion)
-        - Endorsements: 200 (Cx2), 300 (Cx3), ... 1000 (Cx10)
-        - Higher: 1500 (Cx15), 2000 (Cx20), etc.
-
-        Args:
-            count: Number of unique SKCC members contacted
-
-        Returns:
-            Endorsement level string (e.g., "Centurion", "Cx2", "Cx10")
-        """
-        if count < 100:
-            return "Not Yet"
-        elif count < 200:
-            return "Centurion"
-        elif count < 300:
-            return "Centurion x2"
-        elif count < 400:
-            return "Centurion x3"
-        elif count < 500:
-            return "Centurion x4"
-        elif count < 600:
-            return "Centurion x5"
-        elif count < 700:
-            return "Centurion x6"
-        elif count < 800:
-            return "Centurion x7"
-        elif count < 900:
-            return "Centurion x8"
-        elif count < 1000:
-            return "Centurion x9"
-        elif count < 1100:
-            return "Centurion x10"
-        elif count < 1500:
-            return "Centurion x10+"
-        elif count < 2000:
-            return "Centurion x15"
-        elif count < 2500:
-            return "Centurion x20"
-        elif count < 3000:
-            return "Centurion x25"
-        elif count < 3500:
-            return "Centurion x30"
-        elif count < 4000:
-            return "Centurion x35"
-        elif count < 4500:
-            return "Centurion x40"
-        else:
-            return "Centurion x40+"
-
-    def _get_next_endorsement_level(self, count: int) -> int:
-        """
-        Calculate count needed for next endorsement level
-
-        Args:
-            count: Current contact count
-
-        Returns:
-            Contact count needed for next level
-        """
-        if count < 100:
-            return 100
-        elif count < 200:
-            return 200
-        elif count < 300:
-            return 300
-        elif count < 400:
-            return 400
-        elif count < 500:
-            return 500
-        elif count < 600:
-            return 600
-        elif count < 700:
-            return 700
-        elif count < 800:
-            return 800
-        elif count < 900:
-            return 900
-        elif count < 1000:
-            return 1000
-        elif count < 1100:
-            return 1100
-        elif count < 1500:
-            return 1500
-        elif count < 2000:
-            return 2000
-        elif count < 2500:
-            return 2500
-        elif count < 3000:
-            return 3000
-        elif count < 3500:
-            return 3500
-        elif count < 4000:
-            return 4000
-        elif count < 4500:
-            return 4500
-        else:
-            return count + 500  # 500-contact increments
 
     def get_requirements(self) -> Dict[str, Any]:
         """

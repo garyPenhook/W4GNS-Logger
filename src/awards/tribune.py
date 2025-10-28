@@ -23,15 +23,17 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
+from src.utils.skcc_number import extract_base_skcc_number
+from src.awards.constants import (
+    TRIBUNE_ENDORSEMENTS,
+    get_endorsement_level,
+    get_next_endorsement_threshold,
+    TRIBUNE_EFFECTIVE_DATE,
+    TRIBUNE_SPECIAL_EVENT_CUTOFF,
+    SPECIAL_EVENT_CALLS
+)
 
 logger = logging.getLogger(__name__)
-
-# Special event calls that don't count after October 1, 2008
-# Including K9SKC (SKCC Club Call) and known special-event calls like K3Y
-SPECIAL_EVENT_CALLS: Set[str] = {
-    'K9SKC',  # SKCC Club Call
-    'K3Y',    # Example special-event call
-}
 
 
 class TribuneAward(AwardProgram):
@@ -48,7 +50,7 @@ class TribuneAward(AwardProgram):
         self.db = db
         # Effective date for Tribune award: March 1, 2007
         self.tribune_effective_date = datetime(2007, 3, 1)
-        self.tribune_effective_date_str = "20070301"  # YYYYMMDD format for string comparisons
+        self.tribune_effective_date_str = TRIBUNE_EFFECTIVE_DATE
 
     def validate(self, contact: Dict[str, Any]) -> bool:
         """
@@ -96,7 +98,7 @@ class TribuneAward(AwardProgram):
         # "Neither the SKCC Club Call (K9SKC) nor any special-event call sign
         # (such as K3Y) will be accepted for credit for contacts logged on or
         # after 1 October 2008."
-        if qso_date and qso_date >= '20081001':  # On or after October 1, 2008
+        if qso_date and qso_date >= TRIBUNE_SPECIAL_EVENT_CUTOFF:  # On or after October 1, 2008
             callsign = contact.get('callsign', '').upper().strip()
             # Remove /portable or other suffix indicators
             base_call = callsign.split('/')[0] if '/' in callsign else callsign
@@ -109,43 +111,19 @@ class TribuneAward(AwardProgram):
                 return False
 
         # Remote station must be Tribune or higher (Tribune/Senator members)
-        # Check if contacted station is on Tribune or Senator list
-        from src.services.tribune_fetcher import TribuneFetcher
-        from src.services.senator_fetcher import SenatorFetcher
+        # FIX N+1 QUERY: Load all Tribune/Senator members once for efficient lookup
         from src.database.models import TribuneeMember, SenatorMember
         try:
-            skcc_num = contact.get('skcc_number', '')
-            # Must be either Tribune OR Senator member
-            is_tribune = TribuneFetcher.is_tribune_member(self.db, skcc_num)
-            is_senator = SenatorFetcher.is_senator_member(self.db, skcc_num)
+            # Batch load all member numbers for O(1) lookup instead of N queries
+            tribune_numbers = {m.skcc_number for m in self.db.query(TribuneeMember.skcc_number).all()}
+            senator_numbers = {m.skcc_number for m in self.db.query(SenatorMember.skcc_number).all()}
+            all_valid_members = tribune_numbers | senator_numbers
             
-            if not (is_tribune or is_senator):
+            skcc_num = contact.get('skcc_number', '')
+            base_number = extract_base_skcc_number(skcc_num)
+            
+            if not base_number or base_number not in all_valid_members:
                 return False
-
-            # Verify remote operator held Tribune+ membership at time of contact
-            if skcc_num:
-                session = self.db
-                base_number = skcc_num.strip().split()[0]
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
-
-                # Query Tribune or Senator member lists by base SKCC number
-                member = session.query(TribuneeMember).filter(
-                    TribuneeMember.skcc_number == base_number
-                ).first()
-
-                if not member:
-                    member = session.query(SenatorMember).filter(
-                        SenatorMember.skcc_number == base_number
-                    ).first()
-
-                if not member:
-                    logger.debug(
-                        f"Remote operator SKCC {skcc_num} not found in Tribune/Senator member lists. "
-                        f"Contact will be counted but may require verification."
-                    )
 
         except Exception as e:
             # If we can't check, log error and require manual verification
@@ -154,7 +132,6 @@ class TribuneAward(AwardProgram):
                 f"Contact will require manual verification.",
                 exc_info=True
             )
-            # Return False to indicate this contact needs verification by the user
             return False
 
         return True
@@ -198,12 +175,8 @@ class TribuneAward(AwardProgram):
             for contact in centurion_contacts:
                 skcc_num = contact.skcc_number.strip()
                 if skcc_num:
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    if base_number and base_number.isdigit():
+                    base_number = extract_base_skcc_number(skcc_num)
+                    if base_number:
                         unique_centurions.add(base_number)
 
             is_centurion = len(unique_centurions) >= 100
@@ -217,21 +190,16 @@ class TribuneAward(AwardProgram):
             if self.validate(contact):
                 skcc_number = contact.get('skcc_number', '').strip()
                 if skcc_number:
-                    # Extract base number
-                    base_number = skcc_number.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    # Only add if it's a valid number
-                    if base_number and base_number.isdigit():
+                    base_number = extract_base_skcc_number(skcc_number)
+                    if base_number:
                         unique_members.add(base_number)
 
         current_count = len(unique_members)
         required_count = 50
 
-        # Determine endorsement level
-        endorsement_level = self._get_endorsement_level(current_count)
+        # Determine endorsement level using constants
+        endorsement_level = get_endorsement_level(current_count, TRIBUNE_ENDORSEMENTS)
+        next_level = get_next_endorsement_threshold(current_count, TRIBUNE_ENDORSEMENTS)
 
         return {
             'current': current_count,
@@ -240,105 +208,10 @@ class TribuneAward(AwardProgram):
             'progress_pct': min(100.0, (current_count / required_count) * 100),
             'endorsement': endorsement_level,
             'unique_members': unique_members,
-            'next_level_count': self._get_next_endorsement_level(current_count),
+            'next_level_count': next_level,
             'is_centurion': is_centurion,
             'centurion_count': len(unique_centurions) if centurion_count > 0 else 0
         }
-
-    def _get_endorsement_level(self, count: int) -> str:
-        """
-        Calculate endorsement level based on Tribune contact count
-
-        Levels:
-        - Base: 50 (Tribune)
-        - Endorsements: 100 (Tx2), 150 (Tx3), ... 500 (Tx10)
-        - Higher: 750 (Tx15), 1000 (Tx20), etc.
-
-        Args:
-            count: Number of unique Tribune members contacted
-
-        Returns:
-            Endorsement level string (e.g., "Tribune", "Tx2", "Tx10")
-        """
-        if count < 50:
-            return "Not Yet"
-        elif count < 100:
-            return "Tribune"
-        elif count < 150:
-            return "Tribune x2"
-        elif count < 200:
-            return "Tribune x3"
-        elif count < 250:
-            return "Tribune x4"
-        elif count < 300:
-            return "Tribune x5"
-        elif count < 350:
-            return "Tribune x6"
-        elif count < 400:
-            return "Tribune x7"
-        elif count < 450:
-            return "Tribune x8"
-        elif count < 500:
-            return "Tribune x9"
-        elif count < 550:
-            return "Tribune x10"
-        elif count < 750:
-            return "Tribune x10+"
-        elif count < 1000:
-            return "Tribune x15"
-        elif count < 1250:
-            return "Tribune x20"
-        elif count < 1500:
-            return "Tribune x25"
-        elif count < 1750:
-            return "Tribune x30"
-        else:
-            return "Tribune x30+"
-
-    def _get_next_endorsement_level(self, count: int) -> int:
-        """
-        Calculate count needed for next endorsement level
-
-        Args:
-            count: Current contact count
-
-        Returns:
-            Contact count needed for next level
-        """
-        if count < 50:
-            return 50
-        elif count < 100:
-            return 100
-        elif count < 150:
-            return 150
-        elif count < 200:
-            return 200
-        elif count < 250:
-            return 250
-        elif count < 300:
-            return 300
-        elif count < 350:
-            return 350
-        elif count < 400:
-            return 400
-        elif count < 450:
-            return 450
-        elif count < 500:
-            return 500
-        elif count < 550:
-            return 550
-        elif count < 750:
-            return 750
-        elif count < 1000:
-            return 1000
-        elif count < 1250:
-            return 1250
-        elif count < 1500:
-            return 1500
-        elif count < 1750:
-            return 1750
-        else:
-            return count + 250  # 250-contact increments
 
     def get_requirements(self) -> Dict[str, Any]:
         """

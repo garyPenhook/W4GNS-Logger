@@ -40,17 +40,11 @@ def extract_base_skcc_number(skcc_number: str) -> Optional[str]:
     # Split on whitespace and take first part
     base = skcc_number.split()[0]
     
-    # Remove letter suffix (C, T, S) if present at the end
-    if base and base[-1] in 'CTS':
-        base = base[:-1]
-    
-    # Remove 'x' multiplier suffix (like x2, x10, etc.)
-    if base and 'x' in base:
-        base = base.split('x')[0]
-    
-    # Verify it's a valid number
-    if base and base.isdigit():
-        return base
+    # Extract digits from the beginning (handles "12345T", "12345Tx2", etc.)
+    import re
+    match = re.match(r'^(\d+)', base)
+    if match:
+        return match.group(1)
     
     return None
 

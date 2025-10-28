@@ -163,15 +163,33 @@ class AwardReportGenerator:
                 award_instance = award_class()
             else:
                 award_instance = award_class(session)
+            
+            # Track validation results for user visibility
             valid_contacts = []
+            failed_validations = []
+            
             for contact in contacts:
                 try:
                     contact_dict = self._contact_to_dict(contact)
                     if award_instance.validate(contact_dict):
                         valid_contacts.append(contact)
+                    else:
+                        # Track why contact didn't qualify (for debugging)
+                        failed_validations.append((contact.callsign, "Did not meet award requirements"))
                 except Exception as e:
-                    logger.debug(f"Validation error for {contact.callsign}: {e}")
+                    # Track validation errors
+                    failed_validations.append((contact.callsign, str(e)))
+                    logger.warning(f"Validation error for {contact.callsign}: {e}")
                     continue
+            
+            # Report significant validation failures to help user identify issues
+            if len(failed_validations) > 0:
+                logger.info(f"Award '{award_name}': {len(valid_contacts)} contacts qualified, "
+                          f"{len(failed_validations)} contacts did not qualify")
+                if len(failed_validations) <= 10:
+                    # Show details for small number of failures
+                    for call, reason in failed_validations:
+                        logger.debug(f"  {call}: {reason}")
 
             # Filter by achievement date if provided (for endorsements)
             if achievement_date:
