@@ -384,7 +384,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.qth_input.setFont(font)
         self.qth_input.setMinimumHeight(35)
-        self.qth_input.setMaximumWidth(150)  # QTH field width (wider for city names)
+        self.qth_input.setMaximumWidth(200)  # QTH field width (increased for better city name visibility)
         row3.addWidget(create_label("QTH:"))
         row3.addWidget(self.qth_input, 0)
 
