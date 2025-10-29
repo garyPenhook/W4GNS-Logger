@@ -1,4 +1,5 @@
 name: CI
+# Ensure Qt is configured for headless testing in CI
 
 on:
   push:
