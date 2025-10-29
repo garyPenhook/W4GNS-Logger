@@ -106,8 +106,9 @@ Ham_Radio_Logging_Program_Design_Document.txt
 
 # Development and test files
 migrate_database.py
-test_*.py
-*_test.py
+# Keep tests in repository; only ignore ad-hoc root-level test files if needed
+!tests/
+!tests/**
 
 # Screenshots and media
 *.png

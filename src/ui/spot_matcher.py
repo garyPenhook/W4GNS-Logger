@@ -18,7 +18,7 @@ from src.database.repository import DatabaseRepository
 from src.skcc.spot_fetcher import SKCCSpot
 
 if TYPE_CHECKING:
-    from src.ui.spot_eligibility_analyzer import SpotEligibilityAnalyzer
+    from src.ui.spot_eligibility_analyzer import SpotEligibilityAnalyzer, SpotEligibility
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ class SpotMatcher:
         except Exception as e:
             logger.error(f"Failed to enable award eligibility: {e}", exc_info=True)
 
-    def get_spot_eligibility(self, spot: SKCCSpot) -> Optional['src.ui.spot_eligibility_analyzer.SpotEligibility']:
+    def get_spot_eligibility(self, spot: SKCCSpot) -> Optional['SpotEligibility']:
         """
         Get award eligibility information for a spot.
 

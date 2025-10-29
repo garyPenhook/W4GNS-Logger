@@ -44,10 +44,13 @@ class UnifiedSpot:
             callsign=self.callsign,
             frequency=self.frequency,
             mode=self.mode,
-            timestamp=self.timestamp,
+            grid=None,  # Grid typically unavailable from unified data
             reporter=self.spotter,
-            speed=self.wpm or 0,
-            grid="",  # May be added later
+            strength=0,
+            speed=self.wpm,
+            timestamp=self.timestamp,
+            is_skcc=False,
+            skcc_number=None,
         )
 
 
@@ -89,7 +92,7 @@ class SpotAdapter:
             timestamp=ts,
             spotter=spot.reporter,
             snr=None,
-            wpm=spot.speed if spot.speed > 0 else None,
+            wpm=spot.speed if (spot.speed or 0) > 0 else None,
             distance=None,
             bearing=None,
             source=source,

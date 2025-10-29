@@ -8,7 +8,7 @@ Implements ADIF 3.x specification compliance.
 import logging
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class ADIFParser:
         self.header: Dict[str, Any] = {}
         self.errors: List[Tuple[int, str]] = []
 
-    def parse_file(self, file_path: str) -> Tuple[List[Dict], Dict[str, Any]]:
+    def parse_file(self, file_path: Path | str) -> Tuple[List[Dict], Dict[str, Any]]:
         """
         Parse ADIF file (ADI or ADX format)
 
@@ -111,17 +111,17 @@ class ADIFParser:
         Returns:
             Tuple of (records, header)
         """
-        file_path = Path(file_path)
+        path = Path(file_path)
 
-        if not file_path.exists():
-            raise FileNotFoundError(f"ADIF file not found: {file_path}")
+        if not path.exists():
+            raise FileNotFoundError(f"ADIF file not found: {path}")
 
-        file_ext = file_path.suffix.lower()
+        file_ext = path.suffix.lower()
 
         if file_ext == ".adx":
-            return self._parse_adx(file_path)
+            return self._parse_adx(path)
         else:
-            return self._parse_adi(file_path)
+            return self._parse_adi(path)
 
     def _parse_adi(self, file_path: Path) -> Tuple[List[Dict], Dict[str, Any]]:
         """
@@ -212,7 +212,7 @@ class ADIFParser:
         for field_name, length, value in matches:
             self.header[field_name] = value
 
-    def _parse_record(self, record_str: str, line_num: int) -> Dict[str, Any]:
+    def _parse_record(self, record_str: str, line_num: int) -> Optional[Dict[str, Any]]:
         """Parse single ADIF record"""
         record = {}
         matches = self.FIELD_PATTERN.findall(record_str)

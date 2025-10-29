@@ -147,11 +147,11 @@ class RagChewAward(AwardProgram):
             key=lambda c: (c.get('qso_date', ''), c.get('qso_time', ''))
         )
 
-        total_minutes = 0
+        total_minutes: float = 0.0
         back_to_back_rejected = 0
         last_contacted_member = None
         qualified_contacts = []
-        band_minutes: Dict[str, int] = {}
+        band_minutes: Dict[str, float] = {}
 
         for contact in sorted_contacts:
             if self.validate(contact):
@@ -184,28 +184,28 @@ class RagChewAward(AwardProgram):
                     # Track band-specific minutes
                     if band not in band_minutes:
                         band_minutes[band] = 0
-                    band_minutes[band] += duration_minutes
+                    band_minutes[band] += float(duration_minutes)
 
         # Determine level based on total minutes
-        level_name, required_minutes = self._get_endorsement_level(total_minutes)
+        level_name, required_minutes = self._get_endorsement_level(int(total_minutes))
 
         # Calculate single-band endorsement progress
         band_progress = {}
         for band, minutes in sorted(band_minutes.items()):
             band_progress[band] = {
-                'current': minutes,
+                'current': float(minutes),
                 'required': self.base_duration,
-                'achieved': minutes >= self.base_duration,
-                'level': self._get_band_level(minutes)
+                'achieved': float(minutes) >= self.base_duration,
+                'level': self._get_band_level(int(minutes))
             }
 
         return {
-            'current': total_minutes,
+            'current': int(total_minutes),
             'required': required_minutes,
-            'achieved': total_minutes >= self.base_duration,
-            'progress_pct': min(100.0, (total_minutes / self.base_duration) * 100),
+            'achieved': int(total_minutes) >= self.base_duration,
+            'progress_pct': min(100.0, (float(total_minutes) / self.base_duration) * 100),
             'level': level_name,
-            'current_minutes': total_minutes,
+            'current_minutes': int(total_minutes),
             'total_contacts': len(qualified_contacts),
             'band_progress': band_progress,
             'back_to_back_rejected': back_to_back_rejected,

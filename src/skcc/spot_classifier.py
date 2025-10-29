@@ -79,9 +79,9 @@ class SpotClassifier:
 
             # Not in cache, classify now
             classification = self._classify_internal(callsign_upper, skcc_number)
-            
-            # Store in cache
-            self._classification_cache[callsign_upper] = classification
+
+            # Store in cache (use a sentinel for None to satisfy type expectations)
+            self._classification_cache[callsign_upper] = classification or "NONE"
 
             logger.info(f"Spot classifier: {callsign_upper} classified as {classification}")
             return classification

@@ -50,6 +50,39 @@ class RBNSpotsWidget(QWidget):
         self.config_manager = config_manager
         self.db = db
         self.spots: List[SKCCSpot] = []
+        # Optional reference to the shared spot manager; set by main window after construction
+        self._spot_manager_ref = None  # type: ignore[attr-defined]
+
+        # Minimal integration stub to keep legacy code paths functional and prevent attribute errors
+        class _IntegrationStub:
+            def __init__(self):
+                self.spots: List[Any] = []
+                self.spot_statistics: Dict[str, Any] = {
+                    "total_spots": 0,
+                    "goal_spots": 0,
+                    "target_spots": 0,
+                    "rbn_spots": 0,
+                    "sked_spots": 0,
+                    "unique_callsigns": set(),
+                }
+
+            def is_available(self) -> bool:
+                return False
+
+            def get_recent_spots(self, limit: int = 50) -> List[Any]:
+                return list(self.spots)[-limit:]
+
+            def get_spot_statistics(self) -> Dict[str, Any]:
+                return {
+                    "total_spots": len(self.spots),
+                    "goal_spots": 0,
+                    "target_spots": 0,
+                    "rbn_spots": len(self.spots),
+                    "sked_spots": 0,
+                    "unique_callsigns": len({getattr(s, 'callsign', '') for s in self.spots}),
+                }
+
+        self.integration = _IntegrationStub()
         
         # Duplicate filtering - track last seen time for each callsign
         # 3 minute cooldown to avoid back-to-back spots of same station
@@ -225,9 +258,13 @@ class RBNSpotsWidget(QWidget):
         self.cleanup_timer.timeout.connect(self._cleanup_old_duplicates)
         self.cleanup_timer.start(60000)  # Clean up every 60 seconds
         
-        # Add sample spots for demonstration if SKCC Skimmer not installed
+        # Optionally add sample spots for demonstration when no live connection is available
         if not self.integration.is_available():
-            self._add_sample_spots()
+            try:
+                self._add_sample_spots()
+            except Exception:
+                # Sample generation is best-effort only
+                pass
 
     def _cleanup_old_duplicates(self) -> None:
         """Clean up old entries from duplicate tracking (older than 10 minutes)"""
@@ -295,13 +332,8 @@ class RBNSpotsWidget(QWidget):
             
             if active_source:
                 from src.skcc.spot_source_adapter import SpotSource
-                
-                if active_source == SpotSource.SKCC_SKIMMER:
-                    self.source_label.setText("🟢 SKCC Skimmer (File IPC)")
-                    self.source_label.setStyleSheet("font-weight: bold; color: green;")
-                    logger.info("RBN Widget: Displaying SKCC Skimmer as active source")
-                    
-                elif active_source == SpotSource.DIRECT_RBN:
+
+                if active_source == SpotSource.DIRECT_RBN:
                     self.source_label.setText("🔵 Direct RBN Connection")
                     self.source_label.setStyleSheet("font-weight: bold; color: #0080FF;")
                     logger.info("RBN Widget: Displaying Direct RBN as active source")
@@ -477,12 +509,12 @@ class RBNSpotsWidget(QWidget):
             spot_count = len(self.spots)
             if self.integration.is_available():
                 self.status_label.setText(
-                    f"SKCC Skimmer: Connected ({spot_count} recent spots)"
+                    f"RBN: Connected ({spot_count} recent spots)"
                 )
                 self.status_label.setStyleSheet("color: green; font-weight: bold;")
             else:
                 self.status_label.setText(
-                    f"SKCC Skimmer: Not Installed - Showing demo spots ({spot_count} sample spots)"
+                    f"RBN: Demo mode ({spot_count} sample spots)"
                 )
                 self.status_label.setStyleSheet("color: orange; font-weight: bold;")
 
@@ -615,16 +647,34 @@ class RBNSpotsWidget(QWidget):
     def clear_spots(self) -> None:
         """Clear all spots"""
         self.spots_table.setRowCount(0)
-        self.integration.spots.clear()
-        self.integration.spot_statistics = {
-            "total_spots": 0,
-            "goal_spots": 0,
-            "target_spots": 0,
-            "rbn_spots": 0,
-            "sked_spots": 0,
-            "unique_callsigns": set(),
-        }
+        try:
+            self.integration.spots.clear()
+            self.integration.spot_statistics = {
+                "total_spots": 0,
+                "goal_spots": 0,
+                "target_spots": 0,
+                "rbn_spots": 0,
+                "sked_spots": 0,
+                "unique_callsigns": set(),
+            }
+        except Exception:
+            # If integration is a stub, ignore errors
+            pass
         self._update_statistics()
+
+    def _add_sample_spots(self) -> None:
+        """Populate a few sample spots for demonstration when RBN isn't connected."""
+        try:
+            now = datetime.utcnow()
+            sample = [
+                SKCCSpot(callsign="K4TEST", frequency=14.055, mode="CW", grid=None,
+                         reporter="TEST", strength=20, speed=22, timestamp=now, is_skcc=True, skcc_number="12345"),
+                SKCCSpot(callsign="W1AW", frequency=7.035, mode="CW", grid=None,
+                         reporter="TEST", strength=18, speed=25, timestamp=now - timedelta(minutes=2), is_skcc=True, skcc_number="100T"),
+            ]
+            self.spots.extend(sample)
+        except Exception as e:
+            logger.debug(f"Failed generating sample spots: {e}")
 
     def closeEvent(self, event) -> None:
         """Cleanup on close"""
