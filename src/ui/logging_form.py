@@ -113,7 +113,7 @@ class LoggingForm(QWidget):
                 'datetime': 120,  # Wider for better time field visibility
                 'band': 56,  # 30% narrower (was 80, now 56)
                 'mode': 70,  # 30% narrower (was 100, now 70)
-                'frequency': 77,  # 10% wider (was 70, now 77)
+                'frequency': 92,  # 20% wider than original 77 (was 77, now 92)
                 'country': 84,  # 30% narrower (was 120, now 84)
                 'state': 56,  # 30% narrower (was 80, now 56)
                 'grid': 73,  # Grid square field width
@@ -330,7 +330,7 @@ class LoggingForm(QWidget):
         font.setPointSize(int(font.pointSize() * 1.15))
         self.frequency_input.setFont(font)
         self.frequency_input.setMinimumHeight(35)
-        self.frequency_input.setMaximumWidth(77)  # 10% wider
+        self.frequency_input.setMaximumWidth(92)  # 20% wider
         row2.addWidget(create_label("Freq:"))
         row2.addWidget(self.frequency_input, 0)
 
@@ -435,7 +435,7 @@ class LoggingForm(QWidget):
         # County
         self.county_input = QLineEdit()
         self.county_input.setPlaceholderText("County")
-        self.county_input.setMaximumWidth(80)
+        self.county_input.setMaximumWidth(95)
         font = self.county_input.font()
         font.setPointSize(int(font.pointSize() * 1.15))
         self.county_input.setFont(font)

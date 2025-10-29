@@ -26,6 +26,7 @@ class RBNConnectionState(Enum):
 
 
 @dataclass(slots=True)
+@dataclass
 class SKCCSpot:
     """Represents a SKCC member spot from RBN"""
     callsign: str
@@ -38,6 +39,7 @@ class SKCCSpot:
     timestamp: datetime
     is_skcc: bool  # Whether identified as SKCC member
     skcc_number: Optional[str] = None
+    goal_type: Optional[str] = None  # GOAL/TARGET/BOTH classification from spot_classifier
 
 
 class RBNSpotFetcher:

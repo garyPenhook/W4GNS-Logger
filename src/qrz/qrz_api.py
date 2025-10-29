@@ -360,22 +360,27 @@ class QRZAPIClient:
             # Build QSO parameters for logbook API
             # API Key is used instead of session key for logbook uploads
             params = {
-                'key': self.api_key,  # API Key for logbook access
-                'callsign': callsign.upper(),
-                'qso_date': qso_date.replace('-', ''),  # YYYYMMDD format
-                'time_on': time_on.replace(':', ''),  # HHMMSS format
-                'freq': str(freq),
-                'mode': mode.upper(),
-                'rst_sent': rst_sent,
-                'rst_rcvd': rst_rcvd,
-                'agent': 'W4GNSLogger/1.0'
+                'KEY': self.api_key,  # API Key for logbook access
+                'ACTION': 'INSERT',   # Required: INSERT for new QSO
+                'ADIF': f"<CALL:{len(callsign)}>{callsign.upper()} "
+                        f"<QSO_DATE:8>{qso_date.replace('-', '')} "
+                        f"<TIME_ON:6>{time_on.replace(':', '')} "
+                        f"<FREQ:{len(str(freq))}>{freq} "
+                        f"<MODE:{len(mode)}>{mode.upper()} "
+                        f"<RST_SENT:{len(rst_sent)}>{rst_sent} "
+                        f"<RST_RCVD:{len(rst_rcvd)}>{rst_rcvd}"
             }
-
+            
+            # Add optional fields to ADIF string
+            adif_str = params['ADIF']
             if tx_power is not None:
-                params['tx_pwr'] = str(int(tx_power))
-
+                power_str = str(int(tx_power))
+                adif_str += f" <TX_PWR:{len(power_str)}>{power_str}"
             if notes:
-                params['notes'] = notes
+                adif_str += f" <COMMENT:{len(notes)}>{notes}"
+            
+            adif_str += " <EOR>"
+            params['ADIF'] = adif_str
 
             params_encoded = urllib.parse.urlencode(params)
 
@@ -386,6 +391,23 @@ class QRZAPIClient:
             from src.utils.network import urlopen_with_retries
             with urlopen_with_retries(url, timeout=self.timeout, retries=3, backoff=0.5) as response:
                 data = response.read().decode('utf-8')
+                
+                # Log the full response for debugging
+                logger.info(f"QRZ API Response for {callsign}: {data.strip()}")
+
+                # Parse URL-encoded response (STATUS=...&RESULT=...&REASON=...)
+                if 'STATUS=' in data or 'RESULT=' in data:
+                    response_params = urllib.parse.parse_qs(data)
+                    status = response_params.get('STATUS', [''])[0]
+                    result = response_params.get('RESULT', [''])[0]
+                    reason = response_params.get('REASON', [''])[0]
+                    
+                    if status == 'FAIL' or result == 'FAIL':
+                        logger.error(f"QRZ logbook upload failed: {reason}")
+                        return False
+                    elif status == 'OK' or result == 'OK':
+                        logger.info(f"✓ QSO successfully uploaded to QRZ logbook for {callsign}")
+                        return True
 
                 # Try to parse as XML first (error case)
                 try:
@@ -395,21 +417,29 @@ class QRZAPIClient:
                         error_msg = error_elem.text or "Unknown error"
                         logger.error(f"QRZ logbook upload error: {error_msg}")
                         return False
+                    
+                    # Check for RESULT element in XML response
+                    result_elem = self._find_element(root, 'RESULT')
+                    if result_elem is not None:
+                        result_msg = result_elem.text or ""
+                        logger.info(f"QRZ logbook response: {result_msg}")
+                        if 'OK' in result_msg.upper() or 'SUCCESS' in result_msg.upper():
+                            logger.info(f"✓ QSO successfully uploaded to QRZ logbook for {callsign}")
+                            return True
                 except ET.ParseError:
                     pass  # Not XML, likely success response
 
                 # Success: QRZ returns "OK" or similar plain text
                 if data.strip().upper() == 'OK':
-                    logger.info(f"QSO uploaded to QRZ logbook for {callsign}")
+                    logger.info(f"✓ QSO successfully uploaded to QRZ logbook for {callsign}")
                     return True
                 elif not data.strip():
                     # Empty response often means success
-                    logger.info(f"QSO uploaded to QRZ logbook for {callsign}")
+                    logger.info(f"✓ QSO successfully uploaded to QRZ logbook for {callsign} (empty response)")
                     return True
                 else:
-                    logger.debug(f"QRZ upload response: {data}")
-                    logger.info(f"QSO upload attempt for {callsign} completed")
-                    return True  # Assume success unless we get explicit error
+                    logger.warning(f"QRZ upload unexpected response for {callsign}: {data.strip()[:100]}")
+                    return False  # Don't assume success with unexpected response
 
         except urllib.error.URLError as e:
             logger.error(f"QRZ logbook connection error: {e}")

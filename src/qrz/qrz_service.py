@@ -123,6 +123,11 @@ class QRZService:
         """
         Upload a QSO to QRZ logbook
 
+        Note: This method is called by upload_qso_async() which is invoked
+        from the logging form. The logging form has already checked that
+        QRZ is enabled and auto_upload is enabled, so we don't double-check
+        those settings here. This allows explicit uploads to succeed.
+
         Args:
             callsign: DX station callsign
             qso_date: QSO date (YYYY-MM-DD)
@@ -138,11 +143,7 @@ class QRZService:
             True if upload successful
         """
         if not self.is_enabled():
-            logger.debug("QRZ upload skipped: QRZ integration disabled")
-            return False
-
-        if not self.config_manager.get("qrz.auto_upload", False):
-            logger.debug("QRZ upload skipped: Auto-upload disabled")
+            logger.warning("QRZ upload skipped: QRZ integration disabled in settings")
             return False
 
         if not self.authenticated:

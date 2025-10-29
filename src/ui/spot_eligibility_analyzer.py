@@ -19,6 +19,7 @@ from enum import Enum
 
 from src.database.repository import DatabaseRepository
 from src.skcc.spot_fetcher import SKCCSpot
+from src.utils.skcc_number import get_member_type
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +251,16 @@ class SpotEligibilityAnalyzer:
                 # Not a SKCC member, skip award checks
                 return [], {}
 
-            suffix = member.get('current_suffix', '').upper()
+            # Extract award suffix (C/T/S) from SKCC number using both the suffix and member tables
+            # The suffix in the number is not always reliable, so we check the member tables too
+            skcc_number = member.get('skcc_number', '')
+            member_type = get_member_type(skcc_number)  # Returns 'C', 'T', 'S', or None from suffix
+            
+            # Check actual membership status from database tables (more reliable)
+            member_status = self.db.check_skcc_member_status(skcc_number)
+            is_centurion = member_status['is_centurion'] or member_type == 'C'
+            is_tribune = member_status['is_tribune'] or member_type == 'T'
+            is_senator = member_status['is_senator'] or member_type == 'S'
 
             # 1. CENTURION - need any SKCC member (not yet achieved)
             centurion = eligibility.get('centurion', {})
@@ -266,27 +276,37 @@ class SpotEligibilityAnalyzer:
                 if remaining <= 5:
                     logger.info(f"CRITICAL: {callsign} helps Centurion ({remaining} remaining)")
 
-            # 2. TRIBUNE - need Tribune/Senator members (prerequisite: Centurion)
+            # 2. TRIBUNE - ALWAYS need C/T/S members for Tribune endorsements
+            # Tribune x1 = 50, x2 = 100, x3 = 150, ... x8 = 400
+            # Even after achieving Tribune x1, you need MORE C/T/S contacts for endorsements
             if centurion.get('qualified', False):
                 tribune = eligibility.get('tribune', {})
-                if not tribune.get('qualified', False) and suffix in ['T', 'S']:
-                    current = tribune.get('current_contacts', 0)
+                tribune_count = tribune.get('current_contacts', 0)
+                
+                # Always highlight C/T/S members until Tribune x8 (400 contacts) is achieved
+                # Tribune x8 is the prerequisite for Senator award
+                if tribune_count < 400 and (is_centurion or is_tribune or is_senator):
                     required = tribune.get('required_contacts', 100)
-                    remaining = required - current
+                    remaining = max(0, required - tribune_count)
 
                     needed_for_awards.append("Tribune")
-                    award_progress["Tribune"] = f"{current}/{required} Tribune+ (need {remaining})"
+                    award_progress["Tribune"] = f"{tribune_count}/{required}+ C/T/S (x8 at 400)"
 
-            # 3. SENATOR - need Senator members (prerequisite: Tribune)
-            if centurion.get('qualified', False) and eligibility.get('tribune', {}).get('qualified', False):
-                senator = eligibility.get('senator', {})
-                if not senator.get('qualified', False) and suffix == 'S':
-                    current = senator.get('current_contacts', 0)
-                    required = senator.get('required_contacts', 100)
-                    remaining = required - current
+            # 3. SENATOR - need T/S members AFTER Tribune x8 (400 C/T/S contacts)
+            if centurion.get('qualified', False):
+                tribune = eligibility.get('tribune', {})
+                tribune_count = tribune.get('current_contacts', 0)
+                
+                # Senator only applies AFTER Tribune x8 is achieved
+                if tribune_count >= 400:
+                    senator = eligibility.get('senator', {})
+                    if not senator.get('qualified', False) and (is_tribune or is_senator):
+                        current = senator.get('current_contacts', 0)
+                        required = senator.get('required_contacts', 200)
+                        remaining = required - current
 
-                    needed_for_awards.append("Senator")
-                    award_progress["Senator"] = f"{current}/{required} Senators (need {remaining})"
+                        needed_for_awards.append("Senator")
+                        award_progress["Senator"] = f"{current}/{required} T/S (need {remaining})"
 
             # 4. TRIPLE KEY - check by key type
             triple_key = eligibility.get('triple_key', {})

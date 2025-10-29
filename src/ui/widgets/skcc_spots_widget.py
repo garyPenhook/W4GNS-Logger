@@ -75,6 +75,9 @@ class SKCCSpotWidget(QWidget):
 
     # Signal when user clicks on a spot (to populate logging form)
     spot_selected = pyqtSignal(str, float)  # callsign, frequency
+    
+    # Internal signal for thread-safe spot handling from background thread
+    _new_spot_signal = pyqtSignal(object)  # SKCCSpot object
 
     def __init__(self, spot_manager: SKCCSpotManager, spot_matcher: Optional['SpotMatcher'] = None, 
                  parent: Optional[QWidget] = None):
@@ -113,6 +116,9 @@ class SKCCSpotWidget(QWidget):
         self._init_ui()
         self._load_band_selections()  # Load saved band selections
         self._connect_signals()
+        
+        # Connect internal signal for thread-safe spot handling
+        self._new_spot_signal.connect(self._handle_new_spot_on_main_thread)
 
         # Auto-cleanup timer (runs periodically to clean up old spots)
         self.cleanup_timer = QTimer()
@@ -209,6 +215,38 @@ class SKCCSpotWidget(QWidget):
         status_font.setPointSize(9)
         self.status_label.setFont(status_font)
         layout.addWidget(self.status_label)
+
+        # Color-coded legend for spot highlighting
+        legend_layout = QHBoxLayout()
+        legend_layout.addWidget(QLabel("Highlight Colors:"))
+        
+        # Red - CRITICAL
+        red_label = QLabel(" CRITICAL (1-5 needed for award) ")
+        red_label.setStyleSheet("background-color: rgba(255, 0, 0, 120); padding: 2px 5px; border-radius: 3px;")
+        legend_layout.addWidget(red_label)
+        
+        # Orange - HIGH
+        orange_label = QLabel(" HIGH (6-20 needed) ")
+        orange_label.setStyleSheet("background-color: rgba(255, 100, 0, 100); padding: 2px 5px; border-radius: 3px;")
+        legend_layout.addWidget(orange_label)
+        
+        # Yellow - MEDIUM
+        yellow_label = QLabel(" MEDIUM (21-50 needed) ")
+        yellow_label.setStyleSheet("background-color: rgba(255, 200, 0, 80); padding: 2px 5px; border-radius: 3px;")
+        legend_layout.addWidget(yellow_label)
+        
+        # Green - LOW
+        green_label = QLabel(" LOW (already worked) ")
+        green_label.setStyleSheet("background-color: rgba(100, 200, 100, 60); padding: 2px 5px; border-radius: 3px;")
+        legend_layout.addWidget(green_label)
+        
+        # Info label
+        info_label = QLabel(" Hover over highlighted spots for award details")
+        info_label.setStyleSheet("font-style: italic; color: gray;")
+        legend_layout.addWidget(info_label)
+        
+        legend_layout.addStretch()
+        layout.addLayout(legend_layout)
 
         # Spots table
         self.spots_table = QTableWidget()
@@ -375,7 +413,15 @@ class SKCCSpotWidget(QWidget):
             self.connect_btn.setEnabled(True)
 
     def _on_new_spot(self, spot: SKCCSpot) -> None:
-        """Handle new spot received, filtering duplicates within 3-minute cooldown"""
+        """
+        Handle new spot received from background thread.
+        This is called from the RBN thread, so we emit a signal to handle it on the main thread.
+        """
+        # Emit signal to handle on main UI thread (thread-safe)
+        self._new_spot_signal.emit(spot)
+    
+    def _handle_new_spot_on_main_thread(self, spot: SKCCSpot) -> None:
+        """Handle new spot on main UI thread (called via signal), filtering duplicates within 3-minute cooldown"""
         now = datetime.now(timezone.utc)
         callsign = spot.callsign.upper()
 
@@ -662,7 +708,7 @@ class SKCCSpotWidget(QWidget):
                     
                     if eligibility and eligibility.eligibility_level in color_map:
                         highlight_color = color_map[eligibility.eligibility_level]
-                        tooltip_text = eligibility.tooltip or ""
+                        tooltip_text = eligibility.tooltip_text or ""
                 
                 except Exception as e:
                     logger.debug(f"Error getting eligibility for {spot.callsign}: {e}")

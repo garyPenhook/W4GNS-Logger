@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 NOAA_SCALES = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 NOAA_KP_FORECAST = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
 NOAA_F107_FLUX = "https://services.swpc.noaa.gov/json/f107_cm_flux.json"  # Solar Flux (F10.7)
-NOAA_SUNSPOTS = "https://services.swpc.noaa.gov/json/sunspots.json"  # Sunspot counts
+NOAA_SUNSPOTS = "https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json"  # Sunspot and smoothed SSN data
 NOAA_SUNSPOT_AREA = "https://services.swpc.noaa.gov/json/solar_sunspot_areas.json"  # Sunspot areas
 
 # Fallback data source for Solar Flux Index and Sunspots
@@ -325,44 +325,47 @@ class SpaceWeatherFetcher:
         """
         Get Smoothed Sunspot Number (SSN) - 12-month running average.
 
-        Fetches from NOAA SWPC sunspot data endpoint which includes smoothed values.
+        Fetches from NOAA SWPC solar cycle data endpoint which includes smoothed values.
+        Note: Recent months may have -1 for smoothed_ssn as it requires 12 months of data.
+        We search backwards to find the most recent valid smoothed value.
 
         Returns:
             SSN value or None if unable to fetch
         """
         try:
-            # Fetch NOAA sunspot data (includes smoothed sunspot number)
+            # Fetch NOAA solar cycle data (includes smoothed sunspot number)
             logger.debug("Fetching smoothed sunspot number (SSN) from NOAA SWPC...")
             response = self.session.get(NOAA_SUNSPOTS, timeout=HTTP_TIMEOUT)
             response.raise_for_status()
             data = response.json()
 
-            # NOAA sunspot data structure: list of records with 'time_tag' and 'smoothed_ssn'
-            # Get the most recent record
+            # NOAA data structure: list of records with 'time-tag' and 'smoothed_ssn'
+            # Recent months may have -1 for smoothed_ssn, so search backwards for valid value
             if isinstance(data, list) and len(data) > 0:
-                # Find the most recent record with smoothed SSN value
+                # Search backwards through records for most recent valid smoothed_ssn
                 for record in reversed(data):
                     smoothed_ssn = record.get('smoothed_ssn')
-                    if smoothed_ssn is not None and smoothed_ssn != -1:
+                    if smoothed_ssn is not None and smoothed_ssn > 0:  # -1 means not calculated yet
                         try:
                             ssn_value = float(smoothed_ssn)
-                            logger.info(f"Retrieved smoothed sunspot number (SSN) from NOAA: {ssn_value:.1f}")
+                            time_tag = record.get('time-tag', 'unknown')
+                            logger.info(f"Retrieved smoothed sunspot number (SSN) from NOAA: {ssn_value:.1f} (from {time_tag})")
                             return ssn_value
                         except (ValueError, TypeError):
                             logger.debug(f"Invalid SSN value: {smoothed_ssn}")
                             continue
 
-                logger.warning("No valid smoothed sunspot number found in NOAA data")
+                logger.warning("No valid smoothed sunspot number found in NOAA data (all records show -1)")
             else:
                 logger.warning("Invalid NOAA sunspot data format")
 
             return None
 
         except requests.RequestException as e:
-            logger.debug(f"Unable to fetch NOAA sunspot data: {e}")
+            logger.warning(f"Unable to fetch NOAA sunspot data: {e}")
             return None
         except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.debug(f"Error parsing NOAA sunspot data: {e}")
+            logger.warning(f"Error parsing NOAA sunspot data: {e}")
             return None
 
     def get_solar_data(self) -> Dict[str, Any]:
@@ -611,39 +614,19 @@ class SpaceWeatherFetcher:
 
                 logger.warning(f"GIRO station override {override_station} not found, falling back to nearest")
 
-            # Auto-select nearest station
-            # Calculate distance to each station using simple Haversine approximation
-            # For small distances, Euclidean distance in degrees works adequately
-            min_distance = float('inf')
-            nearest_station = None
+            # Auto-select nearest station with recent data
+            # Use weighted scoring: prefer nearby stations, but also consider data freshness
+            # Score = distance_penalty + age_penalty
+            # Lower score = better choice
+            best_score = float('inf')
+            best_station = None
 
             for station_data in stations:
                 try:
-                    # Skip stations with stale data (>24 hours old, no valid MUFD)
-                    # This prevents using old measurements from defunct ionosondes
-                    time_str = station_data.get('time', '')
+                    # Skip stations with no MUFD value
                     mufd = station_data.get('mufd')
                     if not mufd:
-                        continue  # Skip if no MUFD value
-
-                    # Check if measurement is recent enough (within 24 hours)
-                    try:
-                        # GIRO API returns times like "2025-10-26T19:05:05" (no timezone)
-                        # Parse as UTC assuming all GIRO times are UTC
-                        time_str_clean = time_str.replace('Z', '').strip()
-                        meas_time = datetime.fromisoformat(time_str_clean)
-                        # Make it timezone-aware (UTC)
-                        if meas_time.tzinfo is None:
-                            meas_time = meas_time.replace(tzinfo=timezone.utc)
-
-                        age_hours = (datetime.now(timezone.utc) - meas_time).total_seconds() / 3600
-                        if age_hours > 24:
-                            logger.debug(f"Skipping stale GIRO data from {station_data.get('station', {}).get('code', 'Unknown')}: {age_hours:.1f}h old")
-                            continue
-                    except (ValueError, TypeError) as e:
-                        # If we can't parse the time, use the station anyway
-                        logger.debug(f"Could not parse GIRO time {time_str}: {e}")
-                        pass
+                        continue
 
                     station_info = station_data.get('station', {})
                     station_lat = float(station_info.get('latitude', 0))
@@ -659,32 +642,69 @@ class SpaceWeatherFetcher:
                     if user_lon > 180:
                         user_lon = user_lon - 360
 
-                    # Simple distance calculation (Euclidean in degrees)
-                    # Good enough for finding nearest station
+                    # Calculate distance (Euclidean in degrees)
                     lat_diff = latitude - station_lat
                     lon_diff = user_lon - station_lon
                     distance_deg = (lat_diff**2 + lon_diff**2)**0.5
+                    distance_km = distance_deg * 111.0
 
-                    if distance_deg < min_distance:
-                        min_distance = distance_deg
-                        nearest_station = station_data
+                    # Calculate data age
+                    time_str = station_data.get('time', '')
+                    age_hours = float('inf')  # Default to very old if can't parse
+                    
+                    try:
+                        time_str_clean = time_str.replace('Z', '').strip()
+                        meas_time = datetime.fromisoformat(time_str_clean)
+                        if meas_time.tzinfo is None:
+                            meas_time = meas_time.replace(tzinfo=timezone.utc)
+                        age_hours = (datetime.now(timezone.utc) - meas_time).total_seconds() / 3600
+                    except (ValueError, TypeError):
+                        pass  # Use default age_hours = inf
+
+                    # Skip data older than 30 days - definitely too stale
+                    if age_hours > 720:
+                        logger.debug(f"Skipping very stale GIRO data from {station_info.get('code', 'Unknown')}: {age_hours/24:.1f} days old")
+                        continue
+
+                    # Scoring: heavily favor nearby stations, with some weight for data freshness
+                    # - Distance penalty: 1 point per 50km (distance is most important)
+                    # - Age penalty: 1 point per 48 hours (prefer fresher data, but distance matters more)
+                    # Examples:
+                    #   - 1000km + 72h old = 1000/50 + 72/48 = 20 + 1.5 = 21.5
+                    #   - 2000km + 24h old = 2000/50 + 24/48 = 40 + 0.5 = 40.5
+                    # So a station 1000km away with 3-day old data beats 2000km with 1-day old data
+                    distance_penalty = distance_km / 50.0
+                    age_penalty = age_hours / 48.0
+                    score = distance_penalty + age_penalty
+
+                    if score < best_score:
+                        best_score = score
+                        best_station = station_data
 
                 except (ValueError, TypeError):
                     continue
 
-            if nearest_station is None:
+            if best_station is None:
                 logger.warning("Unable to process GIRO station data")
                 return None
 
-            # Extract relevant data from nearest station
-            station_info = nearest_station.get('station', {})
-            mufd = nearest_station.get('mufd')
-            fof2 = nearest_station.get('fof2')
-            hmf2 = nearest_station.get('hmf2')
-            time_str = nearest_station.get('time', 'Unknown')
+            # Extract relevant data from best station
+            station_info = best_station.get('station', {})
+            mufd = best_station.get('mufd')
+            fof2 = best_station.get('fof2')
+            hmf2 = best_station.get('hmf2')
+            time_str = best_station.get('time', 'Unknown')
 
-            # Convert distance back to km (rough approximation: 1 degree ≈ 111 km)
-            distance_km = min_distance * 111.0
+            # Calculate final distance
+            station_lat = float(station_info.get('latitude', 0))
+            station_lon = float(station_info.get('longitude', 0))
+            if station_lon > 180:
+                station_lon = station_lon - 360
+            user_lon = longitude if longitude <= 180 else longitude - 360
+            
+            lat_diff = latitude - station_lat
+            lon_diff = user_lon - station_lon
+            distance_km = ((lat_diff**2 + lon_diff**2)**0.5) * 111.0
 
             logger.info(
                 f"Got GIRO data from nearest station: {station_info.get('code', 'Unknown')} "

@@ -91,8 +91,8 @@ class SpaceWeatherWidget(QWidget):
     def _init_ui(self) -> None:
         """Initialize UI components"""
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(30)  # Maximum spacing for readability
+        main_layout.setContentsMargins(15, 15, 15, 15)
 
         # Current Conditions Section
         conditions_group = self._create_current_conditions_section()
@@ -112,17 +112,11 @@ class SpaceWeatherWidget(QWidget):
 
         main_layout.addLayout(kindex_solar_layout)
 
-        # Best Band NOW Section (NEW!)
-        best_band_group = self._create_best_band_now_section()
-        main_layout.addWidget(best_band_group)
-
         # Maximum Usable Frequency (MUF) Section
         muf_group = self._create_muf_section()
         main_layout.addWidget(muf_group)
 
-        # HF Propagation Recommendation Section
-        propagation_group = self._create_propagation_section()
-        main_layout.addWidget(propagation_group)
+        # HF Propagation Recommendation Section removed to save space for MUF sections
 
         # Refresh button and status
         controls_layout = QHBoxLayout()
@@ -224,132 +218,21 @@ class SpaceWeatherWidget(QWidget):
         group.setLayout(layout)
         return group
 
-    def _create_best_band_now_section(self) -> QGroupBox:
-        """Create 'Best Band NOW' recommendation section with time-aware analysis"""
-        group = QGroupBox("🎯 BEST BAND FOR WORLDWIDE COMMUNICATION NOW")
-        group.setStyleSheet("QGroupBox { font-weight: bold; }")
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-
-        # Time and location info
-        time_info_layout = QHBoxLayout()
-        self.best_band_time_label = QLabel("Time: -- UTC | Location: --")
-        self.best_band_time_label.setFont(self._get_font(self.FONT_NORMAL))
-        time_info_layout.addWidget(self.best_band_time_label)
-        time_info_layout.addStretch()
-        layout.addLayout(time_info_layout)
-
-        # Best band recommendation (LARGE)
-        best_band_layout = QHBoxLayout()
-
-        # Time period emoji
-        self.best_band_emoji = QLabel("❓")
-        self.best_band_emoji.setFont(self._get_font(self.FONT_HUGE))
-        self.best_band_emoji.setMinimumWidth(50)
-        best_band_layout.addWidget(self.best_band_emoji)
-
-        # Band name and reason
-        recommendation_vbox = QVBoxLayout()
-
-        # Best band name (LARGE) - uses system palette, works in light and dark mode
-        self.best_band_name = QLabel("--")
-        self.best_band_name.setFont(self._get_font(self.FONT_XLARGE, bold=True))
-        self.best_band_name.setStyleSheet("color: #1E7D5E;")  # Medium green, readable in both modes
-        recommendation_vbox.addWidget(self.best_band_name)
-
-        # Reason text - uses system palette
-        self.best_band_reason = QLabel("Loading propagation data...")
-        self.best_band_reason.setFont(self._get_font(self.FONT_NORMAL))
-        self.best_band_reason.setWordWrap(True)
-        # No color style - uses system palette text color
-        recommendation_vbox.addWidget(self.best_band_reason)
-
-        # MUF and margin info - displayed on separate lines for clarity
-        muf_info_layout = QVBoxLayout()
-        muf_info_layout.setSpacing(5)
-
-        # Top line: MUF display with large spacing
-        muf_line_layout = QHBoxLayout()
-        muf_line_layout.setContentsMargins(0, 0, 0, 0)
-        muf_line_layout.setSpacing(30)
-
-        muf_label = QLabel("MUF:")
-        muf_label.setFont(self._get_font(self.FONT_SMALL, bold=True))
-        muf_line_layout.addWidget(muf_label)
-
-        self.best_band_muf_value = QLabel("-- MHz")
-        self.best_band_muf_value.setFont(self._get_font(self.FONT_LARGE, bold=True))
-        self.best_band_muf_value.setMinimumWidth(100)
-        muf_line_layout.addWidget(self.best_band_muf_value)
-
-        muf_line_layout.addStretch()
-        muf_info_layout.addLayout(muf_line_layout)
-
-        # Bottom line: Margin display with large spacing
-        margin_line_layout = QHBoxLayout()
-        margin_line_layout.setContentsMargins(0, 0, 0, 0)
-        margin_line_layout.setSpacing(30)
-
-        margin_label = QLabel("Margin:")
-        margin_label.setFont(self._get_font(self.FONT_SMALL, bold=True))
-        margin_line_layout.addWidget(margin_label)
-
-        self.best_band_margin_value = QLabel("-- MHz")
-        self.best_band_margin_value.setFont(self._get_font(self.FONT_LARGE, bold=True))
-        self.best_band_margin_value.setMinimumWidth(100)
-        margin_line_layout.addWidget(self.best_band_margin_value)
-
-        margin_desc = QLabel("above band edge")
-        margin_desc.setFont(self._get_font(self.FONT_SMALL))
-        margin_line_layout.addWidget(margin_desc)
-
-        margin_line_layout.addStretch()
-        muf_info_layout.addLayout(margin_line_layout)
-
-        recommendation_vbox.addLayout(muf_info_layout)
-
-        best_band_layout.addLayout(recommendation_vbox)
-        best_band_layout.addStretch()
-        layout.addLayout(best_band_layout)
-
-        # Top 3 bands section - with proper spacing layout
-        layout.addWidget(QLabel("Next best options:"))
-
-        # Create a horizontal layout for top 3 bands with spacing
-        top3_layout = QHBoxLayout()
-        top3_layout.setSpacing(20)  # Spread bands apart
-
-        self.best_band_top3_labels = []
-        for i in range(3):
-            band_label = QLabel("--")
-            band_label.setFont(self._get_font(self.FONT_SMALL))
-            self.best_band_top3_labels.append(band_label)
-            top3_layout.addWidget(band_label)
-
-            # Add spacer between bands except after the last one
-            if i < 2:
-                top3_layout.addSpacing(15)
-
-        top3_layout.addStretch()  # Push bands to the left
-        layout.addLayout(top3_layout)
-
-        group.setLayout(layout)
-        return group
-
     def _create_muf_section(self) -> QGroupBox:
         """Create Maximum Usable Frequency (MUF) bar display"""
         group = QGroupBox("Maximum Usable Frequency (MUF) - Updated every 15 minutes")
         layout = QVBoxLayout()
-        layout.setSpacing(15)
+        layout.setSpacing(25)
+        layout.setContentsMargins(20, 20, 20, 20)
 
         # MUF value display (large and prominent)
         muf_header_layout = QHBoxLayout()
         muf_label = QLabel("Current MUF:")
-        muf_label.setFont(self._get_font(self.FONT_LARGE, bold=True))
+        muf_label.setFont(self._get_font(self.FONT_NORMAL, bold=True))
         muf_header_layout.addWidget(muf_label)
 
         self.muf_value_label = QLabel("-- MHz")
-        self.muf_value_label.setFont(self._get_font(self.FONT_HUGE, bold=True))
+        self.muf_value_label.setFont(self._get_font(self.FONT_XLARGE, bold=True))
         self.muf_value_label.setStyleSheet("color: #1E7D5E;")  # Green
         muf_header_layout.addWidget(self.muf_value_label)
         muf_header_layout.addStretch()
@@ -360,7 +243,7 @@ class SpaceWeatherWidget(QWidget):
         bar_layout.setSpacing(10)
 
         self.muf_bar_display = QLabel("█░░░░░░░░░░░░░░░░░░ Loading...")
-        self.muf_bar_display.setFont(self._get_font(self.FONT_XLARGE))
+        self.muf_bar_display.setFont(self._get_font(self.FONT_LARGE))
         bar_layout.addWidget(self.muf_bar_display)
 
         self.muf_status_label = QLabel("Calculating...")
@@ -437,19 +320,6 @@ class SpaceWeatherWidget(QWidget):
         xray_layout.addWidget(QLabel("(A=Quiet, X=Major flare)"))
         xray_layout.addStretch()
         layout.addLayout(xray_layout)
-
-        group.setLayout(layout)
-        return group
-
-    def _create_propagation_section(self) -> QGroupBox:
-        """Create HF propagation recommendation"""
-        group = QGroupBox("HF Band Recommendations")
-        layout = QVBoxLayout()
-
-        self.band_recommendations = QLabel("")
-        self.band_recommendations.setFont(self._get_font(self.FONT_SMALL))
-        self.band_recommendations.setWordWrap(True)
-        layout.addWidget(self.band_recommendations)
 
         group.setLayout(layout)
         return group
@@ -672,85 +542,7 @@ class SpaceWeatherWidget(QWidget):
             else:
                 self.xray_class_label.setText(f"Solar: Event Level {s_scale}")
 
-        # Band recommendations
-        self._update_band_recommendations(data)
-
-    def _update_band_recommendations(self, data: dict) -> None:
-        """Update HF band recommendations based on actual time-of-day propagation"""
-        try:
-            kp = data.get('kp_index')
-            sfi = data.get('solar_flux_index')
-
-            if kp is None or sfi is None:
-                self.band_recommendations.setText("Unable to assess conditions")
-                return
-
-            kp_val = int(float(kp))
-            sfi_val = int(float(sfi))
-
-            # Get user's home grid and calculate best bands NOW
-            home_grid = self.config.get("general.home_grid", "FN20qd")
-
-            # Calculate MUF predictions
-            predictions = self.muf_fetcher.get_band_muf_predictions(
-                sfi=sfi_val,
-                k_index=kp_val,
-                home_grid=home_grid
-            )
-
-            # Get best band ranking based on time of day
-            best_band_info = self.muf_fetcher.get_best_band_now(
-                predictions=predictions,
-                home_grid=home_grid,
-                sfi=sfi_val,
-                k_index=kp_val
-            )
-
-            # Get time period and top 3 bands
-            time_period = best_band_info.get('time_period', 'Unknown')
-            top_3 = best_band_info.get('top_3_bands', [])
-
-            recommendations = []
-
-            # Add time period indicator
-            if time_period == "Daytime":
-                recommendations.append(f"☀️ {time_period}: High frequencies best for worldwide")
-            elif time_period == "Terminator (Best!)":
-                recommendations.append(f"🌅 {time_period}: All bands excellent!")
-            else:  # Nighttime
-                recommendations.append(f"🌙 {time_period}: Low frequencies best for worldwide")
-
-            # Add top 3 recommended bands with usability info
-            if top_3:
-                recommendations.append("\nBest bands to use RIGHT NOW:")
-                for i, band_info in enumerate(top_3, 1):
-                    band = band_info['band']
-                    muf = band_info['muf']
-                    margin = band_info['margin']
-                    is_marginal = band_info.get('marginal', False)
-
-                    # Determine quality indicator based on margin
-                    if margin > 5:
-                        quality = "✓ Excellent"
-                    elif margin > 2:
-                        quality = "✓ Good"
-                    elif margin >= 0:
-                        quality = "⚠ Marginal"
-                    else:
-                        quality = "⚠⚠ VERY Marginal" if margin < -2 else "⚠ Marginal"
-
-                    # Add warning indicator if marginal high-frequency band
-                    margin_note = " ← TRY THIS FIRST (right frequency for daytime!)" if is_marginal and margin < 0 else ""
-
-                    recommendations.append(f"{i}. {band}: {quality} (MUF margin: {margin:+.1f} MHz){margin_note}")
-            else:
-                recommendations.append("\nNo bands currently usable. Wait for conditions to improve.")
-
-            self.band_recommendations.setText("\n".join(recommendations))
-
-        except Exception as e:
-            logger.error(f"Error updating band recommendations: {e}")
-            self.band_recommendations.setText(f"Error calculating recommendations: {str(e)[:50]}")
+        # Band recommendations removed - no longer displayed
 
     def _update_muf_display(self, data: dict) -> None:
         """Update single MUF bar display with current maximum MUF value"""
@@ -790,9 +582,6 @@ class SpaceWeatherWidget(QWidget):
             # Store predictions for reference
             self.current_muf_predictions = predictions
 
-            # Update "Best Band Now" section
-            self._update_best_band_now(predictions, home_grid, sfi_val, kp_val)
-
             # Find the maximum MUF value from all predictions
             max_muf = 0
             best_band = None
@@ -820,73 +609,6 @@ class SpaceWeatherWidget(QWidget):
             logger.error(f"Error updating MUF display: {e}", exc_info=True)
             self.muf_value_label.setText("-- MHz")
             self.muf_bar_display.setText(f"█░░░░░░░░░░░░░░░░░░ Error: {str(e)[:30]}")
-
-    def _update_best_band_now(self, predictions: Dict[str, 'MUFPrediction'],
-                              home_grid: str, sfi: int, k_index: int) -> None:
-        """Update 'Best Band NOW' section with time-aware recommendation"""
-        logger.info("✓ _update_best_band_now called - updating all best band labels")
-        try:
-            # Get best band recommendation
-            best_band_data = self.muf_fetcher.get_best_band_now(
-                predictions=predictions,
-                home_grid=home_grid,
-                sfi=sfi,
-                k_index=k_index
-            )
-
-            # Update time and location
-            self.best_band_time_label.setText(
-                f"Time: {best_band_data['utc_time']} | Location: {home_grid} | "
-                f"Time Period: {best_band_data['time_period']}"
-            )
-
-            # Update emoji based on time period
-            self.best_band_emoji.setText(best_band_data['time_emoji'])
-
-            # Update best band name
-            if best_band_data['band']:
-                self.best_band_name.setText(best_band_data['band'])
-                self.best_band_name.setStyleSheet("color: #006400; font-weight: bold;")  # Dark green
-            else:
-                self.best_band_name.setText("No data")
-                self.best_band_name.setStyleSheet("color: #ff0000; font-weight: bold;")  # Red
-
-            # Update reason
-            self.best_band_reason.setText(best_band_data['reason'])
-
-            # Update MUF and margin info
-            if best_band_data['band'] and best_band_data['muf'] is not None:
-                margin_str = f"{best_band_data['margin']:.1f}" if best_band_data['margin'] else "--"
-                muf_str = f"{best_band_data['muf']:.1f}"
-                logger.info(f"✓ Setting MUF labels: MUF={muf_str} MHz, Margin={margin_str} MHz")
-                self.best_band_muf_value.setText(f"{muf_str} MHz")
-                self.best_band_margin_value.setText(f"{margin_str} MHz")
-            else:
-                self.best_band_muf_value.setText("-- MHz")
-                self.best_band_margin_value.setText("-- MHz")
-
-            # Update top 3 bands
-            if best_band_data['top_3_bands']:
-                logger.info(f"✓ Setting top 3 bands: {[b['band'] for b in best_band_data['top_3_bands']]}")
-                for i, label in enumerate(self.best_band_top3_labels):
-                    if i < len(best_band_data['top_3_bands']):
-                        b = best_band_data['top_3_bands'][i]
-                        marginal_indicator = " ⚠" if b.get('marginal', False) else ""
-                        text = f"{b['band']}\n({b['muf']:.1f}M, {b['margin']:+.1f}){marginal_indicator}"
-                        label.setText(text)
-                        label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-                    else:
-                        label.setText("--")
-            else:
-                for label in self.best_band_top3_labels:
-                    label.setText("--")
-
-            logger.info(f"Best band now: {best_band_data['band']} ({best_band_data['time_period']})")
-
-        except Exception as e:
-            logger.error(f"Error updating best band now: {e}", exc_info=True)
-            self.best_band_name.setText("Error")
-            self.best_band_reason.setText(f"Failed to calculate: {str(e)[:50]}")
 
     def closeEvent(self, event) -> None:
         """Clean up on close"""

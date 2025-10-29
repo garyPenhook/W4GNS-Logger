@@ -215,7 +215,7 @@ class SenatorProgressWidget(QWidget):
         # Status information
         status_layout = QHBoxLayout()
 
-        self.list_status_label = QLabel("Member list: Unknown")
+        self.list_status_label = QLabel("Senator holders list: Unknown")
         self.list_status_label.setFont(QFont("Arial", 9))
         status_layout.addWidget(self.list_status_label)
 
@@ -256,8 +256,12 @@ class SenatorProgressWidget(QWidget):
                 self.tribune_label.setStyleSheet("color: #D32F2F;")
 
             # Update Senator progress bar with endorsement count (contacts AFTER x8)
+            # IMPORTANT: Only show progress if Tribune x8 is achieved
             self.senator_progress.setMaximum(next_level)
-            self.senator_progress.setValue(senators_after)
+            if is_tribune_x8:
+                self.senator_progress.setValue(senators_after)
+            else:
+                self.senator_progress.setValue(0)  # No Senator progress until Tribune x8
 
             # Format achievement date for display
             achievement_date = progress.get('tribune_x8_achievement_date', '')
@@ -318,10 +322,10 @@ class SenatorProgressWidget(QWidget):
 
             if success:
                 member_count = SenatorFetcher.get_senator_member_count(session)
-                self.list_status_label.setText(f"✓ Member list updated • {member_count} on record")
+                self.list_status_label.setText(f"✓ Senator holders list updated • {member_count} Senator holders")
                 logger.info(f"Senator list refreshed: {member_count} members")
             else:
-                self.list_status_label.setText("Member list update failed")
+                self.list_status_label.setText("Senator holders list update failed")
 
         except Exception as e:
             logger.error(f"Error updating Senator list: {e}")
@@ -330,7 +334,7 @@ class SenatorProgressWidget(QWidget):
     def _manual_update_senator_list(self) -> None:
         """Manually trigger Senator list update"""
         try:
-            self.list_status_label.setText("Updating member list...")
+            self.list_status_label.setText("Updating Senator holders list...")
 
             session = self.db.get_session()
             success = SenatorFetcher.refresh_senator_list(session, force=True)
@@ -338,7 +342,7 @@ class SenatorProgressWidget(QWidget):
 
             if success:
                 member_count = SenatorFetcher.get_senator_member_count(session)
-                self.list_status_label.setText(f"✓ List updated • {member_count} members")
+                self.list_status_label.setText(f"✓ Senator list updated • {member_count} Senator holders")
                 logger.info(f"Manual Senator list update: {member_count} members")
                 self.refresh()  # Refresh the widget to show updated counts
             else:

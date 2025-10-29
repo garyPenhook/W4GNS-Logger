@@ -217,7 +217,7 @@ class TribuneProgressWidget(QWidget):
         # Status information
         status_layout = QHBoxLayout()
 
-        self.list_status_label = QLabel("Member list: Unknown")
+        self.list_status_label = QLabel("Tribune holders list: Unknown")
         self.list_status_label.setFont(QFont("Arial", 9))
         status_layout.addWidget(self.list_status_label)
 
@@ -321,10 +321,10 @@ class TribuneProgressWidget(QWidget):
 
             if success:
                 member_count = TribuneFetcher.get_tribune_member_count(session)
-                self.list_status_label.setText(f"✓ Member list updated • {member_count} on record")
+                self.list_status_label.setText(f"✓ Tribune holders list updated • {member_count} Tribune holders")
                 logger.info(f"Tribune list refreshed: {member_count} members")
             else:
-                self.list_status_label.setText("Member list update failed")
+                self.list_status_label.setText("Tribune holders list update failed")
 
         except Exception as e:
             logger.error(f"Error updating Tribune list: {e}")
@@ -333,7 +333,7 @@ class TribuneProgressWidget(QWidget):
     def _manual_update_tribune_list(self) -> None:
         """Manually trigger Tribune list update"""
         try:
-            self.list_status_label.setText("Updating member list...")
+            self.list_status_label.setText("Updating Tribune holders list...")
 
             session = self.db.get_session()
             success = TribuneFetcher.refresh_tribune_list(session, force=True)
@@ -341,7 +341,7 @@ class TribuneProgressWidget(QWidget):
 
             if success:
                 member_count = TribuneFetcher.get_tribune_member_count(session)
-                self.list_status_label.setText(f"✓ List updated • {member_count} members")
+                self.list_status_label.setText(f"✓ Tribune list updated • {member_count} Tribune holders")
                 logger.info(f"Manual Tribune list update: {member_count} members")
                 self.refresh()  # Refresh the widget to show updated counts
             else:

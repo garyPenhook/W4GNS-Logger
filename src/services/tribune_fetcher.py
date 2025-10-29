@@ -189,6 +189,9 @@ class TribuneFetcher:
                 return True
 
             last_update = latest_member.last_list_update
+            # Ensure last_update is timezone-aware for comparison
+            if last_update.tzinfo is None:
+                last_update = last_update.replace(tzinfo=timezone.utc)
             age = datetime.now(timezone.utc) - last_update
             should_update = age > timedelta(hours=TRIBUNE_LIST_CACHE_HOURS)
 

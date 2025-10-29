@@ -16,6 +16,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 
 from src.database.repository import DatabaseRepository
+from src.utils.skcc_number import get_member_type
 
 logger = logging.getLogger(__name__)
 
@@ -213,26 +214,42 @@ class SpotClassifier:
 
             eligibility = self._eligibility_cache
             needs = []
+            
+            # Extract award suffix (C/T/S) from SKCC number using both the suffix and member tables
+            # The suffix in the number is not always reliable, so we check the member tables too
+            skcc_number = roster_entry.get('skcc_number', '')
+            member_type = get_member_type(skcc_number)  # Returns 'C', 'T', 'S', or None from suffix
+            
+            # Check actual membership status from database tables (more reliable)
+            member_status = self.db.check_skcc_member_status(skcc_number)
+            is_centurion = member_status['is_centurion'] or member_type == 'C'
+            is_tribune = member_status['is_tribune'] or member_type == 'T'
+            is_senator = member_status['is_senator'] or member_type == 'S'
 
             # 1. CENTURION - need any SKCC member (not yet achieved)
             if not eligibility.get('centurion', {}).get('qualified', False):
                 needs.append("Centurion")
 
-            # 2. TRIBUNE - need Tribune/Senator (if prerequisites met)
+            # 2. TRIBUNE - ALWAYS need C/T/S members for Tribune endorsements
+            # Tribune x1 = 50, x2 = 100, x3 = 150, ... x8 = 400
+            # Even after achieving Tribune x1, you need MORE C/T/S contacts for endorsements
             centurion_qualified = eligibility.get('centurion', {}).get('qualified', False)
-            tribune_not_qualified = not eligibility.get('tribune', {}).get('qualified', False)
-            suffix = roster_entry.get('suffix', '').upper()
-            is_tribune_or_senator = suffix in ['T', 'S']
+            is_centurion_tribune_senator = is_centurion or is_tribune or is_senator
 
-            if centurion_qualified and tribune_not_qualified and is_tribune_or_senator:
-                needs.append("Tribune")
+            if centurion_qualified and is_centurion_tribune_senator:
+                # Check if already achieved Tribune x8 (400 C/T/S contacts)
+                # Tribune x8 is the threshold for Senator, so always highlight C/T/S until then
+                tribune_count = eligibility.get('tribune', {}).get('count', 0)
+                if tribune_count < 400:
+                    needs.append("Tribune")
 
-            # 3. SENATOR - need Senator (if prerequisites met)
-            tribune_qualified = eligibility.get('tribune', {}).get('qualified', False)
+            # 3. SENATOR - need Senator (if Tribune x8 achieved)
+            # Senator requires 200 T/S contacts AFTER achieving Tribune x8
+            tribune_count = eligibility.get('tribune', {}).get('count', 0)
             senator_not_qualified = not eligibility.get('senator', {}).get('qualified', False)
-            is_senator = suffix in ['S']
+            is_tribune_or_senator = is_tribune or is_senator
 
-            if tribune_qualified and senator_not_qualified and is_senator:
+            if tribune_count >= 400 and senator_not_qualified and is_tribune_or_senator:
                 needs.append("Senator")
 
             # 4. TRIPLE KEY - need specific key types (if not yet achieved)
