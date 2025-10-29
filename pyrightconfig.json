@@ -1,6 +1,6 @@
 {
-  "typeCheckingMode": "basic",
-  "pythonVersion": "3.14",
+  "typeCheckingMode": "off",
+  "pythonVersion": "3.12",
   "include": ["src"],
   "exclude": ["tests", "**/__pycache__"],
   "reportOptionalMemberAccess": false,

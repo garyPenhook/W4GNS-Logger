@@ -1812,8 +1812,8 @@ class DatabaseRepository:
         """
         session = self.get_session()
         try:
-            from datetime import datetime, timedelta
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+            from datetime import datetime, timedelta, timezone
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
             result = session.query(ClusterSpot).filter(
                 ClusterSpot.received_at < cutoff_time
             ).delete()

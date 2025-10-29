@@ -7,7 +7,7 @@ The list is fetched from: https://www.skccgroup.com/tribunelist.txt
 
 import logging
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import List, Dict, Optional
 from urllib.error import URLError
@@ -140,7 +140,7 @@ class TribuneFetcher:
             logger.info(f"Cleared {old_count} old Tribune members from database")
 
             # Insert new members
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for member_data in members:
                 member = TribuneeMember(
                     rank=member_data['rank'],
@@ -189,7 +189,7 @@ class TribuneFetcher:
                 return True
 
             last_update = latest_member.last_list_update
-            age = datetime.utcnow() - last_update
+            age = datetime.now(timezone.utc) - last_update
             should_update = age > timedelta(hours=TRIBUNE_LIST_CACHE_HOURS)
 
             if should_update:

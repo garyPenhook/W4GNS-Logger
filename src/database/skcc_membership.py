@@ -7,7 +7,7 @@ Implements local caching for fast lookups and minimal network traffic.
 
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Any
 from pathlib import Path
 
@@ -267,7 +267,8 @@ class SKCCMembershipManager:
             conn.close()
 
             if result and result[0]:
-                return datetime.fromisoformat(result[0])
+                # SQLite CURRENT_TIMESTAMP is UTC without tzinfo; mark as UTC
+                return datetime.fromisoformat(result[0]).replace(tzinfo=timezone.utc)
             return None
 
         except sqlite3.Error as e:
@@ -290,7 +291,8 @@ class SKCCMembershipManager:
             logger.debug("Cache is empty (never updated)")
             return True
 
-        age = datetime.now() - last_update
+        # Use timezone-aware UTC for consistency
+        age = datetime.now(timezone.utc) - last_update
         is_stale = age > timedelta(hours=max_age_hours)
 
         if is_stale:

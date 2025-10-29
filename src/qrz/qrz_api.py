@@ -383,7 +383,8 @@ class QRZAPIClient:
             logbook_url = "https://logbook.qrz.com/api"
             url = f"{logbook_url}?{params_encoded}"
 
-            with urllib.request.urlopen(url, timeout=self.timeout) as response:
+            from src.utils.network import urlopen_with_retries
+            with urlopen_with_retries(url, timeout=self.timeout, retries=3, backoff=0.5) as response:
                 data = response.read().decode('utf-8')
 
                 # Try to parse as XML first (error case)

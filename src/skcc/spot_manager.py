@@ -8,7 +8,7 @@ Integrates spots with database and UI.
 
 import logging
 from typing import Optional, Callable, Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .spot_fetcher import RBNSpotFetcher, SKCCSpot, SKCCSpotFilter, RBNConnectionState
 from .spot_source_adapter import SpotSourceAdapter, SpotSource
@@ -199,12 +199,12 @@ class SKCCSpotManager:
         """
         try:
             # Convert to SKCCSpot for processing
-            ts = unified_spot.get("timestamp", datetime.utcnow())
+            ts = unified_spot.get("timestamp", datetime.now(timezone.utc))
             if isinstance(ts, str):
                 try:
                     ts = datetime.fromisoformat(ts)
                 except (ValueError, TypeError):
-                    ts = datetime.utcnow()
+                    ts = datetime.now(timezone.utc)
 
             spot = SKCCSpot(
                 callsign=unified_spot.get("callsign", ""),

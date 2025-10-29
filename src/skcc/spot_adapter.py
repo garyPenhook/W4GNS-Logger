@@ -13,7 +13,7 @@ Provides unified interface for spot handling throughout the logger.
 import logging
 from typing import Union, Optional, Dict, Any
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .spot_fetcher import SKCCSpot, RBNConnectionState
 
@@ -81,9 +81,9 @@ class SpotAdapter:
             try:
                 ts = datetime.fromisoformat(spot.timestamp)
             except (ValueError, TypeError):
-                ts = datetime.utcnow()
+                ts = datetime.now(timezone.utc)
         else:
-            ts = spot.timestamp if spot.timestamp else datetime.utcnow()
+            ts = spot.timestamp if spot.timestamp else datetime.now(timezone.utc)
         
         return UnifiedSpot(
             callsign=spot.callsign,
@@ -120,18 +120,18 @@ class SpotAdapter:
                     time_parts = ts_str.rstrip("Z").split(":")
                     if len(time_parts) == 2:
                         hour, minute = int(time_parts[0]), int(time_parts[1])
-                        ts = datetime.utcnow().replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        ts = datetime.now(timezone.utc).replace(hour=hour, minute=minute, second=0, microsecond=0)
                     else:
-                        ts = datetime.utcnow()
+                        ts = datetime.now(timezone.utc)
                 except (ValueError, TypeError):
-                    ts = datetime.utcnow()
+                    ts = datetime.now(timezone.utc)
             else:
                 try:
                     ts = datetime.fromisoformat(ts_str)
                 except (ValueError, TypeError):
-                    ts = datetime.utcnow()
+                    ts = datetime.now(timezone.utc)
         else:
-            ts = spot.get("timestamp", datetime.utcnow())
+            ts = spot.get("timestamp", datetime.now(timezone.utc))
         
         return UnifiedSpot(
             callsign=spot.get("callsign", "").upper(),
@@ -158,12 +158,12 @@ class SpotAdapter:
             UnifiedSpot
         """
         # Parse timestamp
-        ts = spot_dict.get("timestamp", datetime.utcnow())
+        ts = spot_dict.get("timestamp", datetime.now(timezone.utc))
         if isinstance(ts, str):
             try:
                 ts = datetime.fromisoformat(ts)
             except (ValueError, TypeError):
-                ts = datetime.utcnow()
+                ts = datetime.now(timezone.utc)
         
         return UnifiedSpot(
             callsign=spot_dict.get("callsign", "").upper(),

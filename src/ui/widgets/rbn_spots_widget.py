@@ -368,20 +368,20 @@ class RBNSpotsWidget(QWidget):
             # Get spot details for logging
             callsign = getattr(spot, 'callsign', 'UNKNOWN')
             frequency = getattr(spot, 'frequency', 'N/A')
-            logger.info(f"RBN Widget: Received spot callback: {callsign} on {frequency} MHz")
+            logger.debug(f"RBN Widget: Received spot callback: {callsign} on {frequency} MHz")
             
             # Check for duplicate - skip if same callsign spotted recently
             if not self._should_show_spot(callsign):
-                logger.info(f"RBN Widget: Duplicate spot filtered: {callsign} (within 3 minutes)")
+                logger.debug(f"RBN Widget: Duplicate spot filtered: {callsign} (within 3 minutes)")
                 return
             
             # Record this spot time for future duplicate checking
             self.last_spot_time[callsign] = datetime.now(timezone.utc)
-            logger.info(f"RBN Widget: Recording {callsign} at {datetime.now(timezone.utc)}")
+            logger.debug(f"RBN Widget: Recording {callsign} at {datetime.now(timezone.utc)}")
                 
             # Add the spot to our list
             self.spots.append(spot)
-            logger.info(f"RBN Widget: Added {callsign} to spots list (total: {len(self.spots)})")
+            logger.debug(f"RBN Widget: Added {callsign} to spots list (total: {len(self.spots)})")
             
             # Keep only last 100 spots to avoid memory bloat
             if len(self.spots) > 100:
@@ -390,18 +390,18 @@ class RBNSpotsWidget(QWidget):
             # Update the table safely
             try:
                 self._update_spots_table()
-                logger.info(f"RBN Widget: Updated spots table with {len(self.spots)} spots")
+                logger.debug(f"RBN Widget: Updated spots table with {len(self.spots)} spots")
             except Exception as e:
                 logger.error(f"RBN Widget: Error updating spots table: {e}", exc_info=True)
             
             # Update statistics safely
             try:
                 self._update_statistics()
-                logger.info(f"RBN Widget: Updated statistics")
+                logger.debug("RBN Widget: Updated statistics")
             except Exception as e:
                 logger.error(f"RBN Widget: Error updating statistics: {e}", exc_info=True)
             
-            logger.info(f"RBN Widget: Successfully processed spot: {callsign}")
+            logger.debug(f"RBN Widget: Successfully processed spot: {callsign}")
         except Exception as e:
             logger.error(f"RBN Widget: Error processing new spot: {e}", exc_info=True)
 
@@ -665,7 +665,7 @@ class RBNSpotsWidget(QWidget):
     def _add_sample_spots(self) -> None:
         """Populate a few sample spots for demonstration when RBN isn't connected."""
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             sample = [
                 SKCCSpot(callsign="K4TEST", frequency=14.055, mode="CW", grid=None,
                          reporter="TEST", strength=20, speed=22, timestamp=now, is_skcc=True, skcc_number="12345"),

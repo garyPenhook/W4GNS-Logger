@@ -13,7 +13,7 @@ Uses QSO database and award eligibility analysis to classify spots.
 import logging
 from typing import Optional, Set, Dict, Any
 from functools import lru_cache
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.database.repository import DatabaseRepository
 
@@ -44,7 +44,7 @@ class SpotClassifier:
         """
         self.db = db
         self.my_skcc_number = my_skcc_number
-        self.last_cache_time = datetime.now()
+        self.last_cache_time = datetime.now(timezone.utc)
         
         # Cached eligibility data
         self._eligibility_cache: Optional[Dict[str, Any]] = None
@@ -92,13 +92,13 @@ class SpotClassifier:
 
     def _is_cache_valid(self) -> bool:
         """Check if eligibility cache is still valid"""
-        elapsed = (datetime.now() - self.last_cache_time).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - self.last_cache_time).total_seconds()
         return elapsed < self.CACHE_TIMEOUT
 
     def invalidate_cache(self) -> None:
         """Invalidate cache (call after logging new contact)"""
         logger.debug("Spot classifier: Cache invalidated")
-        self.last_cache_time = datetime.now()
+        self.last_cache_time = datetime.now(timezone.utc)
         self._eligibility_cache = None
         self._contacted_callsigns_cache = None
         self._contacted_states_cache = None
@@ -209,7 +209,7 @@ class SpotClassifier:
             # Get or refresh eligibility cache
             if self._eligibility_cache is None or not self._is_cache_valid():
                 self._eligibility_cache = self.db.analyze_skcc_award_eligibility(self.my_skcc_number)
-                self.last_cache_time = datetime.now()
+                self.last_cache_time = datetime.now(timezone.utc)
 
             eligibility = self._eligibility_cache
             needs = []
