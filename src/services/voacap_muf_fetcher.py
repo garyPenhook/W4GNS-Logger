@@ -493,16 +493,36 @@ class VOACAPMUFFetcher:
                 center_freq = (min_freq + max_freq) / 2.0
 
                 if giro_muf is not None:
-                    # GIRO provides MUFD - real measured ionospheric data (3000km path, daytime)
-                    # This is actual measured data from ionosondes, not a formula
-                    # Use it directly as the base MUF for the band
-                    muf = giro_muf  # Use measured value directly - don't scale with frequency
+                    # GIRO provides MUFD - real measured ionospheric data  (3000km path)
+                    # MUFD = foF2 × MUF_factor (typically ~3 for 3000km)
+                    # where foF2 is the critical frequency (max frequency for vertical incidence)
+                    
+                    # To adapt MUFD for different frequencies, we use ionospheric absorption:
+                    # - MUF is relatively constant across HF for similar paths
+                    # - But absorption increases with frequency (D-layer, E-layer effects)
+                    # - Use MUFD as the reference and apply slight frequency-dependent adjustment
+                    
+                    # Reference frequency where MUFD is measured (typically 3-18 MHz range)
+                    reference_freq = 14.0  # MHz (common F-layer reference)
+                    
+                    # Frequency scaling based on ionospheric absorption and critical frequency
+                    # This is a conservative model that avoids over-optimistic predictions
+                    if center_freq < reference_freq:
+                        # Lower frequencies: slightly better (less absorption in D-layer during day)
+                        # But limited boost since MUF is path-dependent, not just frequency-dependent
+                        freq_scale = 1.0 + (reference_freq - center_freq) * 0.015  # 1.5% per MHz
+                    else:
+                        # Higher frequencies: reduced MUF due to increased absorption
+                        # More conservative: 1.5% reduction per MHz above reference
+                        freq_scale = 1.0 - (center_freq - reference_freq) * 0.015
+                    
+                    # Apply frequency scaling to GIRO MUFD
+                    muf = giro_muf * freq_scale
                     muf = max(2.0, min(50.0, muf))  # Bounds check
 
                     # NOTE: Do NOT apply time-of-day factor to GIRO data
                     # GIRO is already a real-time measured value from ionosondes
                     # It already reflects current ionospheric conditions
-                    # Applying a time factor would inflate the measured value incorrectly
                 else:
                     # Fall back to empirical calculation
                     muf = self.calculate_empirical_muf(

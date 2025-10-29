@@ -61,6 +61,13 @@ class DatabaseRepository:
 
             # Get global signals instance
             self.signals = get_app_signals()
+            
+            # Cache for C/T/S member lookups (loaded on-demand, cached for performance)
+            self._member_cache: Dict[str, Dict[str, bool]] = {}
+            self._member_sets_loaded = False
+            self._centurion_set: set = set()
+            self._tribune_set: set = set()
+            self._senator_set: set = set()
 
             logger.info(f"Database initialized: {db_path}")
         except SQLAlchemyError as e:
@@ -2108,6 +2115,7 @@ class DatabaseRepository:
     def check_skcc_member_status(self, skcc_number: str) -> Dict[str, bool]:
         """
         Check if an SKCC number is a Centurion, Tribune, or Senator member.
+        Uses in-memory caching for fast lookups.
         
         Args:
             skcc_number: Full SKCC number (may include C/T/S suffix)
@@ -2129,29 +2137,56 @@ class DatabaseRepository:
         if not base or not base.isdigit():
             return {'is_centurion': False, 'is_tribune': False, 'is_senator': False}
         
+        # Check cache first
+        if base in self._member_cache:
+            return self._member_cache[base]
+        
+        # Load member sets if not already loaded
+        if not self._member_sets_loaded:
+            self._load_member_sets()
+        
+        # Check membership in cached sets (fast)
+        result = {
+            'is_centurion': base in self._centurion_set,
+            'is_tribune': base in self._tribune_set,
+            'is_senator': base in self._senator_set
+        }
+        
+        # Cache the result
+        self._member_cache[base] = result
+        return result
+    
+    def _load_member_sets(self) -> None:
+        """Load C/T/S member sets into memory for fast lookups"""
+        if self._member_sets_loaded:
+            return
+        
         session = self.get_session()
         try:
-            # Check each membership level
-            is_centurion = session.query(CenturionMember).filter(
-                CenturionMember.skcc_number == base
-            ).first() is not None
+            # Load all member numbers into sets
+            centurion_data = session.query(CenturionMember.skcc_number).all()
+            self._centurion_set = {m.skcc_number for m in centurion_data if m.skcc_number}
             
-            is_tribune = session.query(TribuneeMember).filter(
-                TribuneeMember.skcc_number == base
-            ).first() is not None
+            tribune_data = session.query(TribuneeMember.skcc_number).all()
+            self._tribune_set = {m.skcc_number for m in tribune_data if m.skcc_number}
             
-            is_senator = session.query(SenatorMember).filter(
-                SenatorMember.skcc_number == base
-            ).first() is not None
+            senator_data = session.query(SenatorMember.skcc_number).all()
+            self._senator_set = {m.skcc_number for m in senator_data if m.skcc_number}
             
-            session.close()
-            return {
-                'is_centurion': is_centurion,
-                'is_tribune': is_tribune,
-                'is_senator': is_senator
-            }
+            self._member_sets_loaded = True
+            logger.info(f"Loaded member sets: {len(self._centurion_set)} Centurion, "
+                       f"{len(self._tribune_set)} Tribune, {len(self._senator_set)} Senator")
             
         except SQLAlchemyError as e:
-            logger.error(f"Error checking SKCC member status for {skcc_number}: {e}")
+            logger.error(f"Error loading member sets: {e}")
+        finally:
             session.close()
-            return {'is_centurion': False, 'is_tribune': False, 'is_senator': False}
+    
+    def refresh_member_cache(self) -> None:
+        """Refresh the member cache (call after updating member lists)"""
+        self._member_sets_loaded = False
+        self._member_cache.clear()
+        self._centurion_set.clear()
+        self._tribune_set.clear()
+        self._senator_set.clear()
+        logger.info("Member cache cleared, will reload on next access")
