@@ -1,8 +1,9 @@
 """
 SKCC Spot Manager - Background thread manager for spot monitoring
 
-Manages the background thread that monitors RBN for SKCC member spots
-and integrates with the database and UI.
+Manages spot monitoring from Direct RBN connection.
+
+Integrates spots with database and UI.
 """
 
 import logging
@@ -10,6 +11,8 @@ from typing import Optional, Callable, Dict, List, Any
 from datetime import datetime
 
 from .spot_fetcher import RBNSpotFetcher, SKCCSpot, SKCCSpotFilter, RBNConnectionState
+from .spot_source_adapter import SpotSourceAdapter, SpotSource
+from .spot_classifier import SpotClassifier
 from src.database.repository import DatabaseRepository
 
 logger = logging.getLogger(__name__)
@@ -20,7 +23,8 @@ class SKCCSpotManager:
     Manages SKCC spot monitoring and integration
 
     Handles:
-    - Background RBN monitoring
+    - Spot source selection (direct RBN)
+    - Background monitoring
     - Spot filtering and processing
     - Database storage
     - UI callbacks
@@ -37,10 +41,24 @@ class SKCCSpotManager:
         self.fetcher: Optional[RBNSpotFetcher] = None
         self.spot_filter = SKCCSpotFilter()
         self.use_test_spots = False
+        
+        # Spot source adapter
+        self.spot_source_adapter = SpotSourceAdapter()
+        self.active_source: SpotSource = SpotSource.DIRECT_RBN
+
+        # Spot classifier for goal/target determination
+        # Get user's SKCC number from settings if available
+        try:
+            user_skcc = db.get_user_skcc_number() or "0"
+        except Exception:
+            user_skcc = "0"
+        
+        self.spot_classifier = SpotClassifier(db, user_skcc)
 
         # Callbacks
         self.on_new_spot: Optional[Callable[[SKCCSpot], None]] = None
         self.on_connection_state: Optional[Callable[[RBNConnectionState], None]] = None
+        self.on_source_changed: Optional[Callable[[SpotSource], None]] = None
 
     def start(self) -> None:
         """Start monitoring for SKCC spots"""
@@ -54,17 +72,24 @@ class SKCCSpotManager:
                 logger.warning("SKCC roster is empty! Spots will not be identified as SKCC members. "
                              "Try downloading the roster from Settings or running sync_membership_data()")
 
-            # Create and configure fetcher
+            # Use direct RBN connection
+            logger.info("Using direct RBN connection for spots")
+            self.active_source = SpotSource.DIRECT_RBN
+            self.spot_source_adapter.use_direct_rbn()
+            
+            # Create and configure fetcher for direct RBN
             self.fetcher = RBNSpotFetcher(roster, use_test_spots=self.use_test_spots)
             self.fetcher.set_callbacks(
-                on_spot=self._on_new_spot,
+                on_spot=self._on_rbn_spot,
                 on_state_change=self._on_connection_state_changed,
             )
-
-            # Start monitoring
             self.fetcher.start()
+            
+            if self.on_source_changed:
+                self.on_source_changed(SpotSource.DIRECT_RBN)
+
             mode = "TEST SPOTS" if self.use_test_spots else "RBN"
-            logger.info(f"SKCC spot manager started (roster: {roster_count} members, mode: {mode})")
+            logger.info(f"SKCC spot manager started (source: Direct RBN, roster: {roster_count} members, mode: {mode})")
 
         except Exception as e:
             logger.error(f"Failed to start spot manager: {e}", exc_info=True)
@@ -90,6 +115,7 @@ class SKCCSpotManager:
         self,
         on_new_spot: Optional[Callable[[SKCCSpot], None]] = None,
         on_connection_state: Optional[Callable[[RBNConnectionState], None]] = None,
+        on_source_changed: Optional[Callable[[SpotSource], None]] = None,
     ) -> None:
         """
         Set callbacks for spot events
@@ -97,9 +123,11 @@ class SKCCSpotManager:
         Args:
             on_new_spot: Called when a new spot is received
             on_connection_state: Called when connection state changes
+            on_source_changed: Called when spot source changes (SKCC Skimmer vs Direct RBN)
         """
         self.on_new_spot = on_new_spot
         self.on_connection_state = on_connection_state
+        self.on_source_changed = on_source_changed
 
     def _on_new_spot(self, spot: SKCCSpot) -> None:
         """
@@ -109,13 +137,22 @@ class SKCCSpotManager:
             spot: The SKCC spot received
         """
         try:
+            logger.info(f"SKCC spot manager: Received spot from RBN: {spot.callsign} on {spot.frequency} MHz")
+            
             # Get worked callsigns for filtering
             contacts = self.db.get_all_contacts()
             worked_callsigns = {c.callsign.upper() for c in contacts}
 
             # Apply filter
             if not self.spot_filter.matches(spot, worked_callsigns):
+                logger.debug(f"SKCC spot manager: Spot {spot.callsign} filtered by spot_filter")
                 return
+
+            # Classify spot as GOAL/TARGET/BOTH based on database
+            goal_type = self.spot_classifier.classify_spot(spot.callsign)
+            if goal_type:
+                spot.goal_type = goal_type
+                logger.info(f"SKCC spot manager: {spot.callsign} classified as {goal_type}")
 
             # Store in database
             spot_data = {
@@ -130,15 +167,59 @@ class SKCCSpotManager:
             }
 
             self.db.add_cluster_spot(spot_data)
+            logger.debug(f"SKCC spot manager: Stored spot {spot.callsign} in database")
 
-            # Notify UI
+            # Notify UI - THIS IS WHERE THE CALLBACK HAPPENS
             if self.on_new_spot:
+                logger.info(f"SKCC spot manager: Calling on_new_spot callback for {spot.callsign}")
                 self.on_new_spot(spot)
+            else:
+                logger.warning(f"SKCC spot manager: No on_new_spot callback set for {spot.callsign}")
 
-            logger.debug(f"Processed SKCC spot: {spot.callsign} on {spot.frequency} MHz")
+            logger.info(f"SKCC spot manager: Processed SKCC spot: {spot.callsign} on {spot.frequency} MHz")
 
         except Exception as e:
-            logger.error(f"Error processing spot: {e}")
+            logger.error(f"SKCC spot manager: Error processing spot: {e}", exc_info=True)
+
+    def _on_rbn_spot(self, spot: SKCCSpot) -> None:
+        """
+        Handle new spot from direct RBN connection
+
+        Args:
+            spot: The SKCC spot received
+        """
+        self._on_new_spot(spot)
+
+    def _on_unified_spot(self, unified_spot: Dict[str, Any]) -> None:
+        """
+        Handle spot from SKCC Skimmer via unified format
+
+        Args:
+            unified_spot: Unified spot dict from spot source adapter
+        """
+        try:
+            # Convert to SKCCSpot for processing
+            ts = unified_spot.get("timestamp", datetime.utcnow())
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    ts = datetime.utcnow()
+
+            spot = SKCCSpot(
+                callsign=unified_spot.get("callsign", ""),
+                frequency=unified_spot.get("frequency", 0.0),
+                mode=unified_spot.get("mode", "CW"),
+                timestamp=ts,
+                reporter=unified_spot.get("reporter", "SKCC Skimmer"),
+                speed=unified_spot.get("wpm", 0),
+                grid=unified_spot.get("grid", ""),
+            )
+
+            self._on_new_spot(spot)
+
+        except Exception as e:
+            logger.error(f"Error processing unified spot: {e}")
 
     def _on_connection_state_changed(self, state: RBNConnectionState) -> None:
         """

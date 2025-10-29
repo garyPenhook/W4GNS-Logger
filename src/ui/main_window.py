@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
         from src.ui.logging_form import LoggingForm
         from src.skcc import SKCCSpotManager
         from src.ui.widgets.skcc_spots_widget import SKCCSpotWidget
+        from src.ui.spot_matcher import SpotMatcher
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -213,7 +214,19 @@ class MainWindow(QMainWindow):
 
         # Add DX Cluster spots (bottom ~70%)
         spot_manager = SKCCSpotManager(self.db)
-        spots_widget = SKCCSpotWidget(spot_manager)
+        
+        # Get user's callsign and SKCC number for award eligibility analysis
+        my_callsign = self.config_manager.get("general.operator_callsign", "")
+        my_skcc_number = self.config_manager.get("adif.my_skcc_number", "")
+        
+        # Create spot matcher with award eligibility analyzer
+        spot_matcher = SpotMatcher(self.db, self.config_manager, my_callsign, my_skcc_number)
+        
+        # Enable award eligibility analysis if we have SKCC number
+        if my_callsign and my_skcc_number:
+            spot_matcher.enable_award_eligibility(my_callsign, my_skcc_number)
+        
+        spots_widget = SKCCSpotWidget(spot_manager, spot_matcher)
 
         # Connect spot selection to logging form
         spots_widget.spot_selected.connect(self._on_spot_selected)
@@ -224,6 +237,7 @@ class MainWindow(QMainWindow):
 
         # Store references for cleanup
         self.spot_manager = spot_manager
+        self.spot_matcher = spot_matcher
         self.spots_widget = spots_widget
 
         return widget

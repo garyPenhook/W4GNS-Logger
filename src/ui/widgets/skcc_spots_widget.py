@@ -6,7 +6,7 @@ with the logging form.
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 
 from PyQt6.QtWidgets import (
@@ -19,6 +19,9 @@ from PyQt6.QtGui import QColor, QFont
 
 from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
 from src.config.settings import get_config_manager
+
+if TYPE_CHECKING:
+    from src.ui.spot_matcher import SpotMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -73,20 +76,23 @@ class SKCCSpotWidget(QWidget):
     # Signal when user clicks on a spot (to populate logging form)
     spot_selected = pyqtSignal(str, float)  # callsign, frequency
 
-    def __init__(self, spot_manager: SKCCSpotManager, parent: Optional[QWidget] = None):
+    def __init__(self, spot_manager: SKCCSpotManager, spot_matcher: Optional['SpotMatcher'] = None, 
+                 parent: Optional[QWidget] = None):
         """
         Initialize SKCC spots widget
 
         Args:
             spot_manager: SKCCSpotManager instance
+            spot_matcher: Optional SpotMatcher instance for award eligibility analysis
             parent: Parent widget
         """
         super().__init__(parent)
         self.spot_manager = spot_manager
+        self.spot_matcher = spot_matcher
         self.spots: List[SKCCSpot] = []
         self.filtered_spots: List[SKCCSpot] = []
 
-        # Cache for award-critical spots
+        # Cache for award-critical spots (legacy, still used as fallback)
         self.award_critical_skcc_members: set = set()
         self.worked_skcc_members: set = set()
         self._refresh_award_cache()
@@ -594,6 +600,8 @@ class SKCCSpotWidget(QWidget):
 
     def _update_table(self) -> None:
         """Update spots table with filtered spots"""
+        from src.ui.spot_eligibility_analyzer import EligibilityLevel
+        
         self.spots_table.setRowCount(len(self.filtered_spots))
         self.spot_count_label.setText(f"Spots: {len(self.filtered_spots)}")
 
@@ -614,12 +622,43 @@ class SKCCSpotWidget(QWidget):
                 QTableWidgetItem(row_data.get_age_string()),
             ]
 
-            # Highlight award-critical spots in green
-            is_award_critical = self._is_award_critical_spot(spot)
-            if is_award_critical:
+            # Use award eligibility analyzer if available
+            highlight_color = None
+            tooltip_text = ""
+            
+            if self.spot_matcher and self.spot_matcher.eligibility_analyzer:
+                try:
+                    eligibility = self.spot_matcher.get_spot_eligibility(spot)
+                    
+                    # Color based on eligibility level
+                    color_map = {
+                        EligibilityLevel.CRITICAL: QColor(255, 0, 0, 120),      # Red
+                        EligibilityLevel.HIGH: QColor(255, 100, 0, 100),        # Orange
+                        EligibilityLevel.MEDIUM: QColor(255, 200, 0, 80),       # Yellow
+                        EligibilityLevel.LOW: QColor(100, 200, 100, 60),        # Green
+                        EligibilityLevel.NONE: None,                             # No highlight
+                    }
+                    
+                    if eligibility and eligibility.eligibility_level in color_map:
+                        highlight_color = color_map[eligibility.eligibility_level]
+                        tooltip_text = eligibility.tooltip or ""
+                
+                except Exception as e:
+                    logger.debug(f"Error getting eligibility for {spot.callsign}: {e}")
+            
+            # Fallback to legacy award-critical highlighting if no analyzer
+            if not highlight_color:
+                is_award_critical = self._is_award_critical_spot(spot)
+                if is_award_critical:
+                    highlight_color = QColor("#90EE90")  # Light green
+                    tooltip_text = "Award-critical SKCC member"
+            
+            # Apply highlighting and tooltip
+            if highlight_color:
                 for item in items:
-                    item.setBackground(QColor("#90EE90"))  # Light green
-                    item.setData(Qt.ItemDataRole.ToolTipRole, "Award-critical SKCC member")
+                    item.setBackground(highlight_color)
+                    if tooltip_text:
+                        item.setData(Qt.ItemDataRole.ToolTipRole, tooltip_text)
 
             for col, item in enumerate(items):
                 item.setData(Qt.ItemDataRole.UserRole, spot)

@@ -89,6 +89,27 @@ python src/main.py
 3. View your progress and required items
 4. Log more contacts to advance
 
+### Monitoring RBN Spots with Award Highlighting
+
+1. Go to **SKCC/DX Spots** tab
+2. Click **Start Monitoring** to connect to RBN (Reverse Beacon Network)
+3. Spots appear in real-time as stations are heard on CW
+4. **Color-coded highlighting** shows award relevance:
+   - 🔴 **Red** - CRITICAL (≤5 needed for award) - Work immediately!
+   - 🟠 **Orange** - HIGH (≤20 needed for award) - Important opportunity
+   - 🟡 **Yellow** - MEDIUM (21+ needed for award) - Medium priority
+   - 🟢 **Green** - LOW (already worked/not relevant) - Skip or low priority
+5. **Hover over colored spots** to see exact award details ("Need 2 more for Centurion")
+6. **Click a spot** to populate the logging form for quick QSO entry
+
+**Features**:
+- Automatically analyzes each spot against YOUR personal award progress
+- Considers all active awards: Centurion, Tribune, Senator, Triple Key
+- Updates highlighting as you log new contacts
+- Displays signal strength, reporter location, and frequency
+- Filters by band, mode (CW), and signal strength
+- Prevents duplicate spots with 3-minute cooldown
+
 ### Exporting Contacts
 
 1. Go to **File** → **Export ADIF**
@@ -109,6 +130,9 @@ python src/main.py
 ✓ **Award Tracking** - Centurion, Tribune, Senator, QRP, and others
 ✓ **Contact Editing** - Double-click to correct mistakes
 ✓ **Previous QSOs Display** - Shows callsign history with date, time, band, mode, SKCC#, state, city
+✓ **RBN Spot Monitoring** - Real-time CW spots from Reverse Beacon Network
+✓ **Smart Spot Highlighting** - Award-based color coding (Red/Orange/Yellow/Green)
+✓ **Intelligent Filtering** - Spots highlighted based on YOUR personal award progress
 ✓ **ADIF Import/Export** - Share with other logging software
 ✓ **Power Tracking** - Monitor QRP and power usage
 ✓ **Space Weather** - Solar flux, K-index, A-index monitoring
