@@ -11,7 +11,7 @@ Enables intelligent highlighting based on contact history and award goals.
 
 import logging
 from typing import Optional, Dict, Set, List, Tuple, TYPE_CHECKING
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 
 from src.database.repository import DatabaseRepository
@@ -128,8 +128,8 @@ class SpotMatcher:
 
         # Check if it's a recent contact
         try:
-            contact_datetime = datetime.strptime(contact_date, "%Y%m%d")
-            days_ago = (datetime.utcnow() - contact_datetime).days
+            contact_datetime = datetime.strptime(contact_date, "%Y%m%d").replace(tzinfo=timezone.utc)
+            days_ago = (datetime.now(timezone.utc) - contact_datetime).days
 
             if days_ago <= self.highlight_recent_days:
                 return SpotMatch(
@@ -207,7 +207,7 @@ class SpotMatcher:
 
     def _refresh_cache_if_needed(self) -> None:
         """Refresh the worked callsigns cache if TTL has expired"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if (self._cache_timestamp is None or
             (now - self._cache_timestamp).total_seconds() > self._cache_ttl_seconds):
@@ -250,7 +250,7 @@ class SpotMatcher:
 
         return {
             "total_worked_callsigns": len(self._worked_callsigns),
-            "cache_age_seconds": int((datetime.utcnow() - self._cache_timestamp).total_seconds())
+            "cache_age_seconds": int((datetime.now(timezone.utc) - self._cache_timestamp).total_seconds())
                 if self._cache_timestamp else 0,
         }
 

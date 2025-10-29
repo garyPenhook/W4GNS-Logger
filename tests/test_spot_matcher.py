@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.ui.spot_matcher import SpotMatcher
 from src.skcc.spot_fetcher import SKCCSpot
@@ -32,8 +32,9 @@ class _FakeDB:
 class TestSpotMatcher(unittest.TestCase):
     def test_matcher_recent_and_worked(self):
         # Prepare fake DB contacts
-        today = datetime.utcnow().strftime("%Y%m%d")
-        forty_days_ago = (datetime.utcnow() - timedelta(days=40)).strftime("%Y%m%d")
+        now = datetime.now(timezone.utc)
+        today = now.strftime("%Y%m%d")
+        forty_days_ago = (now - timedelta(days=40)).strftime("%Y%m%d")
 
         contacts = [
             SimpleNamespace(callsign="K4TEST", qso_date=today),
@@ -51,7 +52,7 @@ class TestSpotMatcher(unittest.TestCase):
             reporter="RBN",
             strength=20,
             speed=25,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             is_skcc=True,
             skcc_number="12345",
         )
@@ -63,7 +64,7 @@ class TestSpotMatcher(unittest.TestCase):
             reporter="RBN",
             strength=18,
             speed=24,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             is_skcc=True,
             skcc_number="100T",
         )
@@ -75,7 +76,7 @@ class TestSpotMatcher(unittest.TestCase):
             reporter="RBN",
             strength=15,
             speed=20,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             is_skcc=False,
             skcc_number=None,
         )

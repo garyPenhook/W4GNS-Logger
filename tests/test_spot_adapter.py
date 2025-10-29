@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.skcc.spot_fetcher import SKCCSpot
 from src.skcc.spot_adapter import SpotAdapter
@@ -15,7 +15,7 @@ class TestSpotAdapter(unittest.TestCase):
             reporter="K4TEST",
             strength=25,
             speed=30,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             is_skcc=True,
             skcc_number="100T",
         )
@@ -43,7 +43,7 @@ class TestSpotAdapter(unittest.TestCase):
             reporter="TEST",
             strength=18,
             speed=None,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             is_skcc=False,
             skcc_number=None,
         )

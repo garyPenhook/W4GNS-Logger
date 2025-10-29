@@ -423,7 +423,9 @@ class VOACAPMUFFetcher:
             muf = base_muf * k_factor * latitude_factor * freq_factor * time_factor
 
             # Ensure reasonable bounds
-            muf = max(2.0, min(50.0, muf))
+            # Note: keep MUF strictly below 50.0 MHz to match tests and "should not exceed 50 MHz"
+            # Using 49.9 upper bound avoids rounding up to 50.0
+            muf = max(2.0, min(49.9, muf))
 
             return round(muf, 1)
 
