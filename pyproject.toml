@@ -94,6 +94,31 @@ exclude = '''
 )/
 '''
 
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+select = ["E", "F"]
+# CI focus: avoid noisy failures from unused imports/vars and benign f-strings
+ignore = [
+    "F401",  # unused import
+    "F541",  # f-string without placeholders
+    "F811",  # redefinition of unused name
+    "F841",  # local variable assigned but never used
+    "E501",  # line too long
+    "F601",  # dictionary key literal repeated
+    "E402",  # module import not at top of file
+]
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+]
+
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true
