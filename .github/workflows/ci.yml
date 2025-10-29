@@ -36,8 +36,10 @@ jobs:
         run: |
           ruff check .
 
-      - name: Run tests
+      - name: Run tests (headless Qt)
         env:
           PYTHONPATH: ${{ github.workspace }}
+          QT_QPA_PLATFORM: offscreen
+          QT_LOGGING_RULES: qt.qpa.*=false
         run: |
           pytest -q
