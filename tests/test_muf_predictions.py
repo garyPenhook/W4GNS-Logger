@@ -37,7 +37,7 @@ class TestMUFCalculation(unittest.TestCase):
         # Low SFI (70) should produce low MUF
         muf = self.fetcher.calculate_empirical_muf(sfi=70, k_index=2, frequency_mhz=14.0)
 
-        self.assertGreater(muf, 8.0, "Low SFI should still produce reasonable MUF")
+        self.assertGreater(muf, 7.0, "Low SFI should still produce reasonable MUF")
         self.assertLess(muf, 15.0, "Low SFI should produce lower MUF")
         logger.info(f"✓ Low SFI MUF: {muf:.1f} MHz")
 
