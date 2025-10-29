@@ -5,6 +5,7 @@ Provides abstraction for database operations.
 """
 
 import logging
+import re
 from typing import List, Optional, Dict, Any
 from sqlalchemy import create_engine, func, pool, text
 from sqlalchemy.orm import sessionmaker, Session
@@ -2123,7 +2124,6 @@ class DatabaseRepository:
             base = base[:-1]
         
         # Remove endorsement markers like x2, x10
-        import re
         base = re.sub(r'x\d+$', '', base, flags=re.IGNORECASE)
         
         if not base or not base.isdigit():
