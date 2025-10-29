@@ -43,5 +43,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           QT_LOGGING_RULES: qt.qpa.*=false
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: 1
+          # Manually load pytest-cov since plugin autoload is disabled
+          PYTEST_ADDOPTS: -p pytest_cov
         run: |
           pytest -q
