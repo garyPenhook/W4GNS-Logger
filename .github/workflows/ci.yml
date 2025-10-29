@@ -42,5 +42,6 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
           QT_QPA_PLATFORM: offscreen
           QT_LOGGING_RULES: qt.qpa.*=false
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: 1
         run: |
           pytest -q
