@@ -92,6 +92,11 @@ class SKCCSpotWidget(QWidget):
         self.spots: List[SKCCSpot] = []
         self.filtered_spots: List[SKCCSpot] = []
 
+        # Worked callsigns cache for "Unworked only" filter
+        self._worked_callsigns_cache: set[str] = set()
+        self._worked_cache_timestamp: Optional[datetime] = None
+        self._worked_cache_ttl_seconds: int = 60
+
         # Cache for award-critical spots (legacy, still used as fallback)
         self.award_critical_skcc_members: set = set()
         self.worked_skcc_members: set = set()
@@ -439,13 +444,29 @@ class SKCCSpotWidget(QWidget):
 
         # Unworked only
         if self.unworked_only_check.isChecked():
-            worked = {c.callsign.upper() for c in self.spot_manager.db.get_all_contacts()}
+            worked = self._get_worked_callsigns_cached()
             self.filtered_spots = [
                 s for s in self.filtered_spots
                 if s.callsign not in worked
             ]
 
         self._update_table()
+
+    def _get_worked_callsigns_cached(self) -> set[str]:
+        """Return worked callsigns with a short TTL to avoid frequent DB reads."""
+        now = datetime.now(timezone.utc)
+        if (
+            self._worked_cache_timestamp is None or
+            (now - self._worked_cache_timestamp).total_seconds() > self._worked_cache_ttl_seconds
+        ):
+            try:
+                contacts = self.spot_manager.db.get_all_contacts()
+                self._worked_callsigns_cache = {c.callsign.upper() for c in contacts if getattr(c, 'callsign', None)}
+                self._worked_cache_timestamp = now
+            except Exception:
+                # On error, return existing cache (may be empty)
+                pass
+        return self._worked_callsigns_cache
 
     def _on_spot_selected(self) -> None:
         """Handle spot selection in table"""

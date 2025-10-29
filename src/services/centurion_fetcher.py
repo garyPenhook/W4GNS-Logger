@@ -7,11 +7,11 @@ The list is fetched from: https://www.skccgroup.com/centurionlist.txt
 
 import logging
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import List, Dict, Optional
-from urllib.request import urlopen
 from urllib.error import URLError
+from src.utils.network import urlopen_with_retries as urlopen
 
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,7 @@ class CenturionFetcher:
         """
         try:
             logger.info(f"Fetching Centurion list from {CENTURION_LIST_URL}")
-            with urlopen(CENTURION_LIST_URL, timeout=10) as response:
+            with urlopen(CENTURION_LIST_URL, timeout=10, retries=3, backoff=0.5) as response:
                 content = response.read().decode('utf-8')
                 logger.info(f"Successfully fetched Centurion list ({len(content)} bytes)")
                 return content
@@ -137,7 +137,7 @@ class CenturionFetcher:
             logger.info(f"Cleared {old_count} old Centurion members from database")
 
             # Insert new members
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for member_data in members:
                 member = CenturionMember(
                     rank=member_data['rank'],
@@ -184,7 +184,10 @@ class CenturionFetcher:
                 return True
 
             last_update = latest_member.last_list_update
-            age = datetime.utcnow() - last_update
+            # Ensure timezone-aware arithmetic
+            if last_update.tzinfo is None:
+                last_update = last_update.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - last_update
             should_update = age > timedelta(hours=CENTURION_LIST_CACHE_HOURS)
 
             if should_update:

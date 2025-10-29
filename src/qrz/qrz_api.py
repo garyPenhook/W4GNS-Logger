@@ -135,7 +135,8 @@ class QRZAPIClient:
 
             url = f"{self.BASE_URL}?{params}"
 
-            with urllib.request.urlopen(url, timeout=self.timeout) as response:
+            from src.utils.network import urlopen_with_retries
+            with urlopen_with_retries(url, timeout=self.timeout, retries=3, backoff=0.5) as response:
                 data = response.read().decode('utf-8')
                 root = ET.fromstring(data)
 
@@ -206,7 +207,8 @@ class QRZAPIClient:
 
             url = f"{self.BASE_URL}?{params}"
 
-            with urllib.request.urlopen(url, timeout=self.timeout) as response:
+            from src.utils.network import urlopen_with_retries
+            with urlopen_with_retries(url, timeout=self.timeout, retries=3, backoff=0.5) as response:
                 data = response.read().decode('utf-8')
                 root = ET.fromstring(data)
 

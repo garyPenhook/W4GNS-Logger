@@ -7,11 +7,11 @@ The list is fetched from: https://www.skccgroup.com/senator.txt
 
 import logging
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import List, Dict, Optional
-from urllib.request import urlopen
 from urllib.error import URLError
+from src.utils.network import urlopen_with_retries as urlopen
 
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,7 @@ class SenatorFetcher:
         """
         try:
             logger.info(f"Fetching Senator list from {SENATOR_LIST_URL}")
-            with urlopen(SENATOR_LIST_URL, timeout=10) as response:
+            with urlopen(SENATOR_LIST_URL, timeout=10, retries=3, backoff=0.5) as response:
                 content = response.read().decode('utf-8')
                 logger.info(f"Successfully fetched Senator list ({len(content)} bytes)")
                 return content
@@ -141,7 +141,7 @@ class SenatorFetcher:
             logger.info(f"Cleared {old_count} old Senator members from database")
 
             # Insert new members
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for member_data in members:
                 member = SenatorMember(
                     rank=member_data['rank'],
@@ -188,7 +188,9 @@ class SenatorFetcher:
             if last_update and not force:
                 last_update_time = last_update.last_list_update
                 if last_update_time:
-                    hours_since = (datetime.utcnow() - last_update_time).total_seconds() / 3600
+                    if last_update_time.tzinfo is None:
+                        last_update_time = last_update_time.replace(tzinfo=timezone.utc)
+                    hours_since = (datetime.now(timezone.utc) - last_update_time).total_seconds() / 3600
                     if hours_since < SENATOR_LIST_CACHE_HOURS:
                         logger.debug(f"Senator list cache is fresh ({hours_since:.1f} hours old)")
                         return True

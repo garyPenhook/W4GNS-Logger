@@ -10,8 +10,8 @@ import csv
 from datetime import datetime, timedelta
 from io import StringIO
 from typing import List, Dict, Optional
-from urllib.request import urlopen
 from urllib.error import URLError
+from src.utils.network import urlopen_with_retries as urlopen
 
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,7 @@ class TribuneFetcher:
         """
         try:
             logger.info(f"Fetching Tribune list from {TRIBUNE_LIST_URL}")
-            with urlopen(TRIBUNE_LIST_URL, timeout=10) as response:
+            with urlopen(TRIBUNE_LIST_URL, timeout=10, retries=3, backoff=0.5) as response:
                 content = response.read().decode('utf-8')
                 logger.info(f"Successfully fetched Tribune list ({len(content)} bytes)")
                 return content

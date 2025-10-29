@@ -487,7 +487,12 @@ class SettingsEditor(QWidget):
             })
 
             # Test authentication
-            with urllib.request.urlopen(f"{qrz_url}?{params}", timeout=10) as response:
+            try:
+                from src.utils.network import urlopen_with_retries
+                opener = urlopen_with_retries(f"{qrz_url}?{params}", timeout=10, retries=3, backoff=0.5)
+            except Exception:
+                opener = urllib.request.urlopen(f"{qrz_url}?{params}", timeout=10)
+            with opener as response:
                 data = response.read()
                 root = ET.fromstring(data)
 

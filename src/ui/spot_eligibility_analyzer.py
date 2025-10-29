@@ -14,7 +14,7 @@ Key Features:
 import logging
 from typing import Optional, Dict, List, Tuple, Set
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from src.database.repository import DatabaseRepository
@@ -202,8 +202,8 @@ class SpotEligibilityAnalyzer:
 
         last_contact = self._contact_dates[callsign]
         try:
-            contact_date = datetime.strptime(last_contact, "%Y%m%d")
-            days_ago = (datetime.utcnow() - contact_date).days
+            contact_date = datetime.strptime(last_contact, "%Y%m%d").replace(tzinfo=timezone.utc)
+            days_ago = (datetime.now(timezone.utc) - contact_date).days
             is_recent = days_ago <= self.highlight_recent_days
             return is_recent, days_ago
         except Exception as e:
@@ -215,7 +215,7 @@ class SpotEligibilityAnalyzer:
         Get current award eligibility status.
         Cached for performance.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if (self._eligibility_cache is None or self._cache_timestamp is None or
             (now - self._cache_timestamp).total_seconds() > self.CACHE_TIMEOUT):
@@ -460,7 +460,7 @@ class SpotEligibilityAnalyzer:
         self._refresh_contact_cache_if_needed()
         return {
             "worked_callsigns": len(self._worked_callsigns),
-            "cache_age_seconds": int((datetime.utcnow() - self._cache_timestamp).total_seconds())
+            "cache_age_seconds": int((datetime.now(timezone.utc) - self._cache_timestamp).total_seconds())
                 if self._cache_timestamp else -1,
         }
 
