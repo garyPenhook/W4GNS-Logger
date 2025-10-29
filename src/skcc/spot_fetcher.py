@@ -9,7 +9,7 @@ import logging
 import socket
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable, Dict, List, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -25,7 +25,7 @@ class RBNConnectionState(Enum):
     ERROR = "error"
 
 
-@dataclass
+@dataclass(slots=True)
 class SKCCSpot:
     """Represents a SKCC member spot from RBN"""
     callsign: str
@@ -319,7 +319,7 @@ class RBNSpotFetcher:
                 reporter=reporter,
                 strength=strength,
                 speed=speed,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 is_skcc=is_skcc,
                 skcc_number=skcc_number,
             )
@@ -380,7 +380,7 @@ class RBNSpotFetcher:
                     reporter="TEST",
                     strength=random.randint(10, 45),
                     speed=random.randint(15, 40),
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(timezone.utc),
                     is_skcc=True,
                     skcc_number=skcc_number,
                 )
@@ -426,8 +426,8 @@ class SKCCSpotFilter:
         if not spot.is_skcc:
             return False
 
-        # Check age
-        age = (datetime.utcnow() - spot.timestamp).total_seconds()
+        # Check age (use timezone-aware UTC)
+        age = (datetime.now(timezone.utc) - spot.timestamp).total_seconds()
         if age > self.max_age_seconds:
             return False
 
@@ -453,25 +453,26 @@ class SKCCSpotFilter:
 
     @staticmethod
     def _freq_to_band(frequency: float) -> Optional[str]:
-        """Convert frequency to band name"""
-        bands = {
-            "160M": (1.8, 2.0),
-            "80M": (3.5, 4.0),
-            "60M": (5.1, 5.4),
-            "40M": (7.0, 7.3),
-            "30M": (10.1, 10.15),
-            "20M": (14.0, 14.35),
-            "17M": (18.068, 18.168),
-            "15M": (21.0, 21.45),
-            "12M": (24.89, 24.99),
-            "10M": (28.0, 29.7),
-            "6M": (50.0, 54.0),
-            "2M": (144.0, 148.0),
-            "70cm": (420.0, 450.0),
-        }
-
-        for band, (low, high) in bands.items():
+        """Convert frequency to band name using cached mapping"""
+        for band, (low, high) in BANDS.items():
             if low <= frequency <= high:
                 return band
 
         return None
+
+# Shared HF/VHF band bounds mapping for quick lookups
+BANDS: Dict[str, tuple] = {
+    "160M": (1.8, 2.0),
+    "80M": (3.5, 4.0),
+    "60M": (5.1, 5.4),
+    "40M": (7.0, 7.3),
+    "30M": (10.1, 10.15),
+    "20M": (14.0, 14.35),
+    "17M": (18.068, 18.168),
+    "15M": (21.0, 21.45),
+    "12M": (24.89, 24.99),
+    "10M": (28.0, 29.7),
+    "6M": (50.0, 54.0),
+    "2M": (144.0, 148.0),
+    "70cm": (420.0, 450.0),
+}

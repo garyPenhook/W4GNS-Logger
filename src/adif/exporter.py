@@ -223,7 +223,8 @@ class ADIFExporter:
         header_lines.append(f"SKCC Nr.: {my_skcc if my_skcc else ''}")
 
         # Log creation timestamp
-        now = datetime.utcnow()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         log_created = now.strftime('%Y-%m-%d %H:%M:%SZ')
         header_lines.append(f"Log Created: {log_created}")
 

@@ -7,7 +7,7 @@ with the logging form.
 
 import logging
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
@@ -58,7 +58,7 @@ class SKCCSpotRow:
         self.speed = f"{spot.speed} WPM" if spot.speed else ""
         self.reporter = spot.reporter
         self.time = spot.timestamp.strftime("%H:%M:%S")
-        self.age_seconds = (datetime.utcnow() - spot.timestamp).total_seconds()
+        self.age_seconds = (datetime.now(timezone.utc) - spot.timestamp).total_seconds()
 
     def get_age_string(self) -> str:
         """Get human-readable age string"""
@@ -371,7 +371,7 @@ class SKCCSpotWidget(QWidget):
 
     def _on_new_spot(self, spot: SKCCSpot) -> None:
         """Handle new spot received, filtering duplicates within 3-minute cooldown"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         callsign = spot.callsign.upper()
 
         # Check if this callsign was shown recently
@@ -466,14 +466,14 @@ class SKCCSpotWidget(QWidget):
     def _cleanup_old_spots(self) -> None:
         """Clean up old spots from memory and database"""
         # Remove spots older than 1 hour from memory
-        cutoff = datetime.utcnow() - timedelta(hours=1)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
         self.spots = [s for s in self.spots if s.timestamp > cutoff]
 
         # Remove spots older than 24 hours from database
         self.spot_manager.cleanup_old_spots(hours=24)
 
         # Clean up old entries from duplicate tracking (older than 10 minutes)
-        cutoff_tracking = datetime.utcnow() - timedelta(minutes=10)
+        cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=10)
         removed_count = 0
         callsigns_to_remove = [
             callsign for callsign, timestamp in self.last_shown_time.items()

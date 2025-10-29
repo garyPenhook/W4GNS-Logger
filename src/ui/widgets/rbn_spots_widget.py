@@ -7,7 +7,7 @@ Includes highlighting of spots that match previously worked contacts.
 
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QComboBox, QSpinBox, QCheckBox, QGroupBox
@@ -269,7 +269,7 @@ class RBNSpotsWidget(QWidget):
     def _cleanup_old_duplicates(self) -> None:
         """Clean up old entries from duplicate tracking (older than 10 minutes)"""
         try:
-            cutoff_time = datetime.utcnow() - timedelta(minutes=10)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=10)
             removed_count = 0
             callsigns_to_remove = [
                 callsign for callsign, timestamp in self.last_spot_time.items()
@@ -376,8 +376,8 @@ class RBNSpotsWidget(QWidget):
                 return
             
             # Record this spot time for future duplicate checking
-            self.last_spot_time[callsign] = datetime.utcnow()
-            logger.info(f"RBN Widget: Recording {callsign} at {datetime.utcnow()}")
+            self.last_spot_time[callsign] = datetime.now(timezone.utc)
+            logger.info(f"RBN Widget: Recording {callsign} at {datetime.now(timezone.utc)}")
                 
             # Add the spot to our list
             self.spots.append(spot)
@@ -420,7 +420,7 @@ class RBNSpotsWidget(QWidget):
         
         # Check if cooldown period has expired
         last_seen = self.last_spot_time[callsign]
-        time_since_last = (datetime.utcnow() - last_seen).total_seconds()
+        time_since_last = (datetime.now(timezone.utc) - last_seen).total_seconds()
         
         if time_since_last >= self.duplicate_cooldown_seconds:
             return True  # Cooldown period has expired, show it
