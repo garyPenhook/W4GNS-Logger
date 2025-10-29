@@ -7,13 +7,14 @@
 2. **[Logging Tab](#logging-tab)** - Log new QSOs with Previous QSOs panel
 3. **[Contacts Tab](#contacts-tab)** - View, search, and edit contacts
 4. **[Awards Tab](#awards-tab)** - Track SKCC and other awards
-5. **[Power Stats Tab](#power-stats-tab)** - Monitor power usage
-6. **[Space Weather Tab](#space-weather-tab)** - Check propagation conditions
-7. **[QRP Progress Tab](#qrp-progress-tab)** - Track low-power contacts
-8. **[Settings Tab](#settings-tab)** - Configure preferences
-9. **[Menu Bar & Toolbar](#menu-bar--toolbar)** - Keyboard shortcuts
-10. **[Tips & Tricks](#tips--tricks)** - Workflow efficiency
-11. **[Troubleshooting](#troubleshooting)** - Problem solving
+5. **[RBN Spots Tab](#rbn-spots-tab)** - Monitor Reverse Beacon Network with award-based highlighting
+6. **[Power Stats Tab](#power-stats-tab)** - Monitor power usage
+7. **[Space Weather Tab](#space-weather-tab)** - Check propagation conditions
+8. **[QRP Progress Tab](#qrp-progress-tab)** - Track low-power contacts
+9. **[Settings Tab](#settings-tab)** - Configure preferences
+10. **[Menu Bar & Toolbar](#menu-bar--toolbar)** - Keyboard shortcuts
+11. **[Tips & Tricks](#tips--tricks)** - Workflow efficiency
+12. **[Troubleshooting](#troubleshooting)** - Problem solving
 
 ### Quick Lookup (Common Tasks)
 - **[First Time Setup](#first-time-setup)** - Get started in 3 steps
@@ -162,6 +163,71 @@ On the **right side**, you'll see:
 3. Success message appears
 4. Form clears automatically
 5. Ready for next contact
+
+**[:arrow_up: Back to Top](#-quick-navigation-table-of-contents)**
+
+---
+
+## RBN Spots Tab
+
+Monitor real-time CW activity via the Reverse Beacon Network (RBN) and get award-aware color highlighting so you can spot high-value opportunities instantly.
+
+### What you see
+
+- A live table of recent spots with columns: Callsign, Frequency, Time, Distance, Type, SNR/WPM, Source, Spotter
+- Source status (Direct RBN Connection) and monitoring controls
+- Statistics: Total Spots, Unique Calls, GOAL, TARGET, RBN count
+- Options to filter GOAL/TARGET, RBN/Sked, and to highlight “worked”/“recent” stations
+
+### Start monitoring
+
+1. Open the RBN Spots tab
+2. Click “Start Monitoring RBN”
+3. Watch incoming spots; the table updates every few seconds
+4. Click “Stop Monitoring” to disconnect callbacks (doesn’t stop other tabs)
+
+### Award-based color highlighting
+
+Spots are analyzed against your awards and colored by urgency:
+
+- 🔴 Red = CRITICAL: You’re ≤5 away from an award goal; work this now
+- 🟠 Orange = HIGH: You’re ≤20 away; strong opportunity
+- 🟡 Yellow = MEDIUM: Longer-term need (21+)
+- 🟢 Green = LOW: Already worked or low priority
+- No color: Not relevant to your awards
+
+Hover any colored spot to see a tooltip like:
+- “CRITICAL: Need 2 more for Centurion”
+- “HIGH: Need 8 more for Tribune”
+
+Notes:
+- The analysis considers Centurion, Tribune, Senator, and Triple Key.
+- Your callsign and SKCC number must be set in Settings for award analysis.
+
+### Duplicate and recency highlighting
+
+- “Highlight Worked” shows past QSOs for visual de-duplication
+- “Days” controls the “RECENT” window (default 30 days)
+- RECENT: brighter color; WORKED: softer color
+
+### Filters and sources
+
+- Toggle GOAL/TARGET visibility
+- Toggle RBN vs Sked views (Sked may be unavailable if not configured)
+- Source label indicates “Direct RBN Connection” when active
+
+### Tips
+
+- Sort by Time or Frequency during events
+- Use filters to focus on GOAL first (reds/oranges)
+- Click a row to pre-fill a callsign in logging workflows (if wired in your UI)
+
+### Troubleshooting
+
+- Status shows “RBN: Demo mode” if no live connection is available
+- Ensure SKCC roster is loaded (Settings) for best member detection
+- Check internet connectivity and firewall if you see no new spots
+- Review logs in the logs/ directory for connection messages
 
 **[:arrow_up: Back to Top](#-quick-navigation-table-of-contents)**
 

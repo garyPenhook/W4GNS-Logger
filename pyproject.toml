@@ -106,7 +106,7 @@ warn_no_return = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["src/tests"]
+testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-v --cov=src --cov-report=html --cov-report=term-missing"
 
