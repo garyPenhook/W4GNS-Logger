@@ -183,14 +183,34 @@ class MainWindow(QMainWindow):
         # Create tab widget
         self.tabs = QTabWidget()
 
-        # Add tabs
+        # Track which tabs have been created (for lazy loading)
+        self.tabs_created = {}
+
+        # Add tabs - Logging tab created immediately, others lazy-loaded
         self.tabs.addTab(self._create_logging_tab(), "Logging")
-        self.tabs.addTab(self._create_qrp_progress_tab(), "QRP Progress")
-        self.tabs.addTab(self._create_power_stats_tab(), "Power Stats")
-        self.tabs.addTab(self._create_space_weather_tab(), "Space Weather")
-        self.tabs.addTab(self._create_contacts_tab(), "Contacts")
-        self.tabs.addTab(self._create_awards_tab(), "Awards")
-        self.tabs.addTab(self._create_settings_tab(), "Settings")
+        self.tabs_created[0] = True  # Logging tab is created
+
+        # Add placeholder widgets for other tabs (will be created on first view)
+        self.tabs.addTab(self._create_placeholder("QRP Progress - Loading..."), "QRP Progress")
+        self.tabs_created[1] = False
+
+        self.tabs.addTab(self._create_placeholder("Power Stats - Loading..."), "Power Stats")
+        self.tabs_created[2] = False
+
+        self.tabs.addTab(self._create_placeholder("Space Weather - Loading..."), "Space Weather")
+        self.tabs_created[3] = False
+
+        self.tabs.addTab(self._create_placeholder("Contacts - Loading..."), "Contacts")
+        self.tabs_created[4] = False
+
+        self.tabs.addTab(self._create_placeholder("Awards - Loading..."), "Awards")
+        self.tabs_created[5] = False
+
+        self.tabs.addTab(self._create_placeholder("Settings - Loading..."), "Settings")
+        self.tabs_created[6] = False
+
+        # Connect tab change signal to lazy-load tabs on first access
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self.tabs)
         central_widget.setLayout(layout)
@@ -285,19 +305,9 @@ class MainWindow(QMainWindow):
         return widget
 
     def _create_awards_tab(self) -> QWidget:
-        """Create awards dashboard tab"""
-        from PyQt6.QtWidgets import QTabWidget, QScrollArea, QPushButton
+        """Create awards dashboard tab with lazy-loaded sub-tabs"""
+        from PyQt6.QtWidgets import QTabWidget, QPushButton, QScrollArea
         from src.ui.centurion_progress_widget import CenturionProgressWidget
-        from src.ui.tribune_progress_widget import TribuneProgressWidget
-        from src.ui.senator_progress_widget import SenatorProgressWidget
-        from src.ui.canadian_maple_progress_widget import CanadianMapleProgressWidget
-        from src.ui.dx_award_progress_widget import DXAwardProgressWidget
-        from src.ui.rag_chew_progress_widget import RagChewProgressWidget
-        from src.ui.pfx_progress_widget import PFXProgressWidget
-        from src.ui.triple_key_progress_widget import TripleKeyProgressWidget
-        from src.ui.wac_progress_widget import WACProgressWidget
-        from src.ui.was_progress_widget import WASProgressWidget
-        from src.ui.qrp_mpw_progress_widget import QRPMPWProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -314,86 +324,141 @@ class MainWindow(QMainWindow):
         # Create tab widget for different awards
         awards_tabs = QTabWidget()
 
-        # Centurion Award Tab
+        # Track which award sub-tabs have been created
+        self.award_tabs_created = {}
+
+        # Create first tab (Centurion) immediately so it's visible when Awards tab opens
         centurion_scroll = QScrollArea()
         centurion_scroll.setWidgetResizable(True)
-        centurion_widget = CenturionProgressWidget(self.db)
-        centurion_scroll.setWidget(centurion_widget)
+        centurion_scroll.setWidget(CenturionProgressWidget(self.db))
         awards_tabs.addTab(centurion_scroll, "Centurion")
+        self.award_tabs_created[0] = True
 
-        # Tribune Award Tab
-        tribune_scroll = QScrollArea()
-        tribune_scroll.setWidgetResizable(True)
-        tribune_widget = TribuneProgressWidget(self.db)
-        tribune_scroll.setWidget(tribune_widget)
-        awards_tabs.addTab(tribune_scroll, "Tribune")
+        # Add placeholder tabs for remaining awards (lazy-loaded on first view)
+        award_names = [
+            "Tribune", "Senator", "Canadian Maple",
+            "DX Award", "Rag Chew", "PFX", "Triple Key",
+            "WAC", "WAS", "QRP MPW"
+        ]
 
-        # Senator Award Tab
-        senator_scroll = QScrollArea()
-        senator_scroll.setWidgetResizable(True)
-        senator_widget = SenatorProgressWidget(self.db)
-        senator_scroll.setWidget(senator_widget)
-        awards_tabs.addTab(senator_scroll, "Senator")
+        for i, name in enumerate(award_names, start=1):
+            awards_tabs.addTab(self._create_placeholder(f"{name} - Loading..."), name)
+            self.award_tabs_created[i] = False
 
-        # Canadian Maple Award Tab
-        maple_scroll = QScrollArea()
-        maple_scroll.setWidgetResizable(True)
-        maple_widget = CanadianMapleProgressWidget(self.db)
-        maple_scroll.setWidget(maple_widget)
-        awards_tabs.addTab(maple_scroll, "Canadian Maple")
+        # Connect tab change signal for lazy loading
+        awards_tabs.currentChanged.connect(self._on_award_tab_changed)
 
-        # DX Award Tab
-        dx_scroll = QScrollArea()
-        dx_scroll.setWidgetResizable(True)
-        dx_widget = DXAwardProgressWidget(self.db)
-        dx_scroll.setWidget(dx_widget)
-        awards_tabs.addTab(dx_scroll, "DX Award")
-
-        # Rag Chew Award Tab
-        ragchew_scroll = QScrollArea()
-        ragchew_scroll.setWidgetResizable(True)
-        ragchew_widget = RagChewProgressWidget(self.db)
-        ragchew_scroll.setWidget(ragchew_widget)
-        awards_tabs.addTab(ragchew_scroll, "Rag Chew")
-
-        # PFX Award Tab
-        pfx_scroll = QScrollArea()
-        pfx_scroll.setWidgetResizable(True)
-        pfx_widget = PFXProgressWidget(self.db)
-        pfx_scroll.setWidget(pfx_widget)
-        awards_tabs.addTab(pfx_scroll, "PFX")
-
-        # Triple Key Award Tab
-        triplekey_scroll = QScrollArea()
-        triplekey_scroll.setWidgetResizable(True)
-        triplekey_widget = TripleKeyProgressWidget(self.db)
-        triplekey_scroll.setWidget(triplekey_widget)
-        awards_tabs.addTab(triplekey_scroll, "Triple Key")
-
-        # WAC Award Tab
-        wac_scroll = QScrollArea()
-        wac_scroll.setWidgetResizable(True)
-        wac_widget = WACProgressWidget(self.db)
-        wac_scroll.setWidget(wac_widget)
-        awards_tabs.addTab(wac_scroll, "WAC")
-
-        # WAS Award Tab
-        was_scroll = QScrollArea()
-        was_scroll.setWidgetResizable(True)
-        was_widget = WASProgressWidget(self.db)
-        was_scroll.setWidget(was_widget)
-        awards_tabs.addTab(was_scroll, "WAS")
-
-        # QRP Miles Per Watt Tab
-        qrp_mpw_scroll = QScrollArea()
-        qrp_mpw_scroll.setWidgetResizable(True)
-        qrp_mpw_widget = QRPMPWProgressWidget(self.db)
-        qrp_mpw_scroll.setWidget(qrp_mpw_widget)
-        awards_tabs.addTab(qrp_mpw_scroll, "QRP MPW")
+        # Store reference to awards tabs widget
+        self.awards_tabs = awards_tabs
 
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)
         return widget
+
+    def _on_award_tab_changed(self, index: int) -> None:
+        """Handle award sub-tab change - lazy-load on first access"""
+        try:
+            # Ignore invalid indices
+            if index < 0 or index > 10:
+                return
+
+            # Check if this award tab has already been created
+            if self.award_tabs_created.get(index, False):
+                return  # Tab already created
+
+            logger.info(f"Lazy-loading award tab {index} on first access...")
+
+            # Block signals to prevent recursion during tab manipulation
+            self.awards_tabs.blockSignals(True)
+
+            try:
+                from PyQt6.QtWidgets import QScrollArea
+
+                # Create the appropriate award widget based on index
+                scroll = None
+                tab_name = ""
+
+                if index == 0:  # Centurion
+                    from src.ui.centurion_progress_widget import CenturionProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(CenturionProgressWidget(self.db))
+                    tab_name = "Centurion"
+                elif index == 1:  # Tribune
+                    from src.ui.tribune_progress_widget import TribuneProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(TribuneProgressWidget(self.db))
+                    tab_name = "Tribune"
+                elif index == 2:  # Senator
+                    from src.ui.senator_progress_widget import SenatorProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(SenatorProgressWidget(self.db))
+                    tab_name = "Senator"
+                elif index == 3:  # Canadian Maple
+                    from src.ui.canadian_maple_progress_widget import CanadianMapleProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(CanadianMapleProgressWidget(self.db))
+                    tab_name = "Canadian Maple"
+                elif index == 4:  # DX Award
+                    from src.ui.dx_award_progress_widget import DXAwardProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(DXAwardProgressWidget(self.db))
+                    tab_name = "DX Award"
+                elif index == 5:  # Rag Chew
+                    from src.ui.rag_chew_progress_widget import RagChewProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(RagChewProgressWidget(self.db))
+                    tab_name = "Rag Chew"
+                elif index == 6:  # PFX
+                    from src.ui.pfx_progress_widget import PFXProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(PFXProgressWidget(self.db))
+                    tab_name = "PFX"
+                elif index == 7:  # Triple Key
+                    from src.ui.triple_key_progress_widget import TripleKeyProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(TripleKeyProgressWidget(self.db))
+                    tab_name = "Triple Key"
+                elif index == 8:  # WAC
+                    from src.ui.wac_progress_widget import WACProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(WACProgressWidget(self.db))
+                    tab_name = "WAC"
+                elif index == 9:  # WAS
+                    from src.ui.was_progress_widget import WASProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(WASProgressWidget(self.db))
+                    tab_name = "WAS"
+                elif index == 10:  # QRP MPW
+                    from src.ui.qrp_mpw_progress_widget import QRPMPWProgressWidget
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setWidget(QRPMPWProgressWidget(self.db))
+                    tab_name = "QRP MPW"
+
+                if scroll:
+                    # Replace placeholder with actual widget
+                    self.awards_tabs.removeTab(index)
+                    self.awards_tabs.insertTab(index, scroll, tab_name)
+                    self.awards_tabs.setCurrentIndex(index)
+                    self.award_tabs_created[index] = True
+                    logger.info(f"Award tab {index} ({tab_name}) created successfully")
+
+            finally:
+                # Re-enable signals
+                self.awards_tabs.blockSignals(False)
+
+        except Exception as e:
+            logger.error(f"Error lazy-loading award tab {index}: {e}", exc_info=True)
 
     def _create_settings_tab(self) -> QWidget:
         """Create settings tab"""
@@ -403,6 +468,57 @@ class MainWindow(QMainWindow):
         layout.addWidget(SettingsEditor())
         widget.setLayout(layout)
         return widget
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Handle tab change - lazy-load tab content on first access"""
+        try:
+            # Check if this tab has already been created
+            if self.tabs_created.get(index, False):
+                return  # Tab already created, nothing to do
+
+            logger.info(f"Lazy-loading tab {index} on first access...")
+
+            # Block signals to prevent recursion during tab manipulation
+            self.tabs.blockSignals(True)
+
+            try:
+                # Create the appropriate tab content based on index
+                if index == 1:  # QRP Progress
+                    self.tabs.removeTab(index)
+                    self.tabs.insertTab(index, self._create_qrp_progress_tab(), "QRP Progress")
+                    self.tabs_created[index] = True
+                elif index == 2:  # Power Stats
+                    self.tabs.removeTab(index)
+                    self.tabs.insertTab(index, self._create_power_stats_tab(), "Power Stats")
+                    self.tabs_created[index] = True
+                elif index == 3:  # Space Weather
+                    self.tabs.removeTab(index)
+                    self.tabs.insertTab(index, self._create_space_weather_tab(), "Space Weather")
+                    self.tabs_created[index] = True
+                elif index == 4:  # Contacts
+                    self.tabs.removeTab(index)
+                    self.tabs.insertTab(index, self._create_contacts_tab(), "Contacts")
+                    self.tabs_created[index] = True
+                elif index == 5:  # Awards
+                    self.tabs.removeTab(index)
+                    self.tabs.insertTab(index, self._create_awards_tab(), "Awards")
+                    self.tabs_created[index] = True
+                elif index == 6:  # Settings
+                    self.tabs.removeTab(index)
+                    self.tabs.insertTab(index, self._create_settings_tab(), "Settings")
+                    self.tabs_created[index] = True
+
+                # Switch back to the newly created tab
+                self.tabs.setCurrentIndex(index)
+
+                logger.info(f"Tab {index} created successfully")
+
+            finally:
+                # Re-enable signals
+                self.tabs.blockSignals(False)
+
+        except Exception as e:
+            logger.error(f"Error lazy-loading tab {index}: {e}", exc_info=True)
 
     def _create_placeholder(self, text: str) -> QWidget:
         """Create placeholder widget"""

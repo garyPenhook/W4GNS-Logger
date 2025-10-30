@@ -775,9 +775,11 @@ class SKCCSpotWidget(QWidget):
 
     def closeEvent(self, event) -> None:
         """Clean up when widget is closed"""
-        self.refresh_timer.stop()
-        self.cleanup_timer.stop()
-        self.award_cache_timer.stop()
-        if self.spot_manager.is_running():
-            self.spot_manager.stop()
+        try:
+            self.cleanup_timer.stop()
+            self.award_cache_timer.stop()
+            if self.spot_manager.is_running():
+                self.spot_manager.stop()
+        except Exception as e:
+            logger.error(f"Error cleaning up spots widget: {e}", exc_info=True)
         super().closeEvent(event)

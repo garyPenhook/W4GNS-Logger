@@ -45,15 +45,19 @@ class ContactsListWidget(QWidget):
         # View mode state
         self.view_mode = "all"  # "all" or "last_10"
 
+        # Visibility-aware refresh state
+        self._needs_refresh = False
+        self._has_initial_data = False
+
         self._init_ui()
         self.refresh()
 
-        # Connect to signals instead of using polling timer
+        # Connect to signals - but refresh intelligently based on visibility
         signals = get_app_signals()
-        signals.contacts_changed.connect(self.refresh)
-        signals.contact_added.connect(self.refresh)
-        signals.contact_modified.connect(self.refresh)
-        signals.contact_deleted.connect(self.refresh)
+        signals.contacts_changed.connect(self._on_data_changed)
+        signals.contact_added.connect(self._on_data_changed)
+        signals.contact_modified.connect(self._on_data_changed)
+        signals.contact_deleted.connect(self._on_data_changed)
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -168,9 +172,40 @@ class ContactsListWidget(QWidget):
         group.setLayout(layout)
         return group
 
+    def _on_data_changed(self) -> None:
+        """Handle data change signal - refresh if visible, mark for refresh if hidden"""
+        try:
+            if self.isVisible():
+                # Widget is visible, refresh immediately to show fresh data
+                self.refresh()
+            else:
+                # Widget is hidden, just mark that refresh is needed
+                self._needs_refresh = True
+                logger.debug("ContactsListWidget: Data changed while hidden, marked for refresh")
+        except Exception as e:
+            logger.error(f"Error handling data change: {e}", exc_info=True)
+
+    def showEvent(self, event) -> None:
+        """Handle widget becoming visible - refresh if needed"""
+        try:
+            super().showEvent(event)
+
+            # If data changed while hidden, refresh now to show fresh data
+            if self._needs_refresh:
+                logger.info("ContactsListWidget: Refreshing on show (data changed while hidden)")
+                self.refresh()
+                self._needs_refresh = False
+            elif not self._has_initial_data:
+                # First time showing, ensure we have data
+                logger.info("ContactsListWidget: Loading initial data on first show")
+                self.refresh()
+        except Exception as e:
+            logger.error(f"Error in showEvent: {e}", exc_info=True)
+
     def refresh(self) -> None:
         """Refresh the contacts table"""
         try:
+            self._has_initial_data = True
             # Reset to first page on refresh
             self.current_offset = 0
             logger.debug(f"=== REFRESH START === view_mode={self.view_mode}")
