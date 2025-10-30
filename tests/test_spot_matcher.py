@@ -64,7 +64,7 @@ class _FakeQuery:
                 contact = self._contacts_by_callsign.get(callsign)
                 if contact:
                     return contact.qso_date
-            except:
+            except Exception:
                 pass
         return None
 
