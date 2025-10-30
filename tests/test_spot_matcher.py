@@ -21,12 +21,65 @@ class _FakeConfig:
         self._data[key] = value
 
 
+class _FakeSession:
+    """Fake database session for testing"""
+    def __init__(self, contacts_by_callsign):
+        self._contacts_by_callsign = contacts_by_callsign
+
+    def query(self, *args):
+        """Return a fake query object"""
+        return _FakeQuery(self._contacts_by_callsign)
+
+    def close(self):
+        """No-op close"""
+        pass
+
+
+class _FakeQuery:
+    """Fake SQLAlchemy query for testing"""
+    def __init__(self, contacts_by_callsign):
+        self._contacts_by_callsign = contacts_by_callsign
+        self._callsign_filter = None
+
+    def filter(self, condition):
+        """Extract callsign from filter and store it"""
+        # The condition will be a boolean expression like: func.upper(Contact.callsign) == "K4TEST"
+        # We need to extract the callsign value
+        # Since we can't easily parse the SQLAlchemy expression, we'll use a hack:
+        # Store the condition and evaluate it in scalar()
+        self._condition = condition
+        return self
+
+    def scalar(self):
+        """Return the max date for the filtered callsign"""
+        # Try to extract callsign from the condition by evaluating its right side
+        # The condition is: func.upper(Contact.callsign) == "CALLSIGN"
+        # We'll check each contact to see if it matches
+        if hasattr(self, '_condition'):
+            # Extract the callsign by getting the right operand
+            # This is a hack but works for testing
+            try:
+                # The condition is a BinaryExpression with right side being the callsign
+                callsign = str(self._condition.right.value)
+                contact = self._contacts_by_callsign.get(callsign)
+                if contact:
+                    return contact.qso_date
+            except:
+                pass
+        return None
+
+
 class _FakeDB:
     def __init__(self, contacts):
         self._contacts = contacts
+        self._contacts_by_callsign = {c.callsign: c for c in contacts}
 
     def get_all_contacts(self):
         return self._contacts
+
+    def get_session(self):
+        """Return a fake session for testing"""
+        return _FakeSession(self._contacts_by_callsign)
 
 
 class TestSpotMatcher(unittest.TestCase):
