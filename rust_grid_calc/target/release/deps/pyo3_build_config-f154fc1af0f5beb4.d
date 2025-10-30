@@ -1,0 +1,14 @@
+/home/w4gns/apps/W4GNS Logger/rust_grid_calc/target/release/deps/pyo3_build_config-f154fc1af0f5beb4.d: /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/lib.rs /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/errors.rs /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/impl_.rs /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config-file.txt /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config.txt
+
+/home/w4gns/apps/W4GNS Logger/rust_grid_calc/target/release/deps/libpyo3_build_config-f154fc1af0f5beb4.rlib: /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/lib.rs /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/errors.rs /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/impl_.rs /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config-file.txt /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config.txt
+
+/home/w4gns/apps/W4GNS Logger/rust_grid_calc/target/release/deps/libpyo3_build_config-f154fc1af0f5beb4.rmeta: /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/lib.rs /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/errors.rs /home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/impl_.rs /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config-file.txt /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config.txt
+
+/home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/lib.rs:
+/home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/errors.rs:
+/home/w4gns/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pyo3-build-config-0.22.6/src/impl_.rs:
+/home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config-file.txt:
+/home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out/pyo3-build-config.txt:
+
+# env-dep:CARGO_PKG_VERSION=0.22.6
+# env-dep:OUT_DIR=/home/w4gns/apps/W4GNS Logger/rust_grid_calc/target/release/build/pyo3-build-config-13e9c6381c607b03/out

@@ -34,7 +34,6 @@ classifiers = [
 dependencies = [
     "PyQt6>=6.4.0",
     "SQLAlchemy>=2.0",
-    "adif_io>=0.3.0",
     "aiofiles>=0.8.0",
     "asyncio-contextmanager>=1.0.0",
     "PyYAML>=6.0",

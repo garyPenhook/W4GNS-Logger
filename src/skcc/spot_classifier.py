@@ -56,7 +56,7 @@ class SpotClassifier:
 
     def classify_spot(self, callsign: str, skcc_number: Optional[str] = None) -> Optional[str]:
         """
-        Classify an incoming spot as GOAL, TARGET, BOTH, or None
+        Classify an incoming spot as GOAL or None
 
         Args:
             callsign: Remote station callsign (e.g., "K5ABC")
@@ -64,9 +64,7 @@ class SpotClassifier:
 
         Returns:
             "GOAL" - Need this station for awards
-            "TARGET" - Can help them, don't need for awards
-            "BOTH" - Mutual benefit
-            None - Not relevant to current awards
+            None - Not needed for current awards
         """
         try:
             # Normalize callsign
@@ -115,39 +113,35 @@ class SpotClassifier:
             skcc_number: Optional SKCC number
 
         Returns:
-            Classification string or None
+            GOAL if needed for awards, None otherwise
         """
-        # 1. Get contact history
-        contact_count = self._get_contact_count(callsign)
-
-        # 2. If heavily contacted, likely TARGET
-        if contact_count >= 3:
-            logger.debug(f"Spot classifier: {callsign} contacted {contact_count} times → TARGET")
-            return "TARGET"
-
-        # 3. Get roster info and check if SKCC member
+        # 1. Get roster info and check if SKCC member
         roster_entry = self._get_roster_info(callsign, skcc_number)
         if not roster_entry:
             logger.debug(f"Spot classifier: {callsign} not in SKCC roster → SKIP")
             return None
 
-        # 4. Check award needs
+        # 2. Check award needs
         award_needs = self._get_award_needs(roster_entry)
 
         if not award_needs:
             # No awards need this station
-            logger.debug(f"Spot classifier: {callsign} not needed for awards → TARGET")
-            return "TARGET"
+            logger.debug(f"Spot classifier: {callsign} not needed for awards → SKIP")
+            return None
 
-        # 5. Classify based on contact history + needs
-        if contact_count == 0:
-            # Never contacted + needed = GOAL
-            logger.debug(f"Spot classifier: {callsign} needed for {award_needs} + never contacted → GOAL")
-            return "GOAL"
+        # 3. Check if already worked AND counts for current award needs
+        # For Tribune: contact must be on/after BOTH operators Centurion dates
+        # For Senator: contact must be on/after Tribune x8 achievement
+        has_qualifying_contact = self._has_qualifying_contact(callsign, roster_entry, award_needs)
+        
+        if has_qualifying_contact:
+            # Already have a qualifying contact for this award
+            logger.debug(f"Spot classifier: {callsign} already worked with qualifying contact for {award_needs} → SKIP")
+            return None
         else:
-            # Already contacted + still needed = BOTH
-            logger.debug(f"Spot classifier: {callsign} needed for {award_needs} + already contacted → BOTH")
-            return "BOTH"
+            # Never worked OR previous contacts do not qualify for current awards = GOAL
+            logger.debug(f"Spot classifier: {callsign} needed for {award_needs} + no qualifying contact → GOAL")
+            return "GOAL"
 
     def _get_contact_count(self, callsign: str) -> int:
         """Get number of times this callsign has been contacted"""
@@ -158,6 +152,85 @@ class SpotClassifier:
         except Exception as e:
             logger.debug(f"Error getting contact count for {callsign}: {e}")
             return 0
+
+    def _has_qualifying_contact(self, callsign: str, roster_entry: Dict[str, Any], award_needs: str) -> bool:
+        """
+        Check if we have a contact that qualifies for current award needs
+        
+        For Tribune: Contact must be on/after BOTH operators Centurion dates
+        For Senator: Contact must be on/after Tribune x8 achievement
+        
+        Args:
+            callsign: Station callsign
+            roster_entry: Roster information
+            award_needs: String describing award needs
+            
+        Returns:
+            True if we have a qualifying contact, False otherwise
+        """
+        try:
+            contacts = self.db.get_contacts_by_callsign(callsign)
+            if not contacts:
+                return False
+            
+            # Get eligibility info for date checking
+            if self._eligibility_cache is None or not self._is_cache_valid():
+                self._eligibility_cache = self.db.analyze_skcc_award_eligibility(self.my_skcc_number)
+                
+            eligibility = self._eligibility_cache
+            
+            # Get user Centurion achievement date (required for Tribune)
+            centurion_info = eligibility.get('centurion', {})
+            user_centurion_date = centurion_info.get('achievement_date')  # Format: YYYYMMDD
+            
+            # Get contacted station Centurion date
+            skcc_number = roster_entry.get('skcc_number', '')
+            from src.utils.skcc_number import extract_base_skcc_number
+            base_skcc = extract_base_skcc_number(skcc_number)
+            
+            contact_centurion_date = None
+            if base_skcc:
+                member_status = self.db.check_skcc_member_status(base_skcc)
+                contact_centurion_date = member_status.get('centurion_date')  # Format: YYYYMMDD
+            
+            # Check each contact to see if it qualifies
+            for contact in contacts:
+                qso_date = contact.qso_date  # Format: YYYYMMDD
+                
+                # For Tribune needs: QSO must be on/after BOTH operators Centurion dates
+                if 'Tribune' in award_needs:
+                    # Check user Centurion date
+                    if user_centurion_date and qso_date < user_centurion_date:
+                        continue  # QSO before user achieved Centurion
+                        
+                    # Check contacted station Centurion date
+                    if contact_centurion_date and qso_date < contact_centurion_date:
+                        continue  # QSO before contacted station achieved Centurion
+                        
+                    # This contact qualifies for Tribune
+                    return True
+                
+                # For Senator needs: QSO must be on/after Tribune x8 achievement
+                if 'Senator' in award_needs:
+                    senator_info = eligibility.get('senator', {})
+                    tribune_x8_date = senator_info.get('tribune_x8_achievement_date')
+                    
+                    if tribune_x8_date and qso_date < tribune_x8_date:
+                        continue  # QSO before Tribune x8
+                        
+                    # This contact qualifies for Senator
+                    return True
+                
+                # For Centurion: any contact with SKCC member qualifies
+                if 'Centurion' in award_needs:
+                    return True
+            
+            # No qualifying contacts found
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking qualifying contacts for {callsign}: {e}", exc_info=True)
+            return False
 
     def _get_roster_info(self, callsign: str, skcc_number: Optional[str]) -> Optional[Dict[str, Any]]:
         """

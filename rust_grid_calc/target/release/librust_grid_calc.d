@@ -1,0 +1,1 @@
+/home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/target/release/librust_grid_calc.so: /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/src/adif.rs /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/src/awards.rs /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/src/lib.rs /home/w4gns/apps/W4GNS\ Logger/rust_grid_calc/src/spot_matcher.rs

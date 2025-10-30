@@ -303,6 +303,38 @@ class VOACAPMUFFetcher:
                 logger.debug("GIRO data not available, will use empirical formula")
                 return None
 
+            # Check if GIRO measurement is fresh (reject if older than 6 hours)
+            measurement_time = giro_info.get('time')
+            if measurement_time:
+                try:
+                    # Parse the measurement timestamp
+                    from dateutil import parser
+                    from datetime import timezone
+                    
+                    meas_dt = parser.parse(measurement_time)
+                    
+                    # Convert to UTC if not timezone-aware
+                    if meas_dt.tzinfo is None:
+                        meas_dt = meas_dt.replace(tzinfo=timezone.utc)
+                    
+                    # Get current time in UTC
+                    now_utc = datetime.now(timezone.utc)
+                    
+                    # Check age of measurement
+                    age_hours = (now_utc - meas_dt).total_seconds() / 3600
+                    if age_hours > 6:
+                        logger.warning(
+                            f"GIRO data is stale ({age_hours:.1f} hours old from {measurement_time}), "
+                            "using empirical formula instead"
+                        )
+                        return None
+                    
+                    logger.info(f"GIRO measurement is {age_hours:.1f} hours old - using it")
+                except Exception as e:
+                    logger.warning(f"Could not parse GIRO timestamp '{measurement_time}': {e}")
+                    # If we can't verify freshness, reject it to be safe
+                    return None
+
             # Cache the GIRO data
             self.giro_data = giro_info
             self.giro_data_time = now
@@ -362,9 +394,12 @@ class VOACAPMUFFetcher:
         try:
             # Base MUF calculation from Solar Flux Index
             # Empirical relationship: MUF increases with SFI
-            # Nominal: SFI=70 -> MUF~9MHz at 14MHz reference
-            #          SFI=200 -> MUF~25MHz at 14MHz reference
-            base_muf = 9.0 + (sfi - 70) * 0.2  # Linear approximation (0.2 MHz per SFI unit)
+            # Calibrated to match VOACAP/KC2G predictions:
+            # SFI=70  -> MUF~9MHz   (solar minimum)
+            # SFI=150 -> MUF~24MHz  (moderate)  
+            # SFI=200 -> MUF~33MHz  (good conditions)
+            # Using 0.185 MHz per SFI unit for more conservative predictions
+            base_muf = 9.0 + (sfi - 70) * 0.185
 
             # K-Index correction (negative effects from geomagnetic disturbance)
             # K=0-3: Normal conditions, slight boost
@@ -410,8 +445,10 @@ class VOACAPMUFFetcher:
                     latitude_factor *= 0.70  # Severe degradation during storms
 
             # Frequency-dependent attenuation factor
-            # Lower frequencies penetrate better
-            freq_factor = max(0.85, 1.0 - (frequency_mhz - 3.5) / 100.0)
+            # Updated: Less aggressive reduction for higher frequencies
+            # The MUF is primarily determined by ionospheric electron density (foF2),
+            # not as strongly by frequency-dependent absorption as previously modeled
+            freq_factor = max(0.92, 1.0 - (frequency_mhz - 3.5) / 200.0)
 
             # Time-of-day absorption factor (NEW)
             time_factor = 1.0
@@ -493,31 +530,46 @@ class VOACAPMUFFetcher:
                 center_freq = (min_freq + max_freq) / 2.0
 
                 if giro_muf is not None:
-                    # GIRO provides MUFD - real measured ionospheric data  (3000km path)
-                    # MUFD = foF2 × MUF_factor (typically ~3 for 3000km)
-                    # where foF2 is the critical frequency (max frequency for vertical incidence)
+                    # GIRO provides MUFD - real measured ionospheric data (3000km path)
+                    # MUFD = foF2 × MUF_factor where foF2 is critical frequency
+                    # For 3000km path: MUF_factor ≈ 3.0
                     
-                    # To adapt MUFD for different frequencies, we use ionospheric absorption:
-                    # - MUF is relatively constant across HF for similar paths
-                    # - But absorption increases with frequency (D-layer, E-layer effects)
-                    # - Use MUFD as the reference and apply slight frequency-dependent adjustment
+                    # Key insight: MUFD represents the MAXIMUM frequency that will propagate
+                    # via the ionosphere for the measured conditions. This is NOT frequency-specific
+                    # in the way absorption is - it's determined by the electron density peak (foF2).
                     
-                    # Reference frequency where MUFD is measured (typically 3-18 MHz range)
-                    reference_freq = 14.0  # MHz (common F-layer reference)
+                    # During good conditions (high foF2), the MUF can exceed 30 MHz across all bands.
+                    # The limiting factor is the ionospheric electron density, not operating frequency.
                     
-                    # Frequency scaling based on ionospheric absorption and critical frequency
-                    # This is a conservative model that avoids over-optimistic predictions
-                    if center_freq < reference_freq:
-                        # Lower frequencies: slightly better (less absorption in D-layer during day)
-                        # But limited boost since MUF is path-dependent, not just frequency-dependent
-                        freq_scale = 1.0 + (reference_freq - center_freq) * 0.015  # 1.5% per MHz
+                    # Proper model: MUFD represents the current ionospheric "ceiling"
+                    # All frequencies below MUFD can potentially propagate (subject to absorption)
+                    # Frequencies above MUFD will pass through the ionosphere into space
+                    
+                    # Extract critical frequency from MUFD
+                    # For 3000km path, MUF ≈ foF2 × 3.0 (secant law)
+                    foF2 = giro_muf / 3.0  # Critical frequency
+                    
+                    # Calculate MUF for our path using the same ionospheric conditions
+                    # Assume similar path geometry (secant factor ~3.0 for typical DX)
+                    # This gives us the frequency ceiling for current conditions
+                    base_muf = foF2 * 3.0  # Same as MUFD, but we'll adjust for absorption
+                    
+                    # Apply frequency-dependent absorption (D-layer/E-layer)
+                    # Lower frequencies: more absorption during day (but better refraction)
+                    # Higher frequencies: less absorption (but need higher foF2)
+                    # This is a SMALL correction, not a major scaling
+                    if center_freq < 10.0:
+                        # 80m, 40m: slight penalty for D-layer absorption
+                        absorption_factor = 0.95
+                    elif center_freq < 20.0:
+                        # 20m, 17m, 15m: optimal range
+                        absorption_factor = 1.0
                     else:
-                        # Higher frequencies: reduced MUF due to increased absorption
-                        # More conservative: 1.5% reduction per MHz above reference
-                        freq_scale = 1.0 - (center_freq - reference_freq) * 0.015
+                        # 12m, 10m: slightly reduced due to being near the MUF edge
+                        # but NOT heavily penalized - if foF2 is high, 10m will be open!
+                        absorption_factor = 0.98
                     
-                    # Apply frequency scaling to GIRO MUFD
-                    muf = giro_muf * freq_scale
+                    muf = base_muf * absorption_factor
                     muf = max(2.0, min(50.0, muf))  # Bounds check
 
                     # NOTE: Do NOT apply time-of-day factor to GIRO data

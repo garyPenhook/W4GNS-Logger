@@ -215,6 +215,13 @@ class ContactEditDialog(QDialog):
 
             # Buttons
             button_layout = QHBoxLayout()
+            
+            # Delete button on the left
+            delete_btn = QPushButton("Delete Contact")
+            delete_btn.setStyleSheet("QPushButton { color: red; }")
+            delete_btn.clicked.connect(self.delete_contact)
+            button_layout.addWidget(delete_btn)
+            
             button_layout.addStretch()
 
             save_btn = QPushButton("Save Changes")
@@ -317,4 +324,45 @@ class ContactEditDialog(QDialog):
 
         except Exception as e:
             logger.error(f"Error in save_changes: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+
+    def delete_contact(self) -> None:
+        """Delete the contact after confirmation"""
+        try:
+            # Confirm deletion
+            reply = QMessageBox.question(
+                self,
+                "Delete Contact",
+                f"Are you sure you want to delete this contact?\n\n"
+                f"Callsign: {self.contact.callsign}\n"
+                f"Date: {self._format_date(self.contact.qso_date)}\n"
+                f"Time: {self.contact.time_on}\n"
+                f"Band: {self.contact.band}\n"
+                f"Mode: {self.contact.mode}\n\n"
+                f"This action cannot be undone.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    if not self.contact.id:
+                        raise ValueError("Contact ID is missing")
+
+                    # Delete from database
+                    success = self.db.delete_contact(self.contact.id)
+                    
+                    if success:
+                        logger.info(f"Contact deleted: {self.contact.callsign} (ID: {self.contact.id})")
+                        QMessageBox.information(self, "Success", "Contact deleted successfully")
+                        self.accept()  # Close dialog with success status
+                    else:
+                        QMessageBox.warning(self, "Error", "Failed to delete contact")
+
+                except Exception as e:
+                    logger.error(f"Error deleting contact from database: {e}", exc_info=True)
+                    QMessageBox.critical(self, "Database Error", f"Failed to delete contact: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error in delete_contact: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")

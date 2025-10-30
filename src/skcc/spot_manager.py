@@ -137,11 +137,16 @@ class SKCCSpotManager:
             spot: The SKCC spot received
         """
         try:
-            logger.info(f"SKCC spot manager: Received spot from RBN: {spot.callsign} on {spot.frequency} MHz")
+            logger.info(f"SKCC spot manager: Received spot from RBN: {spot.callsign} on {spot.frequency:.3f} MHz")
             
-            # Get worked callsigns for filtering
-            contacts = self.db.get_all_contacts()
-            worked_callsigns = {c.callsign.upper() for c in contacts}
+            # Get worked callsigns for filtering (efficient query - callsigns only)
+            session = self.db.get_session()
+            try:
+                from src.database.models import Contact
+                worked_callsigns_result = session.query(Contact.callsign).distinct().all()
+                worked_callsigns = {c[0].upper() for c in worked_callsigns_result if c[0]}
+            finally:
+                session.close()
 
             # Apply filter
             if not self.spot_filter.matches(spot, worked_callsigns):
@@ -156,7 +161,7 @@ class SKCCSpotManager:
 
             # Store in database
             spot_data = {
-                "frequency": spot.frequency,
+                "frequency": round(spot.frequency, 3),  # Round to avoid floating-point errors
                 "dx_callsign": spot.callsign,
                 "de_callsign": spot.reporter,
                 "dx_grid": spot.grid,
@@ -176,7 +181,7 @@ class SKCCSpotManager:
             else:
                 logger.warning(f"SKCC spot manager: No on_new_spot callback set for {spot.callsign}")
 
-            logger.info(f"SKCC spot manager: Processed SKCC spot: {spot.callsign} on {spot.frequency} MHz")
+            logger.info(f"SKCC spot manager: Processed SKCC spot: {spot.callsign} on {spot.frequency:.3f} MHz")
 
         except Exception as e:
             logger.error(f"SKCC spot manager: Error processing spot: {e}", exc_info=True)

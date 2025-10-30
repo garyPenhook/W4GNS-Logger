@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QLabel, QComboBox, QGroupBox, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 
 from src.database.repository import DatabaseRepository
 from src.database.models import Contact
@@ -85,9 +85,9 @@ class ContactsListWidget(QWidget):
 
         # Contacts table
         self.table = QTableWidget()
-        self.table.setColumnCount(7)
+        self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
-            "Callsign", "Date (UTC)", "Time (UTC)", "Band", "Mode", "SKCC", "Power"
+            "Callsign", "Date (UTC)", "Time (UTC)", "Band", "Mode", "SKCC", "Power", "MPW"
         ])
         self.table.setColumnWidth(0, 70)  # Callsign (reduced from 100)
         self.table.setColumnWidth(1, 90)  # Date
@@ -96,6 +96,7 @@ class ContactsListWidget(QWidget):
         self.table.setColumnWidth(4, 60)  # Mode
         self.table.setColumnWidth(5, 100)  # SKCC
         self.table.setColumnWidth(6, 70)  # Power
+        self.table.setColumnWidth(7, 70)  # MPW
         self.table.setSelectionBehavior(self.table.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         # Connect double-click to edit dialog
@@ -381,6 +382,26 @@ class ContactsListWidget(QWidget):
                     if contact.tx_power is not None:
                         power_str = f"{contact.tx_power}W"
                     self.table.setItem(row, 6, QTableWidgetItem(power_str))
+
+                    # MPW (Miles Per Watt) for QRP contacts (5W or less only)
+                    mpw_str = ""
+                    if contact.tx_power is not None and contact.tx_power > 0 and contact.distance is not None:
+                        # Convert distance from km to miles
+                        distance_miles = contact.distance * 0.621371
+                        mpw = distance_miles / contact.tx_power
+                        # Only show for QRP contacts (5W or less)
+                        if contact.tx_power <= 5.0:
+                            mpw_str = f"{mpw:,.0f}"
+                            # Highlight if meets MPW award threshold (1000+)
+                            mpw_item = QTableWidgetItem(mpw_str)
+                            if mpw >= 1000:
+                                mpw_item.setForeground(QColor("#4CAF50"))  # Green for qualifying
+                                mpw_item.setFont(QFont("Arial", 9, QFont.Weight.Bold))
+                            self.table.setItem(row, 7, mpw_item)
+                        else:
+                            self.table.setItem(row, 7, QTableWidgetItem(""))
+                    else:
+                        self.table.setItem(row, 7, QTableWidgetItem(""))
                 except Exception as e:
                     logger.error(f"Error populating row {row} for contact {contact.callsign}: {e}", exc_info=True)
                     raise

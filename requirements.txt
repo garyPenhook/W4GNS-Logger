@@ -7,9 +7,6 @@ PyQt6>=6.4.0
 # Database
 SQLAlchemy>=2.0
 
-# ADIF Handling
-adif_io>=0.3.0
-
 # Async & I/O
 aiofiles>=0.8.0
 asyncio-contextmanager>=1.0.0

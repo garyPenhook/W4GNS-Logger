@@ -88,6 +88,8 @@ class AwardApplicationGenerator:
                 result = self._format_application_csv(application_data)
             elif format.lower() == 'html':
                 result = self._format_application_html(application_data)
+            elif format.lower() == 'skcc':
+                result = self._format_application_skcc_official(application_data, 'centurion')
             else:
                 result = self._format_application_text(application_data)
             
@@ -110,7 +112,7 @@ class AwardApplicationGenerator:
 
         Args:
             format: Output format ('text', 'csv', 'html')
-            achievement_date: Date Tribune was first achieved (for endorsements)
+            achievement_date: Deprecated - official achievement date from SKCC database is used automatically
             endorsement_level: Specific endorsement level requested
 
         Returns:
@@ -121,7 +123,11 @@ class AwardApplicationGenerator:
             from src.awards.tribune import TribuneAward
             tribune = TribuneAward(session)
 
-            contacts = self._get_award_contacts(session, 'tribune', achievement_date)
+            # Get official Tribune achievement date from database (not user input)
+            tribune_progress = self.db.analyze_tribune_award_progress()
+            official_achievement_date = tribune_progress.get('tribune_achievement_date')
+
+            contacts = self._get_award_contacts(session, 'tribune', official_achievement_date)
             progress = self._calculate_progress(session, contacts, tribune)
 
             # Convert contacts to dictionaries BEFORE session closes
@@ -153,6 +159,8 @@ class AwardApplicationGenerator:
                 result = self._format_application_csv(application_data)
             elif format.lower() == 'html':
                 result = self._format_application_html(application_data)
+            elif format.lower() == 'skcc':
+                result = self._format_application_skcc_official(application_data, 'tribune')
             else:
                 result = self._format_application_text(application_data)
             
@@ -174,7 +182,7 @@ class AwardApplicationGenerator:
 
         Args:
             format: Output format ('text', 'csv', 'html')
-            achievement_date: Date Tribune x8 was achieved
+            achievement_date: Deprecated - official Tribune x8 achievement date is calculated automatically
 
         Returns:
             Formatted application
@@ -184,7 +192,11 @@ class AwardApplicationGenerator:
             from src.awards.senator import SenatorAward
             senator = SenatorAward(session)
 
-            contacts = self._get_award_contacts(session, 'senator', achievement_date)
+            # Get official Tribune x8 achievement date from database (not user input)
+            senator_progress = self.db.analyze_senator_award_progress()
+            official_achievement_date = senator_progress.get('tribune_x8_achievement_date')
+
+            contacts = self._get_award_contacts(session, 'senator', official_achievement_date)
             progress = self._calculate_progress(session, contacts, senator)
 
             # Convert contacts to dictionaries BEFORE session closes
@@ -763,7 +775,11 @@ class AwardApplicationGenerator:
             return []
 
         # Filter valid contacts
+        # For awards that count unique members (Centurion, Tribune, Senator),
+        # we need to track which members we've already counted
         valid_contacts = []
+        seen_members = set()  # Track unique SKCC numbers for deduplication
+        
         for contact in all_contacts:
             contact_dict = self._contact_to_dict(contact)
             if award.validate(contact_dict):
@@ -771,6 +787,16 @@ class AwardApplicationGenerator:
                 if achievement_date and contact.qso_date is not None:
                     if str(contact.qso_date) < str(achievement_date):
                         continue
+                
+                # For Tribune/Centurion/Senator: only include first qualifying contact per member
+                if award_type.lower() in ['centurion', 'tribune', 'senator']:
+                    from src.utils.skcc_number import extract_base_skcc_number
+                    base_skcc = extract_base_skcc_number(contact.skcc_number or '')
+                    if base_skcc:
+                        if base_skcc in seen_members:
+                            continue  # Skip duplicate member
+                        seen_members.add(base_skcc)
+                
                 valid_contacts.append(contact)
 
         return valid_contacts
@@ -1023,6 +1049,116 @@ class AwardApplicationGenerator:
         lines.append("</body>")
         lines.append("</html>")
 
+        return "\n".join(lines)
+
+    def _format_application_skcc_official(self, app_data: Dict[str, Any], award_type: str = 'tribune') -> str:
+        """Format application in SKCC official format matching the ODF template"""
+        from src.database.models import Contact
+        from src.config.settings import get_config_manager
+        
+        lines: List[str] = []
+        
+        # Get operator info
+        config_manager = get_config_manager()
+        operator_name = config_manager.get('general', {}).get('operator_name', '')
+        operator_city = config_manager.get('general', {}).get('operator_city', '')
+        operator_state = config_manager.get('general', {}).get('operator_state', '')
+        city_state = f"{operator_city}, {operator_state}".strip(', ')
+        
+        # Header section matching ODF template
+        if award_type.lower() == 'tribune':
+            lines.append("SKCC Tribune Award & Endorsements Application")
+        elif award_type.lower() == 'centurion':
+            lines.append("SKCC Centurion Award & Endorsements Application")
+        elif award_type.lower() == 'senator':
+            lines.append("SKCC Senator Award & Endorsements Application")
+        else:
+            lines.append(f"SKCC {app_data['award_name']} Award Application")
+        
+        lines.append(f"Version: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+        lines.append("")
+        lines.append(f"Name: {operator_name}")
+        lines.append(f"Call: {self.my_callsign}")
+        lines.append(f"SKCC #: {self.my_skcc}")
+        lines.append(f"City & State: {city_state}")
+        lines.append("")
+        lines.append("=" * 110)
+        lines.append("CHECK YOUR LOG CAREFULLY FOR DUPLICATE CALLSIGNS AND SKCC NUMBERS.")
+        lines.append("THESE ARE CAUSE FOR IMMEDIATE REJECTION.")
+        lines.append("=" * 110)
+        lines.append("")
+        
+        # Table header matching ODF template columns
+        lines.append(f"{'QSO':<4} {'Date':<12} {'Call':<12} {'SKCC':<12} {'Name':<20} {'SPC':<15} {'Band':<8}")
+        lines.append(f"{'#':<4} {'MM/DD/YY':<12} {'':<12} {'':<12} {'':<20} {'':<15} {'':<8}")
+        lines.append("-" * 110)
+        
+        # Data rows - get name from contacts if available
+        for idx, contact in enumerate(app_data['contacts'], 1):
+            qso_date = contact.get('qso_date', '')
+            # Format date as MM/DD/YY
+            if qso_date and len(str(qso_date)) == 8:
+                date_str = str(qso_date)
+                formatted_date = f"{date_str[4:6]}/{date_str[6:8]}/{date_str[2:4]}"
+            else:
+                formatted_date = str(qso_date) if qso_date else ''
+            
+            call = str(contact.get('callsign', ''))[:12] if contact.get('callsign') else ''
+            skcc = str(contact.get('skcc_number', ''))[:12] if contact.get('skcc_number') else ''
+            
+            # Try to get name from notes if it's formatted as "name, location"
+            name = ''
+            notes = contact.get('notes', '')
+            if notes and isinstance(notes, str):
+                # Common format: "NAME, CITY"
+                parts = notes.split(',')
+                if parts:
+                    name = parts[0].strip()[:20]
+            
+            # SPC = State/Province/Country
+            state = str(contact.get('state', ''))[:15] if contact.get('state') else ''
+            country = str(contact.get('country', ''))[:15] if contact.get('country') else ''
+            spc = state if state else country
+            
+            band = str(contact.get('band', ''))[:8] if contact.get('band') else ''
+            
+            lines.append(f"{idx:<4} {formatted_date:<12} {call:<12} {skcc:<12} {name:<20} {spc:<15} {band:<8}")
+        
+        lines.append("-" * 110)
+        lines.append("")
+        lines.append("*SPC: State/Province/Country")
+        lines.append("")
+        lines.append("")
+        lines.append("I certify that the above contacts were made as stated.")
+        lines.append("")
+        lines.append("__________________________")
+        lines.append("Your signature")
+        lines.append("( Type in full name if filing electronically )")
+        lines.append("")
+        lines.append("__________________________")
+        lines.append("Your callsign")
+        lines.append("")
+        lines.append(f"Date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+        lines.append("")
+        lines.append("")
+        
+        # Submission instructions matching ODF template
+        if award_type.lower() == 'tribune':
+            lines.append("Submit initial award application by email to:")
+            lines.append("Ron Bower, AC2C, eMail address: AC2C@SKCCgroup.com")
+            lines.append("Tribune Award Administrator")
+            lines.append("")
+            lines.append("Submit additional award applications by email to:")
+            lines.append("Tx2Manager@SKCCgroup.com")
+            lines.append("Asst. Tribune Award Administrator")
+            lines.append("")
+            lines.append("Please do not use US Mail without first contacting AC2C.")
+        else:
+            lines.append(f"Submit to: {app_data.get('award_manager', 'See SKCC website for current manager')}")
+        
+        lines.append("")
+        lines.append(f"Generated by W4GNS Logger on {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        
         return "\n".join(lines)
 
     def export_application_to_file(

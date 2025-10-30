@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QMenuBar, QToolBar, QStatusBar, QMessageBox, QProgressDialog, QApplication
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon
 
 from src.database.repository import DatabaseRepository
@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     """Main application window"""
+    
+    # Signal for thread-safe status bar updates
+    status_message = pyqtSignal(str)
 
     def __init__(self, config: Dict[str, Any]):
         """
@@ -84,9 +87,12 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_central_widget()
         self._create_status_bar()
+        
+        # Connect status signal for thread-safe updates
+        self.status_message.connect(self._update_status_bar)
 
-        # Start background roster sync (non-blocking)
-        self._start_background_roster_sync()
+        # Defer roster sync to after window is shown (non-blocking)
+        QTimer.singleShot(1000, self._start_background_roster_sync)
 
         logger.info("Main window initialized")
 
@@ -291,6 +297,7 @@ class MainWindow(QMainWindow):
         from src.ui.triple_key_progress_widget import TripleKeyProgressWidget
         from src.ui.wac_progress_widget import WACProgressWidget
         from src.ui.was_progress_widget import WASProgressWidget
+        from src.ui.qrp_mpw_progress_widget import QRPMPWProgressWidget
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -377,6 +384,13 @@ class MainWindow(QMainWindow):
         was_scroll.setWidget(was_widget)
         awards_tabs.addTab(was_scroll, "WAS")
 
+        # QRP Miles Per Watt Tab
+        qrp_mpw_scroll = QScrollArea()
+        qrp_mpw_scroll.setWidgetResizable(True)
+        qrp_mpw_widget = QRPMPWProgressWidget(self.db)
+        qrp_mpw_scroll.setWidget(qrp_mpw_widget)
+        awards_tabs.addTab(qrp_mpw_scroll, "QRP MPW")
+
         layout.addWidget(awards_tabs)
         widget.setLayout(layout)
         return widget
@@ -401,6 +415,11 @@ class MainWindow(QMainWindow):
         """Create status bar"""
         self.status_label = self.statusBar()
         self.status_label.showMessage("Ready")
+    
+    def _update_status_bar(self, message: str) -> None:
+        """Thread-safe status bar update (called via signal)"""
+        if self.status_label:
+            self.status_label.showMessage(message)
 
     def _start_background_roster_sync(self) -> None:
         """Start SKCC roster sync in background thread (non-blocking)"""
@@ -409,7 +428,8 @@ class MainWindow(QMainWindow):
         def sync_roster():
             """Background thread function to sync SKCC roster"""
             try:
-                self.status_label.showMessage("Syncing SKCC roster... (background)")
+                # Use signal for thread-safe status update
+                self.status_message.emit("Syncing SKCC roster... (background)")
                 logger.info("Starting background SKCC roster sync...")
 
                 success = self.db.skcc_members.sync_membership_data()
@@ -429,12 +449,13 @@ class MainWindow(QMainWindow):
                     else:
                         status_msg = "✗ No SKCC data available"
 
-                # Update status bar from background thread
-                self.status_label.showMessage(status_msg)
+                # Use signal for thread-safe status update
+                self.status_message.emit(status_msg)
 
             except Exception as e:
                 logger.error(f"Error syncing SKCC roster in background: {e}")
-                self.status_label.showMessage(f"✗ Roster sync error: {str(e)}")
+                # Use signal for thread-safe status update
+                self.status_message.emit(f"✗ Roster sync error: {str(e)}")
 
         # Start roster sync in daemon thread (won't block main thread)
         roster_thread = threading.Thread(target=sync_roster, daemon=True)
@@ -581,13 +602,11 @@ class MainWindow(QMainWindow):
                 progress.setMinimumDuration(0)  # Show immediately
                 progress.setCancelButton(None)  # Can't cancel shutdown
                 progress.setValue(0)
-                QApplication.processEvents()  # Show the dialog
 
                 # Save window geometry for next session
                 try:
                     progress.setLabelText("Saving window settings...")
                     progress.setValue(5)
-                    QApplication.processEvents()
                     
                     geometry = self.geometry()
                     # Store as list (YAML-serializable) not tuple
@@ -601,7 +620,6 @@ class MainWindow(QMainWindow):
                 try:
                     progress.setLabelText("Stopping background services...")
                     progress.setValue(10)
-                    QApplication.processEvents()
                     
                     if hasattr(self, 'spot_manager') and self.spot_manager:
                         logger.info("Stopping SKCC spot manager...")
@@ -612,7 +630,6 @@ class MainWindow(QMainWindow):
                 # Create ADIF backup on shutdown (always, to Logs folder)
                 progress.setLabelText("Creating ADIF backup...")
                 progress.setValue(20)
-                QApplication.processEvents()
                 
                 try:
                     logger.info("Creating ADIF backup on shutdown...")
@@ -644,7 +661,6 @@ class MainWindow(QMainWindow):
                 # Create database backup on shutdown (always, to Logs folder)
                 progress.setLabelText("Creating database backup...")
                 progress.setValue(40)
-                QApplication.processEvents()
                 
                 try:
                     logger.info("Creating database backup on shutdown...")
@@ -674,7 +690,6 @@ class MainWindow(QMainWindow):
                         if backup_dest_path.exists() and backup_dest_path.is_dir():
                             progress.setLabelText("Backing up to external location...")
                             progress.setValue(60)
-                            QApplication.processEvents()
                             
                             logger.info("Performing additional backup to USB/external destination...")
                             backup_manager = BackupManager()
@@ -697,7 +712,6 @@ class MainWindow(QMainWindow):
                             # Backup most recent ADIF to secondary location
                             progress.setLabelText("Backing up ADIF to external location...")
                             progress.setValue(80)
-                            QApplication.processEvents()
                             
                             try:
                                 result = backup_manager.backup_adif_to_secondary(
@@ -720,7 +734,6 @@ class MainWindow(QMainWindow):
                 # Clean up database resources
                 progress.setLabelText("Closing database connection...")
                 progress.setValue(90)
-                QApplication.processEvents()
                 
                 try:
                     if hasattr(self, 'db') and self.db:
@@ -731,7 +744,6 @@ class MainWindow(QMainWindow):
 
                 progress.setLabelText("Finishing up...")
                 progress.setValue(100)
-                QApplication.processEvents()
                 
                 logger.info("Application exiting gracefully")
                 event.accept()

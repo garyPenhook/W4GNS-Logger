@@ -35,7 +35,8 @@ class PowerStatsWidget(QWidget):
         self.db = db
 
         self._init_ui()
-        self.refresh()
+        # Defer initial refresh to avoid blocking GUI initialization
+        QTimer.singleShot(300, self.refresh)
 
         # Connect to signals instead of using polling timer
         signals = get_app_signals()

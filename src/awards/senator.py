@@ -49,6 +49,12 @@ class SenatorAward(AwardProgram):
         # Effective date for Senator award: August 1, 2013
         self.senator_effective_date = datetime(2013, 8, 1)
         self.senator_effective_date_str = SENATOR_EFFECTIVE_DATE
+        
+        # Cache member lists for efficient validation
+        from src.database.models import TribuneeMember, SenatorMember
+        self._tribune_numbers = {m.skcc_number for m in db.query(TribuneeMember.skcc_number).all()}
+        self._senator_numbers = {m.skcc_number for m in db.query(SenatorMember.skcc_number).all()}
+        self._all_valid_members = self._tribune_numbers | self._senator_numbers
 
     def validate(self, contact: Dict[str, Any]) -> bool:
         """
@@ -104,28 +110,11 @@ class SenatorAward(AwardProgram):
             )
             return False
 
-        # Remote station must be Tribune or Senator
-        # FIX N+1 QUERY: Load all Tribune/Senator members once for efficient lookup
-        from src.database.models import TribuneeMember, SenatorMember
-        try:
-            # Batch load all member numbers for O(1) lookup instead of N queries
-            tribune_numbers = {m.skcc_number for m in self.db.query(TribuneeMember.skcc_number).all()}
-            senator_numbers = {m.skcc_number for m in self.db.query(SenatorMember.skcc_number).all()}
-            all_valid_members = tribune_numbers | senator_numbers
-            
-            skcc_num = contact.get('skcc_number', '')
-            base_number = extract_base_skcc_number(skcc_num)
-            
-            if not base_number or base_number not in all_valid_members:
-                return False
-
-        except Exception as e:
-            # If we can't check, log error and require manual verification
-            logger.warning(
-                f"Failed to check Tribune/Senator membership for {contact.get('callsign', 'unknown')}: {e}. "
-                f"Contact will require manual verification.",
-                exc_info=True
-            )
+        # Remote station must be Tribune or Senator (from cached member lists)
+        skcc_num = contact.get('skcc_number', '')
+        base_number = extract_base_skcc_number(skcc_num)
+        
+        if not base_number or base_number not in self._all_valid_members:
             return False
 
         return True

@@ -28,6 +28,8 @@ from typing import Dict, List, Any, Set, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 
+from src.utils.skcc_number import extract_base_skcc_number
+
 from src.awards.base import AwardProgram
 
 logger = logging.getLogger(__name__)
@@ -160,12 +162,8 @@ class RagChewAward(AwardProgram):
                 band = contact.get('band', 'UNKNOWN').upper()
 
                 if skcc_num:
-                    # Extract base SKCC number (remove C/T/S/x suffixes)
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
+                    # Extract base SKCC number using utility function
+                    base_number = extract_base_skcc_number(skcc_num)
 
                     # CRITICAL RULE: Back-to-back Prevention
                     # Different member must intervene between contacts with same member

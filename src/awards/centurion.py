@@ -50,6 +50,10 @@ class CenturionAward(AwardProgram):
         """
         super().__init__(name="Centurion", program_id="CENTURION")
         self.db = db
+        
+        # For Centurion, any SKCC member is valid
+        # We don't need to cache member lists since we accept any contact with an SKCC number
+        # The presence of an SKCC number in the contact indicates valid membership
 
     def validate(self, contact: Dict[str, Any]) -> bool:
         """
@@ -108,34 +112,15 @@ class CenturionAward(AwardProgram):
         if not contact.get('skcc_number'):
             return False
 
-        # Verify remote operator held SKCC membership at time of contact
-        # Extract base SKCC number (remove suffixes) for validation
+        # Verify remote operator is a valid SKCC member
+        # For Centurion award, any contact with an SKCC number is valid
+        # The SKCC number itself indicates membership
         skcc_num = contact.get('skcc_number', '').strip()
         if skcc_num:
-            from src.database.models import CenturionMember
-            try:
-                # Check if remote operator is/was in Centurion member list
-                session = self.db
-                base_number = skcc_num.split()[0]
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
-
-                # Query the member list by base SKCC number
-                member = session.query(CenturionMember).filter(
-                    CenturionMember.skcc_number == base_number
-                ).first()
-
-                if not member:
-                    logger.debug(
-                        f"Remote operator SKCC {skcc_num} not found in Centurion member list. "
-                        f"Contact will be counted but may require verification."
-                    )
-                    # Allow contact but log for verification
-            except Exception as e:
-                logger.warning(f"Failed to verify remote operator SKCC membership: {e}", exc_info=True)
-                # Allow contact to be counted, but user should verify
+            base_number = extract_base_skcc_number(skcc_num)
+            if not base_number:
+                logger.debug(f"Invalid SKCC number format: {skcc_num}")
+                return False
 
         return True
 

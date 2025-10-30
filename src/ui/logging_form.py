@@ -29,6 +29,8 @@ from src.utils.timezone_utils import (
     get_utc_now, datetime_to_adif_date, datetime_to_adif_time,
     format_utc_time_for_display
 )
+from src.services.voacap_muf_fetcher import VOACAPMUFFetcher
+from src.utils.grid_calc import calculate_distance
 
 logger = logging.getLogger(__name__)
 
@@ -814,6 +816,21 @@ class LoggingForm(QWidget):
                     my_gridsquare=self.config_manager.get('general.home_grid', 'FM06'),
                     comment=comment,
                 )
+                
+                # Calculate distance if both grid squares are available
+                home_grid = self.config_manager.get('general.home_grid', '')
+                contact_grid = self.grid_input.text().strip()
+                
+                if home_grid and contact_grid and len(contact_grid) >= 4:
+                    try:
+                        distance_km = calculate_distance(home_grid, contact_grid)
+                        if distance_km:
+                            contact.distance = distance_km
+                            logger.debug(f"Calculated distance: {distance_km:.1f} km from {home_grid} to {contact_grid}")
+                    except Exception as e:
+                        logger.warning(f"Failed to calculate distance: {e}")
+                        # Don't fail the contact save if distance calculation fails
+                
                 logger.debug(f"Contact object created: {callsign}")
 
             except Exception as e:

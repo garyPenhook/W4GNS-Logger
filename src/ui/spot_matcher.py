@@ -42,7 +42,7 @@ class SpotMatcher:
     is a duplicate or new potential contact.
     """
 
-    def __init__(self, db: DatabaseRepository, config_manager, my_callsign: Optional[str] = None, 
+    def __init__(self, db: DatabaseRepository, config_manager, my_callsign: Optional[str] = None,
                  my_skcc_number: Optional[str] = None):
         """
         Initialize spot matcher
@@ -55,26 +55,24 @@ class SpotMatcher:
         """
         self.db = db
         self.config_manager = config_manager
-        
-        # Cache of worked callsigns (updated periodically)
-        self._worked_callsigns: Set[str] = set()
-        self._cache_timestamp: Optional[datetime] = None
-        self._cache_ttl_seconds = 300  # 5 minutes
-        
-        # Track when we last worked each callsign (for highlighting based on recency)
-        self._last_worked_dates: Dict[str, str] = {}  # callsign -> YYYYMMDD
-        
+
+        # OPTIMIZED: Use database queries instead of in-memory cache
+        # This eliminates the need to load all 10,000+ contacts into memory
+        # Small LRU cache for recently queried callsigns (max 1000 entries)
+        self._recent_lookups: Dict[str, Tuple[bool, Optional[str]]] = {}  # callsign -> (worked, last_date)
+        self._recent_lookups_max_size = 1000
+
         # Highlighting preferences
         self.highlight_worked = config_manager.get("spots.highlight_worked", True)
         self.highlight_recent_days = config_manager.get("spots.highlight_recent_days", 30)
         self.enable_matching = config_manager.get("spots.enable_matching", True)
-        
+
         # Award eligibility analyzer (optional, lazy-loaded)
         self.eligibility_analyzer: Optional['SpotEligibilityAnalyzer'] = None
         self._my_callsign = my_callsign
         self._my_skcc_number = my_skcc_number
-        
-        logger.info(f"SpotMatcher initialized: highlight_worked={self.highlight_worked}, "
+
+        logger.info(f"SpotMatcher initialized (OPTIMIZED): highlight_worked={self.highlight_worked}, "
                    f"recent_days={self.highlight_recent_days}, award_eligibility_available={bool(my_skcc_number)}")
 
     def reload_config(self) -> None:
@@ -86,7 +84,7 @@ class SpotMatcher:
 
     def match_spot(self, spot: SKCCSpot) -> SpotMatch:
         """
-        Check if a spot matches a contact in the database
+        Check if a spot matches a contact in the database (OPTIMIZED: on-demand query)
 
         Args:
             spot: SKCCSpot object to check
@@ -101,24 +99,33 @@ class SpotMatcher:
                 callsign=spot.callsign
             )
 
-        # Refresh cache if needed
-        self._refresh_cache_if_needed()
-
         callsign = spot.callsign.upper()
 
-        # Check if we've worked this callsign before
-        if callsign not in self._worked_callsigns:
-            return SpotMatch(
-                spot=spot,
-                match_type="NONE",
-                callsign=callsign
-            )
+        # OPTIMIZED: Check recent lookups cache first (LRU cache)
+        if callsign in self._recent_lookups:
+            worked, contact_date = self._recent_lookups[callsign]
+            if not worked:
+                return SpotMatch(
+                    spot=spot,
+                    match_type="NONE",
+                    callsign=callsign
+                )
+        else:
+            # Query database for this specific callsign (indexed query)
+            worked, contact_date = self._query_callsign_worked(callsign)
 
-        # Get the date we last worked this callsign
-        contact_date = self._last_worked_dates.get(callsign)
+            # Add to LRU cache
+            self._add_to_recent_lookups(callsign, worked, contact_date)
+
+            if not worked:
+                return SpotMatch(
+                    spot=spot,
+                    match_type="NONE",
+                    callsign=callsign
+                )
 
         if not contact_date:
-            # Worked but no date cached - return generic WORKED match
+            # Worked but no date available
             return SpotMatch(
                 spot=spot,
                 match_type="WORKED",
@@ -205,61 +212,92 @@ class SpotMatcher:
         else:
             return f"New opportunity: {match.callsign}"
 
-    def _refresh_cache_if_needed(self) -> None:
-        """Refresh the worked callsigns cache if TTL has expired"""
-        now = datetime.now(timezone.utc)
+    def _query_callsign_worked(self, callsign: str) -> Tuple[bool, Optional[str]]:
+        """
+        Query database to check if callsign has been worked (OPTIMIZED: single callsign query)
 
-        if (self._cache_timestamp is None or
-            (now - self._cache_timestamp).total_seconds() > self._cache_ttl_seconds):
+        Args:
+            callsign: Callsign to check (already uppercased)
 
+        Returns:
+            Tuple of (worked: bool, last_date: Optional[str])
+        """
+        try:
+            session = self.db.get_session()
             try:
-                # Get all unique callsigns from database
-                contacts = self.db.get_all_contacts()
+                from src.database.models import Contact
+                from sqlalchemy.sql import func
 
-                self._worked_callsigns.clear()
-                self._last_worked_dates.clear()
+                # OPTIMIZED: Use indexed query with MAX aggregate
+                # This uses the callsign index for fast lookup
+                result = session.query(func.max(Contact.qso_date)).filter(
+                    func.upper(Contact.callsign) == callsign
+                ).scalar()
 
-                for contact in contacts:
-                    callsign = contact.callsign.upper()
-                    self._worked_callsigns.add(callsign)
+                if result:
+                    return (True, result)
+                else:
+                    return (False, None)
 
-                    # Track the most recent contact date for this callsign
-                    # (in case they worked the same station multiple times)
-                    qso_date = getattr(contact, 'qso_date', None)
-                    if qso_date:
-                        # Keep the most recent date
-                        if (callsign not in self._last_worked_dates or
-                            qso_date > self._last_worked_dates[callsign]):
-                            self._last_worked_dates[callsign] = qso_date
+            finally:
+                session.close()
 
-                self._cache_timestamp = now
+        except Exception as e:
+            logger.error(f"Error querying callsign {callsign}: {e}", exc_info=True)
+            return (False, None)
 
-                logger.debug(f"SpotMatcher cache refreshed: {len(self._worked_callsigns)} worked callsigns")
+    def _add_to_recent_lookups(self, callsign: str, worked: bool, last_date: Optional[str]) -> None:
+        """
+        Add callsign lookup result to LRU cache
 
-            except Exception as e:
-                logger.error(f"Error refreshing spot matcher cache: {e}", exc_info=True)
+        Args:
+            callsign: Callsign (uppercased)
+            worked: Whether callsign has been worked
+            last_date: Last contact date (YYYYMMDD format)
+        """
+        # Simple LRU: if cache is full, remove oldest entry
+        if len(self._recent_lookups) >= self._recent_lookups_max_size:
+            # Remove first item (oldest in insertion order for Python 3.7+)
+            first_key = next(iter(self._recent_lookups))
+            del self._recent_lookups[first_key]
+
+        self._recent_lookups[callsign] = (worked, last_date)
 
     def get_statistics(self) -> Dict[str, int]:
         """
-        Get statistics about matched spots
+        Get statistics about matched spots (OPTIMIZED: query database for count)
 
         Returns:
             Dictionary with counts of different match types
         """
-        self._refresh_cache_if_needed()
+        try:
+            session = self.db.get_session()
+            try:
+                from src.database.models import Contact
+                from sqlalchemy.sql import func
 
-        return {
-            "total_worked_callsigns": len(self._worked_callsigns),
-            "cache_age_seconds": int((datetime.now(timezone.utc) - self._cache_timestamp).total_seconds())
-                if self._cache_timestamp else 0,
-        }
+                # Count distinct callsigns in database (fast with index)
+                total_worked = session.query(func.count(func.distinct(Contact.callsign))).scalar() or 0
+
+                return {
+                    "total_worked_callsigns": total_worked,
+                    "recent_lookups_cached": len(self._recent_lookups),
+                    "cache_max_size": self._recent_lookups_max_size,
+                }
+            finally:
+                session.close()
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}", exc_info=True)
+            return {
+                "total_worked_callsigns": 0,
+                "recent_lookups_cached": len(self._recent_lookups),
+                "cache_max_size": self._recent_lookups_max_size,
+            }
 
     def clear_cache(self) -> None:
-        """Manually clear the cache (for testing or after bulk contact additions)"""
-        self._worked_callsigns.clear()
-        self._last_worked_dates.clear()
-        self._cache_timestamp = None
-        logger.info("SpotMatcher cache cleared")
+        """Manually clear the LRU cache (called after contact changes)"""
+        self._recent_lookups.clear()
+        logger.info("SpotMatcher LRU cache cleared")
 
     def enable_award_eligibility(self, my_callsign: str, my_skcc_number: str) -> None:
         """

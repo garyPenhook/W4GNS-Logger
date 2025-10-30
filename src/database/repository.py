@@ -15,6 +15,7 @@ from .models import Base, Contact, QSLRecord, AwardProgress, ClusterSpot, Centur
 from .skcc_membership import SKCCMembershipManager
 from src.utils.cache import AwardProgressCache
 from src.ui.signals import get_app_signals
+from src.utils.skcc_number import extract_base_skcc_number
 
 logger = logging.getLogger(__name__)
 
@@ -136,10 +137,13 @@ class DatabaseRepository:
             session.commit()
             logger.info(f"Contact added: {contact.callsign}")
 
-            # Invalidate caches and emit signals
+            # Invalidate caches and emit batched signal (OPTIMIZED: single signal emission)
             self.award_cache.invalidate_all_award_caches()
-            self.signals.contact_added.emit()
-            self.signals.contacts_changed.emit()
+            self.signals.emit_contact_change('added', {
+                'callsign': contact.callsign,
+                'band': contact.band,
+                'mode': contact.mode
+            })
 
             return contact
         except ValueError as e:
@@ -214,10 +218,12 @@ class DatabaseRepository:
                 session.commit()
                 logger.info(f"Contact updated: {contact_id}")
 
-                # Invalidate caches and emit signals
+                # Invalidate caches and emit batched signal (OPTIMIZED: single signal emission)
                 self.award_cache.invalidate_all_award_caches()
-                self.signals.contact_modified.emit()
-                self.signals.contacts_changed.emit()
+                self.signals.emit_contact_change('modified', {
+                    'contact_id': contact_id,
+                    'callsign': contact.callsign
+                })
 
             return contact
         except ValueError as e:
@@ -237,14 +243,18 @@ class DatabaseRepository:
         try:
             contact = session.query(Contact).filter(Contact.id == contact_id).first()
             if contact:
+                # Save info before deletion
+                callsign = contact.callsign
                 session.delete(contact)
                 session.commit()
                 logger.info(f"Contact deleted: {contact_id}")
 
-                # Invalidate caches and emit signals
+                # Invalidate caches and emit batched signal (OPTIMIZED: single signal emission)
                 self.award_cache.invalidate_all_award_caches()
-                self.signals.contact_deleted.emit()
-                self.signals.contacts_changed.emit()
+                self.signals.emit_contact_change('deleted', {
+                    'contact_id': contact_id,
+                    'callsign': callsign
+                })
 
                 return True
             return False
@@ -577,39 +587,11 @@ class DatabaseRepository:
 
             total_contacts = len(contacts)
 
-            # Load member sets for proper counting
-            centurion_members_data = session.query(CenturionMember.skcc_number).all()
-            centurion_member_set = set()
-            for member in centurion_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        centurion_member_set.add(base)
-
-            tribune_members_data = session.query(TribuneeMember.skcc_number).all()
-            tribune_member_set = set()
-            for member in tribune_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        tribune_member_set.add(base)
-
-            senator_members_data = session.query(SenatorMember.skcc_number).all()
-            senator_member_set = set()
-            for member in senator_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        senator_member_set.add(base)
+            # Load member sets from cache (or query if not loaded)
+            self._load_member_sets()
+            centurion_member_set = self._centurion_set
+            tribune_member_set = self._tribune_set
+            senator_member_set = self._senator_set
 
             # Count unique C/T/S members contacted
             unique_centurion_tribunes_senators = set()
@@ -619,12 +601,9 @@ class DatabaseRepository:
             for contact in contacts:
                 if not contact.skcc_number:
                     continue
-                    
-                skcc_num = contact.skcc_number.strip()
-                base = skcc_num.split()[0]
-                if base and base[-1] in 'CTS':
-                    base = base[:-1]
-                
+
+                base = extract_base_skcc_number(contact.skcc_number)
+
                 if not base:
                     continue
                 
@@ -874,42 +853,48 @@ class DatabaseRepository:
                 "6M": 0.5, "2M": 0.5,
             }
 
-            # Get all CW QRP contacts
-            qrp_contacts = session.query(Contact).filter(
+            # OPTIMIZED: Use SQL GROUP BY to get first contact per band
+            # This reduces from 1000+ contacts to ~12 rows (one per band)
+            from sqlalchemy.sql import func as sqlfunc
+
+            # QRP x1: Get distinct bands with tx_power <= 5W
+            qrp_x1_bands = session.query(Contact.band).filter(
                 Contact.tx_power.isnot(None),
                 Contact.tx_power <= 5.0,
                 Contact.mode == "CW"
-            ).order_by(Contact.qso_date).all()
+            ).group_by(Contact.band).all()
 
-            # Track one contact per band for points calculation
-            band_contacts_x1 = {}
-            qrp_x1_points = 0
+            # Calculate QRP x1 points (only ~12 iterations max)
+            qrp_x1_points = sum(point_map.get(row.band, 0) for row in qrp_x1_bands)
+            band_contacts_x1 = {row.band: True for row in qrp_x1_bands}
 
-            # Track 2-way QRP (both ≤5W)
-            qrp_x2_contacts = []
+            # QRP x2: Get distinct bands where both tx_power AND rx_power <= 5W
+            qrp_x2_bands = session.query(Contact.band).filter(
+                Contact.tx_power.isnot(None),
+                Contact.tx_power <= 5.0,
+                Contact.rx_power.isnot(None),
+                Contact.rx_power <= 5.0,
+                Contact.mode == "CW"
+            ).group_by(Contact.band).all()
 
-            for contact in qrp_contacts:
-                band = contact.band
+            # Calculate QRP x2 points (only ~12 iterations max)
+            qrp_x2_points = sum(point_map.get(row.band, 0) for row in qrp_x2_bands)
+            band_contacts_x2 = {row.band: True for row in qrp_x2_bands}
 
-                # QRP x1: Track first contact per band
-                if band not in band_contacts_x1:
-                    band_contacts_x1[band] = contact
-                    points = point_map.get(band, 0)
-                    qrp_x1_points += points
+            # Get total contact counts for display
+            qrp_x1_contact_count = session.query(sqlfunc.count(Contact.id)).filter(
+                Contact.tx_power.isnot(None),
+                Contact.tx_power <= 5.0,
+                Contact.mode == "CW"
+            ).scalar()
 
-                # QRP x2: Check if other station also ≤5W
-                if contact.rx_power is not None and contact.rx_power <= 5.0:
-                    qrp_x2_contacts.append(contact)
-
-            # Calculate points for QRP x2 (one per band)
-            band_contacts_x2 = {}
-            qrp_x2_points = 0
-            for contact in qrp_x2_contacts:
-                band = contact.band
-                if band not in band_contacts_x2:
-                    band_contacts_x2[band] = contact
-                    points = point_map.get(band, 0)
-                    qrp_x2_points += points
+            qrp_x2_contact_count = session.query(sqlfunc.count(Contact.id)).filter(
+                Contact.tx_power.isnot(None),
+                Contact.tx_power <= 5.0,
+                Contact.rx_power.isnot(None),
+                Contact.rx_power <= 5.0,
+                Contact.mode == "CW"
+            ).scalar()
 
             result = {
                 "qrp_x1": {
@@ -918,7 +903,7 @@ class DatabaseRepository:
                     "qualified": qrp_x1_points >= 300,
                     "progress": f"{qrp_x1_points}/300",
                     "unique_bands": len(band_contacts_x1),
-                    "contacts": len(qrp_contacts),
+                    "contacts": qrp_x1_contact_count,
                 },
                 "qrp_x2": {
                     "points": qrp_x2_points,
@@ -926,7 +911,7 @@ class DatabaseRepository:
                     "qualified": qrp_x2_points >= 150,
                     "progress": f"{qrp_x2_points}/150",
                     "unique_bands": len(band_contacts_x2),
-                    "contacts": len(qrp_x2_contacts),
+                    "contacts": qrp_x2_contact_count,
                 },
                 "band_breakdown": {
                     "x1": {band: point_map.get(band, 0) for band in band_contacts_x1},
@@ -965,11 +950,17 @@ class DatabaseRepository:
 
             mpw_qualifications = []
             for contact in qrp_contacts:
-                # Convert distance from km to miles if needed (assume already in miles)
-                distance_miles = contact.distance
+                # Convert distance from km to miles
+                distance_km = contact.distance
+                distance_miles = distance_km * 0.621371  # km to miles conversion
                 mpw = contact.calculate_mpw(distance_miles)
 
                 if contact.qualifies_for_mpw(distance_miles):
+                    # Get SKCC number - try multiple fields
+                    skcc_number = None
+                    if contact.skcc_number:
+                        skcc_number = contact.skcc_number
+                    
                     mpw_qualifications.append({
                         "contact_id": contact.id,
                         "callsign": contact.callsign,
@@ -980,9 +971,85 @@ class DatabaseRepository:
                         "tx_power": contact.tx_power,
                         "mpw": mpw,
                         "qualified": True,
+                        "skcc_number": skcc_number,
                     })
 
             return mpw_qualifications
+        finally:
+            session.close()
+
+    def backfill_contact_distances(self, home_grid: str) -> Dict[str, int]:
+        """
+        Calculate and populate distance field for all contacts missing it.
+        
+        Processes contacts that have a grid square but no distance calculated.
+        Uses the Haversine formula to calculate great-circle distance.
+        
+        Args:
+            home_grid: Your home Maidenhead grid square
+            
+        Returns:
+            Dict with 'updated', 'skipped', and 'errors' counts
+        """
+        from src.services.voacap_muf_fetcher import VOACAPMUFFetcher
+        
+        session = self.get_session()
+        try:
+            # Get all contacts with grid squares but no distance
+            contacts_to_update = session.query(Contact).filter(
+                Contact.gridsquare.isnot(None),
+                Contact.gridsquare != "",
+                Contact.distance.is_(None)
+            ).all()
+            
+            updated = 0
+            skipped = 0
+            errors = 0
+            
+            logger.info(f"Found {len(contacts_to_update)} contacts to calculate distances for")
+            
+            for contact in contacts_to_update:
+                try:
+                    contact_grid = contact.gridsquare.strip()
+                    
+                    # Validate grid square (at least 4 characters)
+                    if not contact_grid or len(contact_grid) < 4:
+                        skipped += 1
+                        continue
+                    
+                    # Calculate distance
+                    distance_km = VOACAPMUFFetcher._grid_distance(home_grid, contact_grid)
+                    
+                    # Update contact
+                    contact.distance = distance_km
+                    updated += 1
+                    
+                    if updated % 100 == 0:
+                        logger.info(f"Processed {updated} contacts...")
+                        session.commit()  # Commit in batches
+                        
+                except Exception as e:
+                    logger.warning(f"Error calculating distance for {contact.callsign} ({contact.gridsquare}): {e}")
+                    errors += 1
+                    continue
+            
+            # Final commit
+            session.commit()
+            
+            result = {
+                'updated': updated,
+                'skipped': skipped,
+                'errors': errors,
+                'total': len(contacts_to_update)
+            }
+            
+            logger.info(f"Distance backfill complete: {updated} updated, {skipped} skipped, {errors} errors")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error during distance backfill: {e}", exc_info=True)
+            session.rollback()
+            raise
         finally:
             session.close()
 
@@ -1216,10 +1283,14 @@ class DatabaseRepository:
                 f"Failed: {stats['failed']}"
             )
 
-            # Emit signal to refresh all widgets after successful import
+            # Emit batched signal to refresh all widgets after successful import (OPTIMIZED)
             if stats['imported'] > 0 or stats['updated'] > 0:
-                self.signals.contacts_changed.emit()
-                logger.info("Emitted contacts_changed signal to refresh widgets")
+                self.signals.emit_contact_change('bulk_import', {
+                    'imported': stats['imported'],
+                    'updated': stats['updated'],
+                    'total': stats['imported'] + stats['updated']
+                })
+                logger.info(f"Emitted batched signal for {stats['imported'] + stats['updated']} contacts")
 
         except SQLAlchemyError as e:
             session.rollback()
@@ -1359,36 +1430,40 @@ class DatabaseRepository:
                 if user_centurion_entry and user_centurion_entry.centurion_date:
                     centurion_achievement_date = user_centurion_entry.centurion_date
 
-            # Get all CW contacts with SKCC numbers (optimized: select only needed columns)
-            centurion_contacts = session.query(
-                Contact.callsign, Contact.skcc_number, Contact.qso_date, Contact.band
+            # OPTIMIZED: Get only distinct SKCC numbers with their first occurrence
+            # This reduces dataset from 10,000+ contacts to ~500-1000 unique SKCC numbers
+            # Using subquery to get first contact for each SKCC number
+            from sqlalchemy.sql import func as sqlfunc
+
+            subq = session.query(
+                Contact.skcc_number,
+                sqlfunc.min(Contact.qso_date).label('first_date')
             ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
-                Contact.key_type.in_(["STRAIGHT", "BUG", "SIDESWIPER"])  # SKCC mechanical key policy
+                Contact.key_type.in_(["STRAIGHT", "BUG", "SIDESWIPER"])
+            ).group_by(Contact.skcc_number).subquery()
+
+            # Join back to get contact details for first occurrence
+            centurion_contacts = session.query(
+                Contact.callsign, Contact.skcc_number, Contact.qso_date, Contact.band
+            ).join(
+                subq,
+                (Contact.skcc_number == subq.c.skcc_number) &
+                (Contact.qso_date == subq.c.first_date)
             ).all()
 
             # Collect unique SKCC members (base number without suffixes)
+            # Now processing only ~500-1000 rows instead of 10,000+
             unique_members = set()
             member_details = {}
 
             for contact in centurion_contacts:
-                skcc_num = contact.skcc_number.strip()
-                if not skcc_num:
-                    continue
-
-                # Extract base number (remove suffix like C, T, S, x10, etc.)
-                # SKCC numbers are: digits optionally followed by letter (C, T, S) or x number
-                base_number = skcc_num.split()[0]  # Remove any spaces first
-                # Remove letter suffix if present (C, T, S at the end)
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                # Remove x multiplier if present (xN at the end)
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
+                # Extract base SKCC number using utility function
+                base_number = extract_base_skcc_number(contact.skcc_number)
 
                 # Only add if it's a valid number
-                if base_number and base_number.isdigit():
+                if base_number:
                     unique_members.add(base_number)
                     if base_number not in member_details:
                         member_details[base_number] = {
@@ -1491,40 +1566,11 @@ class DatabaseRepository:
         try:
             from src.config.settings import get_config_manager
 
-            # Optimized: Load Tribune and Senator member numbers upfront
-            tribune_members_data = session.query(TribuneeMember.skcc_number).all()
-            tribune_member_set = set()
-            for member in tribune_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        tribune_member_set.add(base)
-
-            senator_members_data = session.query(SenatorMember.skcc_number).all()
-            senator_member_set = set()
-            for member in senator_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        senator_member_set.add(base)
-
-            # Load Centurion member numbers for validation
-            centurion_members_data = session.query(CenturionMember.skcc_number).all()
-            centurion_member_set = set()
-            for member in centurion_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        centurion_member_set.add(base)
+            # Load member sets from cache (or query if not loaded)
+            self._load_member_sets()
+            tribune_member_set = self._tribune_set
+            senator_member_set = self._senator_set
+            centurion_member_set = self._centurion_set
 
             # Optimized: Get only needed columns for centurion calculation
             centurion_contacts = session.query(
@@ -1536,15 +1582,9 @@ class DatabaseRepository:
 
             unique_centurions = set()
             for contact in centurion_contacts:
-                skcc_num = contact.skcc_number.strip()
-                if skcc_num:
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
-                    if base_number and base_number.isdigit():
-                        unique_centurions.add(base_number)
+                base_number = extract_base_skcc_number(contact.skcc_number)
+                if base_number:
+                    unique_centurions.add(base_number)
 
             is_centurion = len(unique_centurions) >= 100
 
@@ -1560,6 +1600,21 @@ class DatabaseRepository:
                 ).first()
                 if user_centurion_entry and user_centurion_entry.centurion_date:
                     centurion_achievement_date = user_centurion_entry.centurion_date
+            
+            # If no Centurion date found in member list, check config or use earliest qualifying QSO
+            if not centurion_achievement_date:
+                # Try to get from config first
+                centurion_achievement_date = config_manager.get('awards', {}).get('centurion_date', '')
+                if not centurion_achievement_date:
+                    # Fall back to using earliest CW QSO date as a reasonable estimate
+                    # This allows the Tribune logic to work even if user not in official list yet
+                    earliest_qso = session.query(Contact).filter(
+                        Contact.mode == "CW",
+                        Contact.skcc_number.isnot(None)
+                    ).order_by(Contact.qso_date.asc()).first()
+                    if earliest_qso:
+                        centurion_achievement_date = earliest_qso.qso_date
+                        logger.info(f"Using earliest CW QSO date as Centurion date: {centurion_achievement_date}")
 
             # Get the official Tribune achievement date from the SKCC Tribune list
             # This is the authoritative date for endorsement calculations
@@ -1571,121 +1626,123 @@ class DatabaseRepository:
                 if user_tribune_entry and user_tribune_entry.tribune_date:
                     tribune_achievement_date = user_tribune_entry.tribune_date
 
-            # Optimized: Get only needed columns for Tribune calculations
+            # Get all qualifying contacts (must check each one individually for date rules)
             tribune_eligible_date = "20070301"  # March 1, 2007
 
-            tribune_contacts = session.query(
-                Contact.skcc_number, Contact.qso_date
-            ).filter(
+            all_tribune_contacts = session.query(Contact).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
                 Contact.qso_date >= tribune_eligible_date
-            ).all()
+            ).order_by(Contact.qso_date.asc()).all()
 
-            # Collect unique Centurion/Tribune/Senator members and count endorsements only from contacts AFTER official achievement date
+            # Load Centurion dates for validation
+            # SKCC Rule: "the QSO date is compared with the applicant's and contact's
+            # Centurion dates. To count, the QSO date must be on or after both 
+            # participants' Centurion Award date."
+            centurion_dates = {}
+            for member in session.query(CenturionMember.skcc_number, CenturionMember.centurion_date).all():
+                if member.centurion_date:
+                    centurion_dates[member.skcc_number] = member.centurion_date
+
+            # Collect unique Centurion/Tribune/Senator members
+            # Process each contact individually to properly check date rules
             unique_tribunes = set()
-            tribunes_after_achievement = set()
 
-            for contact in tribune_contacts:
-                skcc_num = contact.skcc_number.strip()
-                if not skcc_num:
+            for contact in all_tribune_contacts:
+                # Extract base SKCC number using utility function
+                base_number = extract_base_skcc_number(contact.skcc_number)
+                if not base_number:
                     continue
 
-                # Extract base SKCC number
-                base_number = skcc_num.split()[0]
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
+                # Skip if already counted (only count each member once)
+                if base_number in unique_tribunes:
+                    continue
 
                 # SKCC Rule: Tribune counts Centurion, Tribune, or Senator members
-                is_valid_member = base_number and (
+                is_valid_member = (
                     base_number in centurion_member_set or
                     base_number in tribune_member_set or
                     base_number in senator_member_set
                 )
 
-                if is_valid_member:
-                    # SKCC Rule: Contact must be AFTER user's Centurion achievement date
-                    if centurion_achievement_date:
-                        if contact.qso_date >= centurion_achievement_date:
-                            unique_tribunes.add(base_number)
-                            
-                            # After official Tribune achievement date, count for endorsements
-                            if tribune_achievement_date and contact.qso_date > tribune_achievement_date:
-                                tribunes_after_achievement.add(base_number)
-                    else:
-                        # No Centurion date available, count all contacts after Tribune eligible date
-                        unique_tribunes.add(base_number)
-                        
-                        # After official Tribune achievement date, count for endorsements
-                        if tribune_achievement_date and contact.qso_date > tribune_achievement_date:
-                            tribunes_after_achievement.add(base_number)
+                if not is_valid_member:
+                    continue
 
-            # For endorsement calculation, only count Tribune members contacted AFTER achievement
-            tribune_count_for_endorsement = len(tribunes_after_achievement)
+                # SKCC Rule: Contact must be AFTER user's Centurion achievement date
+                # AND after the contacted station's Centurion achievement date
+                qso_date = contact.qso_date
 
-            # Calculate endorsement level based on Tribune contacts AFTER achievement
-            # The first 50 is the base award, everything after counts toward endorsements
-            tribune_count = len(unique_tribunes)  # Total unique Tribune members
+                # Check user's Centurion date
+                if centurion_achievement_date and qso_date < centurion_achievement_date:
+                    continue
 
+                # Check contacted station's Centurion date
+                contact_centurion_date = centurion_dates.get(base_number)
+                if contact_centurion_date and qso_date < contact_centurion_date:
+                    continue
+
+                # Both parties were Centurions at time of QSO - count this member
+                unique_tribunes.add(base_number)
+
+            # Total unique Tribune members contacted (base award + endorsements)
+            tribune_count = len(unique_tribunes)
+
+            # Calculate endorsement level based on total Tribune count
             if tribune_count < 50:
                 endorsement = "Not Yet"
+            elif tribune_count < 100:
+                endorsement = "Tribune"
+            elif tribune_count < 150:
+                endorsement = "Tribune x2"
+            elif tribune_count < 200:
+                endorsement = "Tribune x3"
+            elif tribune_count < 250:
+                endorsement = "Tribune x4"
+            elif tribune_count < 300:
+                endorsement = "Tribune x5"
+            elif tribune_count < 350:
+                endorsement = "Tribune x6"
+            elif tribune_count < 400:
+                endorsement = "Tribune x7"
+            elif tribune_count < 450:
+                endorsement = "Tribune x8"
+            elif tribune_count < 500:
+                endorsement = "Tribune x9"
+            elif tribune_count < 550:
+                endorsement = "Tribune x10"
+            elif tribune_count < 750:
+                endorsement = "Tribune x10+"
+            elif tribune_count < 1000:
+                endorsement = "Tribune x15"
+            elif tribune_count < 1250:
+                endorsement = "Tribune x20"
+            elif tribune_count < 1500:
+                endorsement = "Tribune x25"
+            elif tribune_count < 1750:
+                endorsement = "Tribune x30"
             else:
-                # Calculate endorsement based on contacts AFTER achievement (not including the first 50)
-                if tribune_count_for_endorsement < 50:
-                    endorsement = "Tribune"
-                elif tribune_count_for_endorsement < 100:
-                    endorsement = "Tribune x2"
-                elif tribune_count_for_endorsement < 150:
-                    endorsement = "Tribune x3"
-                elif tribune_count_for_endorsement < 200:
-                    endorsement = "Tribune x4"
-                elif tribune_count_for_endorsement < 250:
-                    endorsement = "Tribune x5"
-                elif tribune_count_for_endorsement < 300:
-                    endorsement = "Tribune x6"
-                elif tribune_count_for_endorsement < 350:
-                    endorsement = "Tribune x7"
-                elif tribune_count_for_endorsement < 400:
-                    endorsement = "Tribune x8"
-                elif tribune_count_for_endorsement < 450:
-                    endorsement = "Tribune x9"
-                elif tribune_count_for_endorsement < 500:
-                    endorsement = "Tribune x10"
-                elif tribune_count_for_endorsement < 750:
-                    endorsement = "Tribune x10+"
-                elif tribune_count_for_endorsement < 1000:
-                    endorsement = "Tribune x15"
-                elif tribune_count_for_endorsement < 1250:
-                    endorsement = "Tribune x20"
-                else:
-                    endorsement = f"Tribune x{(tribune_count_for_endorsement // 250) * 5}"
+                endorsement = f"Tribune x{(tribune_count // 250) * 5}"
 
             # Calculate next endorsement target
             if tribune_count < 50:
                 next_level = 50
                 tribunes_to_next = 50 - tribune_count
+            elif tribune_count < 550:
+                next_level = ((tribune_count // 50) + 1) * 50
+                tribunes_to_next = next_level - tribune_count
             else:
-                # Next level is based on contacts AFTER achievement
-                if tribune_count_for_endorsement < 50:
-                    next_level = 50
-                elif tribune_count_for_endorsement < 550:
-                    next_level = ((tribune_count_for_endorsement // 50) + 1) * 50
-                else:
-                    next_level = ((tribune_count_for_endorsement // 250) + 1) * 250
-
-                tribunes_to_next = max(0, next_level - tribune_count_for_endorsement)
+                next_level = ((tribune_count // 250) + 1) * 250
+                tribunes_to_next = next_level - tribune_count
 
             result = {
                 'unique_tribunes': tribune_count,
-                'tribunes_after_achievement': tribune_count_for_endorsement,
+                'tribunes_after_achievement': tribune_count,  # Same as unique_tribunes now
                 'required': 50,
                 'achieved': is_centurion and tribune_count >= 50,
-                'progress_pct': min(100.0, (max(0, tribune_count_for_endorsement) / 50) * 100) if tribune_count >= 50 else min(100.0, (tribune_count / 50) * 100),
+                'progress_pct': min(100.0, (tribune_count / 50) * 100),
                 'endorsement': endorsement,
                 'next_level': next_level,
-                'tribunes_to_next': tribunes_to_next if tribune_count >= 50 else max(0, 50 - tribune_count),
+                'tribunes_to_next': tribunes_to_next,
                 'is_centurion': is_centurion,
                 'centurion_count': len(unique_centurions),
                 'total_tribune_on_record': session.query(func.count(TribuneeMember.id)).scalar() or 0,
@@ -1735,40 +1792,11 @@ class DatabaseRepository:
         try:
             from src.config.settings import get_config_manager
 
-            # Optimized: Load Tribune, Senator, and Centurion member numbers upfront
-            tribune_members_data = session.query(TribuneeMember.skcc_number).all()
-            tribune_member_set = set()
-            for member in tribune_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        tribune_member_set.add(base)
-
-            senator_members_data = session.query(SenatorMember.skcc_number).all()
-            senator_member_set = set()
-            for member in senator_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        senator_member_set.add(base)
-
-            # Load Centurion members for Tribune x8 prerequisite calculation
-            centurion_members_data = session.query(CenturionMember.skcc_number).all()
-            centurion_member_set = set()
-            for member in centurion_members_data:
-                skcc_num = member.skcc_number.strip()
-                if skcc_num:
-                    base = skcc_num.split()[0]
-                    if base and base[-1] in 'CTS':
-                        base = base[:-1]
-                    if base:
-                        centurion_member_set.add(base)
+            # Load member sets from cache (or query if not loaded)
+            self._load_member_sets()
+            tribune_member_set = self._tribune_set
+            senator_member_set = self._senator_set
+            centurion_member_set = self._centurion_set
 
             # Get user's callsign from config
             config_manager = get_config_manager()
@@ -1783,38 +1811,37 @@ class DatabaseRepository:
                 if user_centurion_entry and user_centurion_entry.centurion_date:
                     centurion_achievement_date = user_centurion_entry.centurion_date
 
-            # Optimized: Get only needed columns for Tribune x8 calculation
-            # Need to get qso_date to determine when Tribune x8 was achieved
-            tribune_contacts = session.query(
-                Contact.skcc_number, Contact.qso_date
+            # OPTIMIZED: Get only unique SKCC numbers with first contact date
+            # This reduces dataset from 10,000+ contacts to ~500-1000 unique SKCC numbers
+            from sqlalchemy.sql import func as sqlfunc
+
+            tribune_contacts_unique = session.query(
+                Contact.skcc_number,
+                sqlfunc.min(Contact.qso_date).label('first_date')
             ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
                 Contact.qso_date >= "20070301"  # After Tribune eligible date
-            ).all()
+            ).group_by(Contact.skcc_number).all()
 
             # Collect Tribune/Senator contacts and track when Tribune x8 (400) was achieved
+            # Now processing only unique SKCC numbers (~500-1000) instead of all contacts (10,000+)
             tribune_contacts_list = []
-            for contact in tribune_contacts:
-                skcc_num = contact.skcc_number.strip()
-                if not skcc_num:
+            for contact in tribune_contacts_unique:
+                # Extract base SKCC number using utility function
+                base_number = extract_base_skcc_number(contact.skcc_number)
+                if not base_number:
                     continue
 
                 # Check if this is a Tribune/Senator member (using pre-loaded sets - no N+1)
-                base_number = skcc_num.split()[0]
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
-
-                if base_number and (base_number in tribune_member_set or base_number in senator_member_set or base_number in centurion_member_set):
+                if base_number in tribune_member_set or base_number in senator_member_set or base_number in centurion_member_set:
                     # SKCC Rule: Tribune contacts must be AFTER Centurion achievement date
                     if centurion_achievement_date:
-                        if contact.qso_date >= centurion_achievement_date:
-                            tribune_contacts_list.append((base_number, contact.qso_date))
+                        if contact.first_date >= centurion_achievement_date:
+                            tribune_contacts_list.append((base_number, contact.first_date))
                     else:
                         # No Centurion date available, count all contacts
-                        tribune_contacts_list.append((base_number, contact.qso_date))
+                        tribune_contacts_list.append((base_number, contact.first_date))
 
             # Sort by date and find when Tribune x8 (400 unique members) was achieved
             tribune_contacts_list.sort(key=lambda x: x[1])  # Sort by date
@@ -1830,44 +1857,42 @@ class DatabaseRepository:
 
             is_tribune_x8 = len(unique_tribunes) >= 400
 
-            # Optimized: Get only needed columns for Senator calculations
+            # OPTIMIZED: Get only unique SKCC numbers with first contact date
+            # This reduces dataset from 10,000+ contacts to ~500-1000 unique SKCC numbers
             senator_eligible_date = "20130801"  # August 1, 2013
 
-            senator_contacts = session.query(
-                Contact.skcc_number, Contact.qso_date
+            senator_contacts_unique = session.query(
+                Contact.skcc_number,
+                sqlfunc.min(Contact.qso_date).label('first_date')
             ).filter(
                 Contact.mode == "CW",
                 Contact.skcc_number.isnot(None),
                 Contact.qso_date >= senator_eligible_date
-            ).all()
+            ).group_by(Contact.skcc_number).all()
 
             # Collect unique Tribune/Senator members contacted AFTER Tribune x8 date
+            # Now processing only unique SKCC numbers (~500-1000) instead of all contacts (10,000+)
             unique_senators = set()
 
-            for contact in senator_contacts:
-                skcc_num = contact.skcc_number.strip()
-                if not skcc_num:
+            for contact in senator_contacts_unique:
+                # Extract base SKCC number using utility function
+                base_number = extract_base_skcc_number(contact.skcc_number)
+                if not base_number:
                     continue
 
                 # Check if this is a Tribune/Senator member (using pre-loaded sets - no N+1)
-                base_number = skcc_num.split()[0]
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
-
-                if base_number and (base_number in tribune_member_set or base_number in senator_member_set):
+                if base_number in tribune_member_set or base_number in senator_member_set:
                     # Only add if user has achieved Tribune x8 first
                     if is_tribune_x8:
                         # Count Senator contacts only AFTER Tribune x8 achievement date
                         # Use official SKCC Tribune x8 date if available, otherwise use Senator eligible date
                         if tribune_x8_achievement_date:
                             # Use the official Tribune x8 achievement date from SKCC list
-                            if contact.qso_date >= tribune_x8_achievement_date:
+                            if contact.first_date >= tribune_x8_achievement_date:
                                 unique_senators.add(base_number)
                         else:
                             # Fall back to Senator eligible date if no Tribune x8 date available
-                            if contact.qso_date >= senator_eligible_date:
+                            if contact.first_date >= senator_eligible_date:
                                 unique_senators.add(base_number)
                     # If not Tribune x8 yet, don't count any Senator contacts (prerequisite not met)
 
@@ -2125,16 +2150,11 @@ class DatabaseRepository:
         """
         if not skcc_number:
             return {'is_centurion': False, 'is_tribune': False, 'is_senator': False}
-        
-        # Extract base number (remove C/T/S suffix and endorsements)
-        base = skcc_number.strip().split()[0]
-        if base and base[-1] in 'CTS':
-            base = base[:-1]
-        
-        # Remove endorsement markers like x2, x10
-        base = re.sub(r'x\d+$', '', base, flags=re.IGNORECASE)
-        
-        if not base or not base.isdigit():
+
+        # Extract base number using utility function
+        base = extract_base_skcc_number(skcc_number)
+
+        if not base:
             return {'is_centurion': False, 'is_tribune': False, 'is_senator': False}
         
         # Check cache first
@@ -2157,26 +2177,38 @@ class DatabaseRepository:
         return result
     
     def _load_member_sets(self) -> None:
-        """Load C/T/S member sets into memory for fast lookups"""
+        """Load C/T/S member sets into memory for fast lookups (base numbers only)"""
         if self._member_sets_loaded:
             return
-        
+
         session = self.get_session()
         try:
-            # Load all member numbers into sets
+            # Load all member numbers into sets (extract base numbers)
             centurion_data = session.query(CenturionMember.skcc_number).all()
-            self._centurion_set = {m.skcc_number for m in centurion_data if m.skcc_number}
-            
+            self._centurion_set = set()
+            for member in centurion_data:
+                base = extract_base_skcc_number(member.skcc_number)
+                if base:
+                    self._centurion_set.add(base)
+
             tribune_data = session.query(TribuneeMember.skcc_number).all()
-            self._tribune_set = {m.skcc_number for m in tribune_data if m.skcc_number}
-            
+            self._tribune_set = set()
+            for member in tribune_data:
+                base = extract_base_skcc_number(member.skcc_number)
+                if base:
+                    self._tribune_set.add(base)
+
             senator_data = session.query(SenatorMember.skcc_number).all()
-            self._senator_set = {m.skcc_number for m in senator_data if m.skcc_number}
-            
+            self._senator_set = set()
+            for member in senator_data:
+                base = extract_base_skcc_number(member.skcc_number)
+                if base:
+                    self._senator_set.add(base)
+
             self._member_sets_loaded = True
             logger.info(f"Loaded member sets: {len(self._centurion_set)} Centurion, "
                        f"{len(self._tribune_set)} Tribune, {len(self._senator_set)} Senator")
-            
+
         except SQLAlchemyError as e:
             logger.error(f"Error loading member sets: {e}")
         finally:

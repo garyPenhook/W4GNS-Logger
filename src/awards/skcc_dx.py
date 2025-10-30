@@ -23,6 +23,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
+from src.utils.skcc_number import extract_base_skcc_number
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +159,8 @@ class DXQAward(AwardProgram):
                 dxcc = contact.get('dxcc')
 
                 if skcc_num and dxcc:
-                    # Extract base SKCC number (remove C/T/S/x suffixes)
-                    base_number = skcc_num.split()[0]
-                    if base_number and base_number[-1] in 'CTS':
-                        base_number = base_number[:-1]
-                    if base_number and 'x' in base_number:
-                        base_number = base_number.split('x')[0]
+                    # Extract base SKCC number using utility function
+                    base_number = extract_base_skcc_number(skcc_num)
 
                     if base_number and base_number.isdigit():
                         # Create tuple of (DXCC, SKCC member)

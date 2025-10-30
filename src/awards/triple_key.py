@@ -26,6 +26,7 @@ from typing import Dict, List, Any, Set, Tuple
 from sqlalchemy.orm import Session
 
 from src.awards.base import AwardProgram
+from src.utils.skcc_number import extract_base_skcc_number
 
 logger = logging.getLogger(__name__)
 
@@ -146,12 +147,8 @@ class TripleKeyAward(AwardProgram):
                                f"callsign={contact.get('callsign')}, skcc={skcc_num_str}, key_type={key_type}")
                     continue
 
-                # Extract numeric SKCC number (remove C/T/S/x suffixes)
-                base_number = skcc_num_str.split()[0]
-                if base_number and base_number[-1] in 'CTS':
-                    base_number = base_number[:-1]
-                if base_number and 'x' in base_number:
-                    base_number = base_number.split('x')[0]
+                # Extract numeric SKCC number using utility function
+                base_number = extract_base_skcc_number(skcc_num_str)
 
                 if not base_number or not base_number.isdigit():
                     logger.debug(f"Failed to extract numeric SKCC number: original={skcc_num_str}, base={base_number}")

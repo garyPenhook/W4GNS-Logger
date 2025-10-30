@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar, QTableWidget,
     QTableWidgetItem, QHeaderView, QPushButton
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 from src.database.repository import DatabaseRepository
@@ -40,7 +40,8 @@ class WASProgressWidget(QWidget):
         self.db = db
 
         self._init_ui()
-        self.refresh()
+        # Defer initial refresh to avoid blocking GUI startup
+        QTimer.singleShot(400, self.refresh)
 
         # Connect to signals for auto-refresh
         signals = get_app_signals()

@@ -51,6 +51,44 @@ class TribuneAward(AwardProgram):
         # Effective date for Tribune award: March 1, 2007
         self.tribune_effective_date = datetime(2007, 3, 1)
         self.tribune_effective_date_str = TRIBUNE_EFFECTIVE_DATE
+        
+        # Cache member lists and Centurion dates for efficient validation
+        from src.database.models import TribuneeMember, SenatorMember, CenturionMember
+        self._tribune_numbers = {m.skcc_number for m in db.query(TribuneeMember.skcc_number).all()}
+        self._senator_numbers = {m.skcc_number for m in db.query(SenatorMember.skcc_number).all()}
+        self._centurion_numbers = {m.skcc_number for m in db.query(CenturionMember.skcc_number).all()}
+        self._all_valid_members = self._tribune_numbers | self._senator_numbers | self._centurion_numbers
+        
+        # Cache Centurion achievement dates
+        self._centurion_dates = {}
+        for member in db.query(CenturionMember.skcc_number, CenturionMember.centurion_date).all():
+            if member.centurion_date:
+                self._centurion_dates[member.skcc_number] = member.centurion_date
+        
+        # Get user's Centurion date
+        from src.config.settings import get_config_manager
+        config_manager = get_config_manager()
+        user_callsign = config_manager.get("operator_callsign", "").upper()
+        
+        self._user_centurion_date = None
+        if user_callsign:
+            user_entry = db.query(CenturionMember).filter(
+                CenturionMember.callsign == user_callsign
+            ).first()
+            if user_entry and user_entry.centurion_date:
+                self._user_centurion_date = user_entry.centurion_date
+        
+        # Fallback to config or earliest QSO
+        if not self._user_centurion_date:
+            self._user_centurion_date = config_manager.get('awards', {}).get('centurion_date', '')
+            if not self._user_centurion_date:
+                from src.database.models import Contact
+                earliest_qso = db.query(Contact).filter(
+                    Contact.mode == "CW",
+                    Contact.skcc_number.isnot(None)
+                ).order_by(Contact.qso_date.asc()).first()
+                if earliest_qso:
+                    self._user_centurion_date = earliest_qso.qso_date
 
     def validate(self, contact: Dict[str, Any]) -> bool:
         """
@@ -110,28 +148,21 @@ class TribuneAward(AwardProgram):
                 )
                 return False
 
-        # Remote station must be Tribune or higher (Tribune/Senator members)
-        # FIX N+1 QUERY: Load all Tribune/Senator members once for efficient lookup
-        from src.database.models import TribuneeMember, SenatorMember
-        try:
-            # Batch load all member numbers for O(1) lookup instead of N queries
-            tribune_numbers = {m.skcc_number for m in self.db.query(TribuneeMember.skcc_number).all()}
-            senator_numbers = {m.skcc_number for m in self.db.query(SenatorMember.skcc_number).all()}
-            all_valid_members = tribune_numbers | senator_numbers
-            
-            skcc_num = contact.get('skcc_number', '')
-            base_number = extract_base_skcc_number(skcc_num)
-            
-            if not base_number or base_number not in all_valid_members:
-                return False
-
-        except Exception as e:
-            # If we can't check, log error and require manual verification
-            logger.warning(
-                f"Failed to check Tribune membership for {contact.get('callsign', 'unknown')}: {e}. "
-                f"Contact will require manual verification.",
-                exc_info=True
-            )
+        # Remote station must be Tribune/Centurion/Senator (from cached member lists)
+        skcc_num = contact.get('skcc_number', '')
+        base_number = extract_base_skcc_number(skcc_num)
+        
+        if not base_number or base_number not in self._all_valid_members:
+            return False
+        
+        # SKCC Rule: QSO must be on or after BOTH operators' Centurion dates
+        # Check user's Centurion date
+        if self._user_centurion_date and qso_date < self._user_centurion_date:
+            return False
+        
+        # Check contacted station's Centurion date
+        contact_centurion_date = self._centurion_dates.get(base_number)
+        if contact_centurion_date and qso_date < contact_centurion_date:
             return False
 
         return True

@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QComboBox, QCheckBox, QSpinBox, QHeaderView,
     QGroupBox, QGridLayout, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QColor, QFont
 
 from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
@@ -103,7 +103,8 @@ class SKCCSpotWidget(QWidget):
         # Cache for award-critical spots (legacy, still used as fallback)
         self.award_critical_skcc_members: set = set()
         self.worked_skcc_members: set = set()
-        self._refresh_award_cache()
+        # Defer award cache refresh to avoid blocking GUI initialization
+        QTimer.singleShot(500, self._refresh_award_cache)
 
         # Duplicate detection: track last time each callsign was shown (3-minute cooldown)
         self.last_shown_time: Dict[str, datetime] = {}
@@ -121,14 +122,16 @@ class SKCCSpotWidget(QWidget):
         self._new_spot_signal.connect(self._handle_new_spot_on_main_thread)
 
         # Auto-cleanup timer (runs periodically to clean up old spots)
+        # More frequent cleanup (2 min) to prevent memory buildup
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self._cleanup_old_spots)
-        self.cleanup_timer.start(300000)  # Cleanup every 5 minutes
+        self.cleanup_timer.start(120000)  # Cleanup every 2 minutes
 
         # Award cache refresh timer (runs periodically to update award-critical member list)
+        # Reduced frequency to avoid excessive database queries and memory pressure
         self.award_cache_timer = QTimer()
         self.award_cache_timer.timeout.connect(self._refresh_award_cache)
-        self.award_cache_timer.start(60000)  # Refresh every minute
+        self.award_cache_timer.start(300000)  # Refresh every 5 minutes (was 60s)
 
         # Note: Spot display refresh is now event-driven via _on_new_spot() callback
         # instead of polling every 5 seconds. This significantly reduces CPU usage.
@@ -344,7 +347,7 @@ class SKCCSpotWidget(QWidget):
             logger.error(f"Error saving band selections: {e}")
 
     def _sync_roster(self) -> None:
-        """Sync SKCC membership roster - force fresh download"""
+        """Sync SKCC membership roster - force fresh download in background thread"""
         try:
             self.sync_btn.setEnabled(False)
             self.status_label.setText("Status: Clearing cache and downloading fresh roster... (may take 30 seconds)")
@@ -353,31 +356,57 @@ class SKCCSpotWidget(QWidget):
             logger.info("Force-clearing SKCC roster cache for fresh download...")
             self.spot_manager.db.skcc_members.clear_cache()
 
-            # Now sync - this will force a download since cache is empty
-            success = self.spot_manager.db.skcc_members.sync_membership_data()
-            roster_count = self.spot_manager.db.skcc_members.get_member_count()
+            # Create background thread for roster download
+            class RosterSyncThread(QThread):
+                finished_signal = pyqtSignal(bool, int)  # success, member_count
+                
+                def __init__(self, db):
+                    super().__init__()
+                    self.db = db
+                
+                def run(self):
+                    try:
+                        success = self.db.skcc_members.sync_membership_data()
+                        roster_count = self.db.skcc_members.get_member_count()
+                        self.finished_signal.emit(success, roster_count)
+                    except Exception as e:
+                        logger.error(f"Roster sync thread error: {e}", exc_info=True)
+                        self.finished_signal.emit(False, 0)
 
-            if success and roster_count > 100:  # Real roster should have thousands
-                self.status_label.setText(f"✓ SUCCESS: {roster_count} real SKCC members loaded! Click Start Monitoring for real spots.")
-                logger.info(f"Successfully downloaded real SKCC roster: {roster_count} members")
-            elif roster_count > 0:
-                self.status_label.setText(f"⚠️  Roster has {roster_count} members (expected 1000+). Real roster download may have failed.")
-                logger.warning(f"Roster download returned {roster_count} members - may be test data or partial")
-            else:
-                self.status_label.setText("❌ Roster sync failed - check network connection. Use Load Test Data to continue.")
-                logger.error("Roster sync failed - 0 members")
+            def on_sync_complete(success: bool, roster_count: int):
+                try:
+                    if success and roster_count > 100:  # Real roster should have thousands
+                        self.status_label.setText(f"✓ SUCCESS: {roster_count} real SKCC members loaded! Click Start Monitoring for real spots.")
+                        logger.info(f"Successfully downloaded real SKCC roster: {roster_count} members")
+                    elif roster_count > 0:
+                        self.status_label.setText(f"⚠️  Roster has {roster_count} members (expected 1000+). Real roster download may have failed.")
+                        logger.warning(f"Roster download returned {roster_count} members - may be test data or partial")
+                    else:
+                        self.status_label.setText("❌ Roster sync failed - check network connection. Use Load Test Data to continue.")
+                        logger.error("Roster sync failed - 0 members")
 
-            # Switch to RBN mode when syncing real roster
-            self.spot_manager.use_test_spots = False
-            logger.info("Switched to RBN mode (real spots)")
+                    # Switch to RBN mode when syncing real roster
+                    self.spot_manager.use_test_spots = False
+                    logger.info("Switched to RBN mode (real spots)")
 
-            # Refresh award cache with new roster
-            self._refresh_award_cache()
+                    # Refresh award cache with new roster
+                    self._refresh_award_cache()
+                except Exception as e:
+                    logger.error(f"Error handling roster sync completion: {e}", exc_info=True)
+                finally:
+                    self.sync_btn.setEnabled(True)
+                    if hasattr(self, '_roster_sync_thread'):
+                        self._roster_sync_thread.deleteLater()
+                        self._roster_sync_thread = None
+
+            # Start background thread
+            self._roster_sync_thread = RosterSyncThread(self.spot_manager.db)
+            self._roster_sync_thread.finished_signal.connect(on_sync_complete)
+            self._roster_sync_thread.start()
 
         except Exception as e:
-            logger.error(f"Error syncing roster: {e}", exc_info=True)
+            logger.error(f"Error starting roster sync: {e}", exc_info=True)
             self.status_label.setText(f"Error syncing roster: {str(e)}")
-        finally:
             self.sync_btn.setEnabled(True)
 
     def _toggle_monitoring(self) -> None:
@@ -437,9 +466,9 @@ class SKCCSpotWidget(QWidget):
         self.last_shown_time[callsign] = now
         self.spots.insert(0, spot)
 
-        # Keep only recent spots (last 500)
-        if len(self.spots) > 500:
-            self.spots = self.spots[:500]
+        # Keep only recent spots in memory (reduced from 500 to 200 to reduce memory usage)
+        if len(self.spots) > 200:
+            self.spots = self.spots[:200]
 
         self._apply_filters()
 
@@ -506,9 +535,15 @@ class SKCCSpotWidget(QWidget):
             (now - self._worked_cache_timestamp).total_seconds() > self._worked_cache_ttl_seconds
         ):
             try:
-                contacts = self.spot_manager.db.get_all_contacts()
-                self._worked_callsigns_cache = {c.callsign.upper() for c in contacts if getattr(c, 'callsign', None)}
-                self._worked_cache_timestamp = now
+                # Use efficient query - callsigns only, not full Contact objects
+                session = self.spot_manager.db.get_session()
+                try:
+                    from src.database.models import Contact
+                    worked_callsigns_result = session.query(Contact.callsign).distinct().all()
+                    self._worked_callsigns_cache = {c[0].upper() for c in worked_callsigns_result if c[0]}
+                    self._worked_cache_timestamp = now
+                finally:
+                    session.close()
             except Exception:
                 # On error, return existing cache (may be empty)
                 pass
@@ -532,15 +567,18 @@ class SKCCSpotWidget(QWidget):
 
     def _cleanup_old_spots(self) -> None:
         """Clean up old spots from memory and database"""
-        # Remove spots older than 1 hour from memory
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        # Remove spots older than 30 minutes from memory (reduced from 1 hour)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        old_count = len(self.spots)
         self.spots = [s for s in self.spots if s.timestamp > cutoff]
+        if old_count > len(self.spots):
+            logger.debug(f"Cleaned up {old_count - len(self.spots)} old spots from memory")
 
         # Remove spots older than 24 hours from database
         self.spot_manager.cleanup_old_spots(hours=24)
 
-        # Clean up old entries from duplicate tracking (older than 10 minutes)
-        cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=10)
+        # Clean up old entries from duplicate tracking (reduced from 10 to 5 minutes)
+        cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=5)
         removed_count = 0
         callsigns_to_remove = [
             callsign for callsign, timestamp in self.last_shown_time.items()
@@ -574,12 +612,16 @@ class SKCCSpotWidget(QWidget):
     def _refresh_award_cache(self) -> None:
         """Refresh cached data for award-critical SKCC members"""
         try:
-            # Get all SKCC contacts we've already worked
-            contacts = self.spot_manager.db.get_all_contacts()
-            self.worked_skcc_members = {
-                c.skcc_number.upper() for c in contacts
-                if c.skcc_number
-            }
+            # Get SKCC numbers we've worked (efficient query - only returns SKCC numbers, not full Contact objects)
+            session = self.spot_manager.db.get_session()
+            try:
+                from src.database.models import Contact
+                worked_skcc_numbers = session.query(Contact.skcc_number).filter(
+                    Contact.skcc_number.isnot(None)
+                ).distinct().all()
+                self.worked_skcc_members = {num[0].upper() for num in worked_skcc_numbers if num[0]}
+            finally:
+                session.close()
 
             # Get SKCC roster to identify members we haven't worked
             roster = self.spot_manager.db.skcc_members.get_roster_dict()

@@ -140,11 +140,6 @@ class AwardApplicationDialog(QDialog):
         options_group = self._create_options_group()
         main_layout.addWidget(options_group)
 
-        # Achievement Date Group (for Tribune/Senator endorsements)
-        self.date_group = self._create_achievement_date_group()
-        self.date_group.setVisible(False)
-        main_layout.addWidget(self.date_group)
-
         # Progress
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -207,10 +202,11 @@ class AwardApplicationDialog(QDialog):
         self.format_combo = QComboBox()
         self.format_combo.addItems([
             'Text',
+            'SKCC Official',
             'CSV (Spreadsheet)',
             'HTML'
         ])
-        self.format_combo.setCurrentIndex(0)
+        self.format_combo.setCurrentIndex(1)  # Default to SKCC Official
         layout.addWidget(self.format_combo)
 
         layout.addStretch()
@@ -227,42 +223,6 @@ class AwardApplicationDialog(QDialog):
         layout.addWidget(self.include_all_checkbox)
 
         layout.addStretch()
-        group.setLayout(layout)
-        return group
-
-    def _create_achievement_date_group(self) -> QGroupBox:
-        """Create achievement date group for endorsement applications"""
-        group = QGroupBox("Endorsement Application")
-        layout = QVBoxLayout()
-
-        desc_label = QLabel(
-            "For multi-band and single-band endorsements, specify the date\n"
-            "when the base award was achieved:"
-        )
-        desc_label.setFont(QFont("Arial", 9))
-        layout.addWidget(desc_label)
-
-        date_layout = QHBoxLayout()
-
-        self.use_achievement_date = QCheckBox("Filter by achievement date")
-        self.use_achievement_date.setChecked(False)
-        date_layout.addWidget(self.use_achievement_date)
-
-        date_layout.addWidget(QLabel("Date (YYYY-MM-DD):"))
-
-        self.achievement_date_edit = QDateEdit()
-        self.achievement_date_edit.setDate(QDate.currentDate())
-        self.achievement_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.achievement_date_edit.setEnabled(False)
-        date_layout.addWidget(self.achievement_date_edit)
-
-        self.use_achievement_date.toggled.connect(
-            self.achievement_date_edit.setEnabled
-        )
-
-        date_layout.addStretch()
-        layout.addLayout(date_layout)
-
         group.setLayout(layout)
         return group
 
@@ -299,25 +259,18 @@ class AwardApplicationDialog(QDialog):
     def _on_award_changed(self, award_name: str) -> None:
         """Handle award type change"""
         self.description_label.setText(self.AWARD_DESCRIPTIONS.get(award_name, ''))
-        
-        # Show achievement date option for awards that support endorsements
-        self.date_group.setVisible(award_name in ['Tribune', 'Senator', 'SKCC DX'])
 
     def _get_application_format(self) -> str:
         """Get selected application format"""
         format_map = {
             'Text': 'text',
+            'SKCC Official': 'skcc',
             'CSV (Spreadsheet)': 'csv',
             'HTML': 'html'
         }
         return format_map.get(self.format_combo.currentText(), 'text')
 
-    def _get_achievement_date(self) -> Optional[str]:
-        """Get achievement date if selected"""
-        if self.date_group.isVisible() and self.use_achievement_date.isChecked():
-            date = self.achievement_date_edit.date()
-            return date.toString("yyyyMMdd")
-        return None
+
 
     def _generate_application(self) -> None:
         """Generate the application"""
@@ -327,7 +280,6 @@ class AwardApplicationDialog(QDialog):
 
         award_type = self.award_combo.currentText()
         app_format = self._get_application_format()
-        achievement_date = self._get_achievement_date()
 
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
@@ -337,7 +289,7 @@ class AwardApplicationDialog(QDialog):
             self.generator,
             award_type,
             app_format,
-            achievement_date
+            None  # No user-selected date - use official achievement dates from database
         )
         self.worker.progress.connect(self.progress_bar.setValue)
         self.worker.status.connect(self.status_label.setText)
