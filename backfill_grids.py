@@ -46,7 +46,7 @@ def backfill_grids():
     with repo.get_session() as session:
         from src.database.models import Contact
         contacts = session.query(Contact).filter(
-            (Contact.gridsquare == None) | (Contact.gridsquare == "")
+            (Contact.gridsquare.is_(None)) | (Contact.gridsquare == "")
         ).all()
         
         if not contacts:
