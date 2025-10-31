@@ -62,9 +62,8 @@ Issues = "https://github.com/w4gns/ham-radio-logger/issues"
 [project.scripts]
 w4gns-logger = "src.main:main"
 
-[tool.uv]
-python-version = "3.12"
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-qt>=4.2.0",

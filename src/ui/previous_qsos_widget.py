@@ -10,7 +10,7 @@ from typing import List, Optional
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QLabel
 )
-from PyQt6.QtCore import Qt, QDateTime
+from PyQt6.QtCore import Qt, QDateTime, QThread, pyqtSignal, QObject
 from PyQt6.QtGui import QFont
 
 from src.database.models import Contact
@@ -18,6 +18,28 @@ from src.database.repository import DatabaseRepository
 from src.utils.timezone_utils import format_utc_time_for_display
 
 logger = logging.getLogger(__name__)
+
+
+class ContactLookupWorker(QObject):
+    """Worker to perform database lookups in background thread"""
+
+    finished = pyqtSignal(str, list)  # callsign, contacts
+    error = pyqtSignal(str, str)  # callsign, error_message
+
+    def __init__(self, db: DatabaseRepository):
+        super().__init__()
+        self.db = db
+        self.callsign = ""
+
+    def lookup_contacts(self, callsign: str):
+        """Perform the contact lookup"""
+        self.callsign = callsign
+        try:
+            contacts = self.db.get_contacts_by_callsign(callsign)
+            self.finished.emit(callsign, contacts)
+        except Exception as e:
+            logger.error(f"Error in background contact lookup for {callsign}: {e}", exc_info=True)
+            self.error.emit(callsign, str(e))
 
 
 class PreviousQSOsWidget(QWidget):
@@ -46,8 +68,20 @@ class PreviousQSOsWidget(QWidget):
             self.db = db
             self.current_callsign = ""
 
+            # Setup background thread for database queries
+            self.worker_thread = QThread()
+            self.worker = ContactLookupWorker(db)
+            self.worker.moveToThread(self.worker_thread)
+
+            # Connect signals
+            self.worker.finished.connect(self._on_lookup_finished)
+            self.worker.error.connect(self._on_lookup_error)
+
+            # Start worker thread
+            self.worker_thread.start()
+
             self._init_ui()
-            logger.info("PreviousQSOsWidget initialized successfully")
+            logger.info("PreviousQSOsWidget initialized successfully with background thread")
 
         except (TypeError, Exception) as e:
             logger.error(f"Error initializing PreviousQSOsWidget: {e}", exc_info=True)
@@ -112,7 +146,7 @@ class PreviousQSOsWidget(QWidget):
 
     def update_callsign(self, callsign: str) -> None:
         """
-        Update the displayed QSOs for a given callsign
+        Update the displayed QSOs for a given callsign (non-blocking)
 
         Args:
             callsign: The callsign to look up
@@ -130,34 +164,68 @@ class PreviousQSOsWidget(QWidget):
                 logger.debug("Callsign cleared - table cleared")
                 return
 
-            try:
-                # Query database for contacts with this callsign
-                contacts = self.db.get_contacts_by_callsign(callsign)
+            # Show loading indicator
+            self.qsos_table.setRowCount(0)
+            self.no_qsos_label.setText(f"Loading QSOs for {callsign}...")
+            self.qsos_table.hide()
+            self.no_qsos_label.show()
 
-                if not contacts:
-                    # No previous QSOs
-                    self.qsos_table.setRowCount(0)
-                    self.no_qsos_label.setText(f"No previous QSOs with {callsign}")
-                    self.qsos_table.hide()
-                    self.no_qsos_label.show()
-                    logger.debug(f"No previous QSOs found for {callsign}")
-                    return
-
-                # Populate table with contacts
-                self._populate_table(contacts)
-                self.qsos_table.show()
-                self.no_qsos_label.hide()
-                logger.debug(f"Populated table with {len(contacts)} QSOs for {callsign}")
-
-            except Exception as e:
-                logger.error(f"Error querying database for {callsign}: {e}", exc_info=True)
-                self.qsos_table.setRowCount(0)
-                self.no_qsos_label.setText("Error loading previous QSOs")
-                self.qsos_table.hide()
-                self.no_qsos_label.show()
+            # Trigger background lookup
+            self.worker.lookup_contacts(callsign)
+            logger.debug(f"Background lookup started for {callsign}")
 
         except Exception as e:
             logger.error(f"Error in update_callsign: {e}", exc_info=True)
+
+    def _on_lookup_finished(self, callsign: str, contacts: List[Contact]) -> None:
+        """
+        Handle completion of background contact lookup
+
+        Args:
+            callsign: The callsign that was looked up
+            contacts: List of contacts found
+        """
+        try:
+            # Only update if this is still the current callsign
+            if callsign != self.current_callsign:
+                logger.debug(f"Ignoring stale lookup result for {callsign} (current: {self.current_callsign})")
+                return
+
+            if not contacts:
+                # No previous QSOs
+                self.qsos_table.setRowCount(0)
+                self.no_qsos_label.setText(f"No previous QSOs with {callsign}")
+                self.qsos_table.hide()
+                self.no_qsos_label.show()
+                logger.debug(f"No previous QSOs found for {callsign}")
+                return
+
+            # Populate table with contacts
+            self._populate_table(contacts)
+            self.qsos_table.show()
+            self.no_qsos_label.hide()
+            logger.debug(f"Populated table with {len(contacts)} QSOs for {callsign}")
+
+        except Exception as e:
+            logger.error(f"Error handling lookup result for {callsign}: {e}", exc_info=True)
+
+    def _on_lookup_error(self, callsign: str, error_msg: str) -> None:
+        """
+        Handle error from background contact lookup
+
+        Args:
+            callsign: The callsign that was being looked up
+            error_msg: Error message
+        """
+        # Only update if this is still the current callsign
+        if callsign != self.current_callsign:
+            return
+
+        self.qsos_table.setRowCount(0)
+        self.no_qsos_label.setText("Error loading previous QSOs")
+        self.qsos_table.hide()
+        self.no_qsos_label.show()
+        logger.error(f"Error loading QSOs for {callsign}: {error_msg}")
 
     def _populate_table(self, contacts: List[Contact]) -> None:
         """
@@ -256,3 +324,15 @@ class PreviousQSOsWidget(QWidget):
         except Exception as e:
             logger.error(f"Error in _populate_table: {e}", exc_info=True)
             raise
+
+    def closeEvent(self, event):
+        """Clean up worker thread when widget is closed"""
+        try:
+            if hasattr(self, 'worker_thread') and self.worker_thread.isRunning():
+                self.worker_thread.quit()
+                self.worker_thread.wait()
+                logger.info("Previous QSOs worker thread stopped")
+        except Exception as e:
+            logger.error(f"Error stopping worker thread: {e}", exc_info=True)
+        finally:
+            event.accept()

@@ -61,11 +61,37 @@ python backfill_distances.py
 
 If you need to rebuild (after code changes):
 
+### Linux
 ```bash
 cd rust_grid_calc
-cargo build --release
-cp target/release/librust_grid_calc.so ../venv/lib/python3.14/site-packages/rust_grid_calc.so
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo build --release
+cp target/release/librust_grid_calc.so ../.venv/lib/python3.*/site-packages/rust_grid_calc.so
 ```
+
+### macOS
+```bash
+cd rust_grid_calc
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo build --release
+cp target/release/librust_grid_calc.dylib ../.venv/lib/python3.*/site-packages/rust_grid_calc.so
+```
+
+### Windows (PowerShell)
+```powershell
+cd rust_grid_calc
+$env:PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+cargo build --release
+copy target\release\rust_grid_calc.dll ..\venv\Lib\site-packages\rust_grid_calc.pyd
+```
+
+### Windows (Command Prompt)
+```cmd
+cd rust_grid_calc
+set PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+cargo build --release
+copy target\release\rust_grid_calc.dll ..\venv\Lib\site-packages\rust_grid_calc.pyd
+```
+
+**Note**: The `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` flag allows building with Python 3.14+ (PyO3 currently supports up to 3.13 officially).
 
 ## Future Rust Opportunities
 
@@ -87,7 +113,10 @@ High-impact areas for Rust optimization:
 
 - `rust_grid_calc/Cargo.toml` - Rust project config
 - `rust_grid_calc/src/lib.rs` - Rust implementation
-- `src/utils/grid_calc.py` - Python wrapper (NEW)
+- `src/utils/grid_calc.py` - Python wrapper with cross-platform support
 - `src/ui/logging_form.py` - Uses new wrapper
 - `backfill_distances.py` - Uses Rust acceleration
-- `venv/lib/python3.14/site-packages/rust_grid_calc.so` - Compiled module
+- Compiled module location (platform-specific):
+  - Linux: `venv/lib/python3.*/site-packages/rust_grid_calc.so`
+  - macOS: `venv/lib/python3.*/site-packages/rust_grid_calc.so`
+  - Windows: `venv\Lib\site-packages\rust_grid_calc.pyd`
