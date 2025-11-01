@@ -317,24 +317,21 @@ def frequency_to_band(freq_mhz: float) -> str:
 def determine_mode(freq_mhz: float, mode_hint: Optional[str] = None) -> str:
     """
     Determine operating mode from frequency.
-    
+
     Args:
         freq_mhz: Frequency in megahertz
         mode_hint: Optional explicit mode hint (e.g., "CW", "SSB")
-        
+
     Returns:
         Mode string (e.g., "CW", "USB", "LSB", "SSB")
     """
-    if _USE_RUST:
-        try:
-            if mode_hint:
-                return rust_grid_calc.determine_mode(freq_mhz, mode_hint)
-            else:
-                return rust_grid_calc.determine_mode(freq_mhz)
-        except Exception as e:
-            logger.debug(f"Rust determine_mode failed: {e}")
-    
-    # Python fallback
+    # IMPORTANT: Always use Python implementation for determine_mode
+    # The Rust version causes segmentation faults when called from background threads
+    # (spot_fetcher.py uses daemon threads to parse RBN spots)
+    # This is due to PyO3 GIL handling issues when creating Python objects from Rust
+    # See: https://github.com/PyO3/pyo3/issues/1205
+
+    # Python implementation (thread-safe)
     if mode_hint and mode_hint.upper() in ["CW", "SSB", "USB", "LSB", "FM", "RTTY", "FT8", "FT4"]:
         return mode_hint.upper()
     
