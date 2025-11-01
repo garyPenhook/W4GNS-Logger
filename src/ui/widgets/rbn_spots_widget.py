@@ -247,11 +247,8 @@ class RBNSpotsWidget(QWidget):
         # During real-time monitoring, spots come via callbacks (_on_new_spot_received)
         # Only call refresh_spots() manually or when NOT receiving live callbacks
         
-        self.refresh_timer = QTimer()
-        # OLD: self.refresh_timer.timeout.connect(self.refresh_spots)  <- DON'T DO THIS!
-        # Just update the table display
-        self.refresh_timer.timeout.connect(self._update_spots_table)
-        self.refresh_timer.start(2000)  # Refresh display every 2 seconds
+        # Removed refresh timer - table updates via event-driven callbacks when new spots arrive
+        # This significantly reduces CPU usage by avoiding redundant rebuilds every 2 seconds
         
         # Add cleanup timer to remove old duplicate tracking entries
         self.cleanup_timer = QTimer()
@@ -525,6 +522,8 @@ class RBNSpotsWidget(QWidget):
 
     def _update_spots_table(self) -> None:
         """Update the spots table with current spots"""
+        # Disable updates during table rebuild to prevent flickering and improve scrolling performance
+        self.spots_table.setUpdatesEnabled(False)
         try:
             self.spots_table.setRowCount(0)
 
@@ -613,9 +612,12 @@ class RBNSpotsWidget(QWidget):
                 except Exception as e:
                     logger.error(f"Error adding spot row: {e}", exc_info=True)
                     continue
-                    
+
         except Exception as e:
             logger.error(f"Error updating spots table: {e}", exc_info=True)
+        finally:
+            # Re-enable updates to refresh the display
+            self.spots_table.setUpdatesEnabled(True)
 
     def _update_statistics(self) -> None:
         """Update statistics display"""

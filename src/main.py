@@ -6,8 +6,7 @@ A comprehensive SKCC-focused ham radio contact logging application with support 
 - ADIF import/export
 - Award tracking (SKCC, DXCC, WAS, etc.)
 - DX Cluster integration
-- QRZ.com synchronization
-- Cross-platform GUI (PyQt6)
+- QRZ.com synchronization- Cross-platform GUI (PyQt6)
 """
 
 # pyright: reportUnknownParameterType=false

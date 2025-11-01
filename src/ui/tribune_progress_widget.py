@@ -53,8 +53,8 @@ class TribuneProgressWidget(QWidget):
         self.update_list_timer.timeout.connect(self._update_tribune_list)
         self.update_list_timer.start(3600000)  # Every hour, check if update needed
 
-        # Initial update of Tribune list
-        self._update_tribune_list()
+        # Defer initial update of Tribune list to avoid blocking GUI startup
+        QTimer.singleShot(500, self._update_tribune_list)
 
     def _init_ui(self) -> None:
         """Initialize UI components"""

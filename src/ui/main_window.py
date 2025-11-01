@@ -711,6 +711,16 @@ class MainWindow(QMainWindow):
             )
 
             if reply == QMessageBox.StandardButton.Yes:
+                # Set up emergency shutdown timer - force exit after 5 seconds if something hangs
+                from PyQt6.QtCore import QTimer
+                emergency_timer = QTimer()
+                emergency_timer.setSingleShot(True)
+                emergency_timer.timeout.connect(lambda: (
+                    logger.warning("Emergency shutdown timeout reached - forcing exit"),
+                    QApplication.quit()
+                ))
+                emergency_timer.start(5000)  # 5 second hard timeout
+
                 # Create progress dialog for backup operations
                 progress = QProgressDialog("Preparing to exit...", None, 0, 100, self)
                 progress.setWindowTitle("Closing Application")
@@ -732,27 +742,63 @@ class MainWindow(QMainWindow):
                 except Exception as geom_error:
                     logger.warning(f"Error saving window geometry: {geom_error}")
 
-                # Stop spot manager BEFORE closing database to prevent background thread errors
+                # Stop all background threads and services
                 try:
                     progress.setLabelText("Stopping background services...")
                     progress.setValue(10)
-                    
+
+                    # Stop spot manager first
                     if hasattr(self, 'spot_manager') and self.spot_manager:
                         logger.info("Stopping SKCC spot manager...")
                         self.spot_manager.stop()
-                except Exception as spot_error:
-                    logger.error(f"Error stopping spot manager: {spot_error}", exc_info=True)
+                        QApplication.processEvents()
 
-                # Create ADIF backup on shutdown (always, to Logs folder)
+                    # Close all tab widgets to trigger their closeEvent handlers
+                    # This ensures all worker threads are stopped
+                    logger.info("Closing all tab widgets...")
+                    from PyQt6.QtCore import QThread
+
+                    for i in range(self.tabs.count()):
+                        widget = self.tabs.widget(i)
+                        if widget:
+                            widget.close()
+
+                    # Give widgets time to close their threads
+                    QApplication.processEvents()
+
+                    # Wait for any remaining QThreads to finish (with timeout)
+                    import time
+                    max_wait = 1.0  # 1 second max
+                    start_time = time.time()
+                    while time.time() - start_time < max_wait:
+                        active_threads = [obj for obj in self.findChildren(QThread) if obj.isRunning()]
+                        if not active_threads:
+                            break
+                        QApplication.processEvents()
+                        time.sleep(0.05)  # 50ms
+
+                    # Force terminate any remaining threads
+                    remaining_threads = [obj for obj in self.findChildren(QThread) if obj.isRunning()]
+                    if remaining_threads:
+                        logger.warning(f"Force terminating {len(remaining_threads)} remaining threads")
+                        for thread in remaining_threads:
+                            thread.terminate()
+                            thread.wait(100)
+
+                except Exception as spot_error:
+                    logger.error(f"Error stopping background services: {spot_error}", exc_info=True)
+
+                # Create ADIF backup on shutdown (with timeout protection)
                 progress.setLabelText("Creating ADIF backup...")
                 progress.setValue(20)
-                
+                QApplication.processEvents()  # Keep UI responsive
+
                 try:
                     logger.info("Creating ADIF backup on shutdown...")
                     if hasattr(self, 'db') and self.db:
                         # Get all contacts from database
                         all_contacts = self.db.get_all_contacts()
-                        if all_contacts:
+                        if all_contacts and len(all_contacts) > 0:
                             backup_manager = BackupManager()
                             my_skcc = self.config_manager.get("adif.my_skcc_number", "")
                             my_callsign = self.config_manager.get("general.operator_callsign", "")
@@ -772,12 +818,13 @@ class MainWindow(QMainWindow):
                         else:
                             logger.warning("No contacts found for ADIF backup")
                 except Exception as adif_backup_error:
-                    logger.error(f"Error creating ADIF backup on shutdown: {adif_backup_error}", exc_info=True)
+                    logger.error(f"Error creating ADIF backup on shutdown (continuing anyway): {adif_backup_error}", exc_info=True)
 
-                # Create database backup on shutdown (always, to Logs folder)
+                # Create database backup on shutdown (with timeout protection)
                 progress.setLabelText("Creating database backup...")
                 progress.setValue(40)
-                
+                QApplication.processEvents()  # Keep UI responsive
+
                 try:
                     logger.info("Creating database backup on shutdown...")
                     db_path = Path(self.config_manager.get("database.location"))
@@ -794,7 +841,7 @@ class MainWindow(QMainWindow):
                     else:
                         logger.warning(f"Database backup on shutdown failed: {result['message']}")
                 except Exception as db_backup_error:
-                    logger.error(f"Error creating database backup on shutdown: {db_backup_error}", exc_info=True)
+                    logger.error(f"Error creating database backup on shutdown (continuing anyway): {db_backup_error}", exc_info=True)
 
                 # Perform additional USB/external backup if destination is configured
                 try:
@@ -860,7 +907,11 @@ class MainWindow(QMainWindow):
 
                 progress.setLabelText("Finishing up...")
                 progress.setValue(100)
-                
+                QApplication.processEvents()  # Final UI update
+
+                # Cancel emergency timer - we completed successfully
+                emergency_timer.stop()
+
                 logger.info("Application exiting gracefully")
                 event.accept()
             else:

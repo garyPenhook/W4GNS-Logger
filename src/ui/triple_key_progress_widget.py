@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QProgressBar, QTableWidget,
     QTableWidgetItem, QHeaderView, QPushButton
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QColor
 
 from src.database.repository import DatabaseRepository
@@ -26,6 +26,50 @@ logger = logging.getLogger(__name__)
 
 # Triple Key color (teal/turquoise - represents three key types)
 TRIPLE_KEY_COLOR = "#008B8B"
+
+
+class TripleKeyRefreshWorker(QThread):
+    """Worker thread for refreshing Triple Key award progress - NO DATABASE ACCESS"""
+    finished = pyqtSignal(dict)  # Emits progress data
+
+    def __init__(self, contact_dicts: list, session_for_award):
+        super().__init__()
+        self.contact_dicts = contact_dicts
+        self.session_for_award = session_for_award
+
+    def run(self):
+        """Run Triple Key calculation in background thread - data already fetched"""
+        try:
+            logger.debug(f"Triple Key Award: Processing {len(self.contact_dicts)} contacts")
+
+            # Calculate Triple Key progress (using pre-fetched data)
+            triple_key_award = TripleKeyAward(self.session_for_award)
+            progress = triple_key_award.calculate_progress(self.contact_dicts)
+
+            logger.info(f"Triple Key Award: SK={progress.get('straight_key_members', 0)}, "
+                       f"BUG={progress.get('bug_members', 0)}, "
+                       f"SS={progress.get('sideswiper_members', 0)}, "
+                       f"Total={progress.get('total_unique_members', 0)}, "
+                       f"achieved={progress.get('achieved', False)}")
+
+            self.finished.emit(progress)
+        except Exception as e:
+            logger.error(f"Error in Triple Key refresh worker: {e}", exc_info=True)
+            # Emit empty progress on error
+            self.finished.emit({
+                'current': 0,
+                'required': 300,
+                'achieved': False,
+                'progress_pct': 0.0,
+                'level': 'Error',
+                'straight_key_members': 0,
+                'bug_members': 0,
+                'sideswiper_members': 0,
+                'total_unique_members': 0,
+                'straight_key_progress_pct': 0.0,
+                'bug_progress_pct': 0.0,
+                'sideswiper_progress_pct': 0.0,
+            })
 
 
 class TripleKeyProgressWidget(QWidget):
@@ -41,9 +85,11 @@ class TripleKeyProgressWidget(QWidget):
         """
         super().__init__(parent)
         self.db = db
+        self._refresh_worker: Optional[TripleKeyRefreshWorker] = None
 
         self._init_ui()
-        self.refresh()
+        # Defer initial refresh to avoid blocking GUI startup
+        QTimer.singleShot(100, self.refresh)
 
         # Connect to signals for auto-refresh
         signals = get_app_signals()
@@ -268,110 +314,151 @@ class TripleKeyProgressWidget(QWidget):
         return group
 
     def refresh(self) -> None:
-        """Refresh award progress from database"""
-        try:
-            session = self.db.get_session()
+        """Refresh award progress - fetch data on main thread, calculate in background"""
+        # Don't start new refresh if one is already running
+        if self._refresh_worker and self._refresh_worker.isRunning():
+            logger.debug("Triple Key refresh worker already running, skipping")
+            return
 
-            # Get all contacts
+        # Fetch data on MAIN THREAD (thread-safe)
+        try:
             from src.database.models import Contact
+            session = self.db.get_session()
             contacts = session.query(Contact).all()
             logger.info(f"Triple Key Award: Fetched {len(contacts)} total contacts from database")
 
-            contact_dicts = [self._contact_to_dict(c) for c in contacts]
-            logger.debug(f"Triple Key Award: Converted {len(contact_dicts)} contacts to dict format")
-
-            # Keep session open - award class may need it
-            # session.close()  # REMOVED: Session closed too early
-
-            # Calculate Triple Key progress
-            triple_key_award = TripleKeyAward(session)
-            progress = triple_key_award.calculate_progress(contact_dicts)
-
-            logger.info(f"Triple Key Award: SK={progress.get('straight_key_members', 0)}, "
-                       f"BUG={progress.get('bug_members', 0)}, "
-                       f"SS={progress.get('sideswiper_members', 0)}, "
-                       f"Total={progress.get('total_unique_members', 0)}, "
-                       f"achieved={progress.get('achieved', False)}")
-
-            # Extract progress values
-            sk_count = progress['straight_key_members']
-            bug_count = progress['bug_members']
-            ss_count = progress['sideswiper_members']
-            total_unique = progress['total_unique_members']
-            achieved = progress['achieved']
-
-            # Update overall progress bar
-            self.progress_bar.setMaximum(300)
-            self.progress_bar.setValue(total_unique)
-
-            # Update status label
-            status_text = "✅ Triple Key Award Achieved!" if achieved else "Working toward Triple Key Award"
-            self.status_label.setText(
-                f"{status_text} • {total_unique} unique members • "
-                f"SK: {sk_count}/100, Bug: {bug_count}/100, SS: {ss_count}/100"
-            )
-
-            # Update key type progress bars
-            self.sk_progress.setValue(sk_count)
-            self.sk_count_label.setText(
-                f"{progress['straight_key_progress_pct']:.0f}%"
-            )
-
-            self.bug_progress.setValue(bug_count)
-            self.bug_count_label.setText(
-                f"{progress['bug_progress_pct']:.0f}%"
-            )
-
-            self.ss_progress.setValue(ss_count)
-            self.ss_count_label.setText(
-                f"{progress['sideswiper_progress_pct']:.0f}%"
-            )
-
-            # Update status indicators
-            sk_indicator = "☑" if sk_count >= 100 else "☐"
-            self.sk_status.setText(f"{sk_indicator} Straight Key ({sk_count}/100)")
-            self.sk_status.setStyleSheet(
-                f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;" if sk_count >= 100 else ""
-            )
-
-            bug_indicator = "☑" if bug_count >= 100 else "☐"
-            self.bug_status.setText(f"{bug_indicator} Bug ({bug_count}/100)")
-            self.bug_status.setStyleSheet(
-                f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;" if bug_count >= 100 else ""
-            )
-
-            ss_indicator = "☑" if ss_count >= 100 else "☐"
-            self.ss_status.setText(f"{ss_indicator} Sideswiper ({ss_count}/100)")
-            self.ss_status.setStyleSheet(
-                f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;" if ss_count >= 100 else ""
-            )
-
-            # Update award status
-            if achieved:
-                self.award_status.setText("✅ Award Status: TRIPLE KEY ACHIEVED!")
-                self.award_status.setStyleSheet(f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;")
-            else:
-                missing = []
-                if sk_count < 100:
-                    missing.append(f"SK: {100 - sk_count}")
-                if bug_count < 100:
-                    missing.append(f"Bug: {100 - bug_count}")
-                if ss_count < 100:
-                    missing.append(f"SS: {100 - ss_count}")
-                self.award_status.setText(f"Award Status: Need {', '.join(missing)}")
-                self.award_status.setStyleSheet("color: #666666;")
-
-            # Update statistics
-            self.total_unique_label.setText(f"Total Unique Members: {total_unique}")
-            total_contacts = sum(
-                1 for contact in contact_dicts
-                if triple_key_award.validate(contact)
-            )
-            self.total_contacts_label.setText(f"Total Qualifying Contacts: {total_contacts}")
-
+            # Convert to dictionaries (main thread)
+            contact_dicts = []
+            for c in contacts:
+                contact_dicts.append({
+                    'callsign': c.callsign,
+                    'mode': c.mode,
+                    'band': c.band,
+                    'qso_date': c.qso_date,
+                    'qso_time': c.time_on,
+                    'skcc_number': c.skcc_number,
+                    'key_type': c.key_type,
+                })
         except Exception as e:
-            logger.error(f"Error refreshing Triple Key progress: {e}", exc_info=True)
-            self.status_label.setText(f"Error: {str(e)}")
+            logger.error(f"Error fetching Triple Key data: {e}", exc_info=True)
+            return
+
+        def on_refresh_finished(progress: dict):
+            """Handle refresh completion on main thread"""
+            try:
+                # Check if widget is still valid (not being destroyed)
+                if not self or not hasattr(self, 'progress_bar'):
+                    logger.debug("Triple Key widget destroyed, skipping UI update")
+                    if hasattr(self, '_refresh_worker') and self._refresh_worker:
+                        try:
+                            self._refresh_worker.wait(100)
+                            self._refresh_worker.deleteLater()
+                        except:
+                            pass
+                    return
+
+                if self._refresh_worker:
+                    # Wait for thread to fully exit before deletion
+                    self._refresh_worker.wait(500)
+
+                    # Disconnect signal before deletion
+                    try:
+                        self._refresh_worker.finished.disconnect()
+                    except:
+                        pass
+
+                    self._refresh_worker.deleteLater()
+                    self._refresh_worker = None
+
+                # Extract progress values
+                sk_count = progress['straight_key_members']
+                bug_count = progress['bug_members']
+                ss_count = progress['sideswiper_members']
+                total_unique = progress['total_unique_members']
+                achieved = progress['achieved']
+
+                logger.info(f"Triple Key Widget: Updating UI with sk_count={sk_count}, bug_count={bug_count}, ss_count={ss_count}")
+
+                # Update overall progress bar
+                self.progress_bar.setMaximum(300)
+                self.progress_bar.setValue(total_unique)
+
+                # Update status label
+                status_text = "✅ Triple Key Award Achieved!" if achieved else "Working toward Triple Key Award"
+                self.status_label.setText(
+                    f"{status_text} • {total_unique} unique members • "
+                    f"SK: {sk_count}/100, Bug: {bug_count}/100, SS: {ss_count}/100"
+                )
+
+                # Update key type progress bars
+                # NOTE: QProgressBar ignores setValue() if value > maximum, so we must clamp to 100
+                logger.info(f"Triple Key Widget: Setting SK progress to {sk_count}, max={self.sk_progress.maximum()}")
+                self.sk_progress.setValue(min(sk_count, 100))
+                self.sk_count_label.setText(
+                    f"{progress['straight_key_progress_pct']:.0f}%"
+                )
+
+                logger.info(f"Triple Key Widget: Setting BUG progress to {bug_count}, max={self.bug_progress.maximum()}")
+                self.bug_progress.setValue(min(bug_count, 100))
+                logger.info(f"Triple Key Widget: BUG progress value after setValue: {self.bug_progress.value()}")
+                self.bug_count_label.setText(
+                    f"{progress['bug_progress_pct']:.0f}%"
+                )
+
+                logger.info(f"Triple Key Widget: Setting SS progress to {ss_count}, max={self.ss_progress.maximum()}")
+                self.ss_progress.setValue(min(ss_count, 100))
+                self.ss_count_label.setText(
+                    f"{progress['sideswiper_progress_pct']:.0f}%"
+                )
+
+                # Update status indicators
+                sk_indicator = "☑" if sk_count >= 100 else "☐"
+                self.sk_status.setText(f"{sk_indicator} Straight Key ({sk_count}/100)")
+                self.sk_status.setStyleSheet(
+                    f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;" if sk_count >= 100 else ""
+                )
+
+                bug_indicator = "☑" if bug_count >= 100 else "☐"
+                self.bug_status.setText(f"{bug_indicator} Bug ({bug_count}/100)")
+                self.bug_status.setStyleSheet(
+                    f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;" if bug_count >= 100 else ""
+                )
+
+                ss_indicator = "☑" if ss_count >= 100 else "☐"
+                self.ss_status.setText(f"{ss_indicator} Sideswiper ({ss_count}/100)")
+                self.ss_status.setStyleSheet(
+                    f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;" if ss_count >= 100 else ""
+                )
+
+                # Update award status
+                if achieved:
+                    self.award_status.setText("✅ Award Status: TRIPLE KEY ACHIEVED!")
+                    self.award_status.setStyleSheet(f"color: {TRIPLE_KEY_COLOR}; font-weight: bold;")
+                else:
+                    missing = []
+                    if sk_count < 100:
+                        missing.append(f"SK: {100 - sk_count}")
+                    if bug_count < 100:
+                        missing.append(f"Bug: {100 - bug_count}")
+                    if ss_count < 100:
+                        missing.append(f"SS: {100 - ss_count}")
+                    self.award_status.setText(f"Award Status: Need {', '.join(missing)}")
+                    self.award_status.setStyleSheet("color: #666666;")
+
+                # Update statistics
+                self.total_unique_label.setText(f"Total Unique Members: {total_unique}")
+                total_qualifying = progress.get('current', total_unique)
+                self.total_contacts_label.setText(f"Total Qualifying Contacts: {total_qualifying}")
+
+            except Exception as e:
+                logger.error(f"Error handling Triple Key refresh completion: {e}", exc_info=True)
+                self.status_label.setText(f"Error: {str(e)}")
+
+        # Start background worker with pre-fetched data (no DB access in worker)
+        self._refresh_worker = TripleKeyRefreshWorker(contact_dicts, session)
+        self._refresh_worker.finished.connect(on_refresh_finished)
+        self._refresh_worker.start()
+        logger.debug("Started background Triple Key refresh worker with pre-fetched data")
 
     def _create_actions_section(self) -> QGroupBox:
         """Create actions section with report and application generation buttons"""
@@ -415,6 +502,20 @@ class TripleKeyProgressWidget(QWidget):
             logger.error(f"Error opening award application dialog: {e}", exc_info=True)
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to open application dialog: {str(e)}")
+
+    def closeEvent(self, event) -> None:
+        """Clean up when widget is closed"""
+        try:
+            # Stop any running worker thread with quick timeout
+            if self._refresh_worker and self._refresh_worker.isRunning():
+                self._refresh_worker.quit()
+                if not self._refresh_worker.wait(500):  # Wait max 500ms
+                    logger.warning("Triple Key refresh worker didn't stop in time, terminating...")
+                    self._refresh_worker.terminate()
+                    self._refresh_worker.wait(100)
+        except Exception as e:
+            logger.error(f"Error cleaning up Triple Key widget: {e}", exc_info=True)
+        super().closeEvent(event)
 
     def _contact_to_dict(self, contact) -> dict:
         """Convert Contact ORM object to dictionary"""
