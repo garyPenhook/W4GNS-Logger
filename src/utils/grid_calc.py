@@ -220,59 +220,55 @@ def count_unique_prefixes_rust(callsigns: List[str]) -> int:
 def parse_rbn_spot(line: str) -> Optional[Dict[str, Any]]:
     """
     Parse RBN telnet spot line.
-    
+
     Example: "DX de K3LR-#:     14025.0  W4GNS          CW    24 dB  23 WPM  CQ      1234Z"
-    
+
     Args:
         line: RBN spot line from telnet connection
-        
+
     Returns:
         Dict with keys: callsign, frequency, snr, timestamp
         None if line cannot be parsed
     """
-    if _USE_RUST:
-        try:
-            return rust_grid_calc.parse_rbn_spot(line)
-        except ValueError:
-            return None
-        except Exception as e:
-            logger.debug(f"Rust parse_rbn_spot failed: {e}")
-            return None
-    else:
-        # Python fallback
-        parts = line.split()
-        if len(parts) < 7 or parts[0] != "DX" or parts[1] != "de":
-            return None
-        
-        try:
-            freq = float(parts[3])
-            callsign = parts[4]
-            
-            # Find SNR (look for "XX dB" pattern)
-            snr = 0
-            for i in range(len(parts) - 1):
-                if parts[i + 1] == "dB":
-                    try:
-                        snr = int(parts[i])
-                        break
-                    except ValueError:
-                        pass
-            
-            # Find timestamp (ends with Z)
-            timestamp = ""
-            for part in reversed(parts):
-                if part.endswith('Z'):
-                    timestamp = part
+    # IMPORTANT: Always use Python implementation for parse_rbn_spot
+    # The Rust version causes segmentation faults when called from background threads
+    # due to PyO3 GIL handling issues when creating Python objects from Rust
+    # See: https://github.com/PyO3/pyo3/issues/1205
+
+    # Python implementation (thread-safe)
+    parts = line.split()
+    if len(parts) < 7 or parts[0] != "DX" or parts[1] != "de":
+        return None
+
+    try:
+        freq = float(parts[3])
+        callsign = parts[4]
+
+        # Find SNR (look for "XX dB" pattern)
+        snr = 0
+        for i in range(len(parts) - 1):
+            if parts[i + 1] == "dB":
+                try:
+                    snr = int(parts[i])
                     break
-            
-            return {
-                'callsign': callsign,
-                'frequency': freq,
-                'snr': snr,
-                'timestamp': timestamp
-            }
-        except (ValueError, IndexError):
-            return None
+                except ValueError:
+                    pass
+
+        # Find timestamp (ends with Z)
+        timestamp = ""
+        for part in reversed(parts):
+            if part.endswith('Z'):
+                timestamp = part
+                break
+
+        return {
+            'callsign': callsign,
+            'frequency': freq,
+            'snr': snr,
+            'timestamp': timestamp
+        }
+    except (ValueError, IndexError):
+        return None
 
 
 def frequency_to_band(freq_mhz: float) -> str:
