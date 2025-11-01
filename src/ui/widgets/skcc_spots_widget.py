@@ -911,10 +911,10 @@ class SKCCSpotWidget(QWidget):
                 if not self or not hasattr(self, 'spots'):
                     logger.debug("SKCC spots widget destroyed, skipping cleanup update")
                     if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
-                        # Clean up the worker even if widget is being destroyed
                         try:
-                            # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
-                            # The thread has already finished (we're in the finished signal), so just schedule deletion
+                            # Properly clean up the worker thread
+                            self._cleanup_worker.quit()
+                            # Don't wait() on UI thread - just schedule deletion
                             self._cleanup_worker.deleteLater()
                         except:
                             pass
@@ -935,12 +935,14 @@ class SKCCSpotWidget(QWidget):
                     except:
                         pass
 
-                    # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
-                    # The thread has already finished (we're in the finished signal), so just schedule deletion
+                    # Properly stop and clean up the worker thread
+                    # quit() ensures the thread event loop stops
+                    # deleteLater() schedules the object for deletion
+                    self._cleanup_worker.quit()
                     self._cleanup_worker.deleteLater()
                     self._cleanup_worker = None
             except Exception as e:
-                logger.error(f"Error handling cleanup completion: {e}")
+                logger.error(f"Error handling cleanup completion: {e}", exc_info=True)
 
         # Start background cleanup with COPIES of mutable data to avoid race conditions
         # The worker thread will iterate over these copies, not the live references
@@ -989,10 +991,10 @@ class SKCCSpotWidget(QWidget):
                 if not self or not hasattr(self, 'worked_skcc_members'):
                     logger.debug("SKCC spots widget destroyed, skipping award cache update")
                     if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
-                        # Clean up the worker even if widget is being destroyed
                         try:
-                            # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
-                            # The thread has already finished (we're in the finished signal), so just schedule deletion
+                            # Properly clean up the worker thread
+                            self._award_cache_worker.quit()
+                            # Don't wait() on UI thread - just schedule deletion
                             self._award_cache_worker.deleteLater()
                         except:
                             pass
@@ -1009,12 +1011,14 @@ class SKCCSpotWidget(QWidget):
                     except:
                         pass
 
-                    # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
-                    # The thread has already finished (we're in the finished signal), so just schedule deletion
+                    # Properly stop and clean up the worker thread
+                    # quit() ensures the thread event loop stops
+                    # deleteLater() schedules the object for deletion
+                    self._award_cache_worker.quit()
                     self._award_cache_worker.deleteLater()
                     self._award_cache_worker = None
             except Exception as e:
-                logger.error(f"Error handling award cache completion: {e}")
+                logger.error(f"Error handling award cache completion: {e}", exc_info=True)
 
         # Start background refresh
         self._award_cache_worker = AwardCacheWorker(self.spot_manager)
