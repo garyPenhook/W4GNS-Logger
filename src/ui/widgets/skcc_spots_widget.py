@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QComboBox, QCheckBox, QSpinBox, QHeaderView,
     QGroupBox, QGridLayout, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QFont
 
 from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
@@ -71,59 +71,75 @@ class SKCCSpotRow:
             return f"{int(self.age_seconds / 3600)}h"
 
 
-class SpotProcessingWorker(QThread):
-    """Worker thread for processing spots in background"""
-    finished = pyqtSignal(object, set, str, bool)  # spot, worked_callsigns, goal_type, should_store
+class SpotProcessingWorker(QObject):
+    """Queue-based worker for processing spots in background thread"""
+    spot_processed = pyqtSignal(object, set, str, bool)  # spot, worked_callsigns, goal_type, should_store
 
-    def __init__(self, spot_manager, spot: SKCCSpot, spot_filter: SKCCSpotFilter):
+    def __init__(self, spot_manager, spot_filter: SKCCSpotFilter):
         super().__init__()
         self.spot_manager = spot_manager
-        self.spot = spot
         self.spot_filter = spot_filter
-        self.worked_callsigns = set()
-        self.goal_type = "NONE"
-        self.should_store = False
+        self.running = True
+        self.spot_queue: List[SKCCSpot] = []
 
-    def run(self):
-        """Process spot in background thread"""
+    def add_spot(self, spot: SKCCSpot):
+        """Add spot to processing queue"""
+        self.spot_queue.append(spot)
+
+    def process_spots(self):
+        """Process all queued spots (called from worker thread)"""
+        while self.running:
+            # Process all spots in queue
+            while self.spot_queue and self.running:
+                spot = self.spot_queue.pop(0)
+                self._process_single_spot(spot)
+
+            # Sleep briefly to avoid busy-waiting
+            QThread.msleep(10)
+
+    def _process_single_spot(self, spot: SKCCSpot):
+        """Process a single spot"""
         try:
             # Get worked callsigns for filtering
             session = self.spot_manager.db.get_session()
             try:
                 worked_callsigns_result = session.query(Contact.callsign).distinct().all()
-                self.worked_callsigns = {c[0].upper() for c in worked_callsigns_result if c[0]}
+                worked_callsigns = {c[0].upper() for c in worked_callsigns_result if c[0]}
             finally:
                 session.close()
 
             # Apply spot filter
-            if not self.spot_filter.matches(self.spot, self.worked_callsigns):
-                logger.debug(f"Spot {self.spot.callsign} filtered by spot_filter")
-                self.finished.emit(self.spot, self.worked_callsigns, self.goal_type, False)
+            if not self.spot_filter.matches(spot, worked_callsigns):
+                logger.debug(f"Spot {spot.callsign} filtered by spot_filter")
+                self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
                 return
 
             # Classify spot as GOAL/TARGET/BOTH
-            self.goal_type = self.spot_manager.spot_classifier.classify_spot(self.spot.callsign)
+            goal_type = self.spot_manager.spot_classifier.classify_spot(spot.callsign)
 
             # Store in database
             spot_data = {
-                "frequency": round(self.spot.frequency, 3),
-                "dx_callsign": self.spot.callsign,
-                "de_callsign": self.spot.reporter,
-                "dx_grid": self.spot.grid,
-                "comment": f"Speed: {self.spot.speed} WPM" if self.spot.speed else None,
-                "received_at": self.spot.timestamp,
-                "spotted_date": self.spot.timestamp.strftime("%Y%m%d"),
-                "spotted_time": self.spot.timestamp.strftime("%H%M"),
+                "frequency": round(spot.frequency, 3),
+                "dx_callsign": spot.callsign,
+                "de_callsign": spot.reporter,
+                "dx_grid": spot.grid,
+                "comment": f"Speed: {spot.speed} WPM" if spot.speed else None,
+                "received_at": spot.timestamp,
+                "spotted_date": spot.timestamp.strftime("%Y%m%d"),
+                "spotted_time": spot.timestamp.strftime("%H%M"),
             }
             self.spot_manager.db.add_cluster_spot(spot_data)
-            logger.debug(f"Stored spot {self.spot.callsign} in database")
+            logger.debug(f"Stored spot {spot.callsign} in database")
 
-            self.should_store = True
-            self.finished.emit(self.spot, self.worked_callsigns, self.goal_type, True)
+            self.spot_processed.emit(spot, worked_callsigns, goal_type, True)
 
         except Exception as e:
-            logger.error(f"Error processing spot {self.spot.callsign}: {e}", exc_info=True)
-            self.finished.emit(self.spot, self.worked_callsigns, self.goal_type, False)
+            logger.error(f"Error processing spot {spot.callsign}: {e}", exc_info=True)
+            self.spot_processed.emit(spot, set(), "NONE", False)
+
+    def stop(self):
+        """Stop processing"""
+        self.running = False
 
 
 class CleanupWorker(QThread):
@@ -276,7 +292,14 @@ class SKCCSpotWidget(QWidget):
         # Background worker threads
         self._cleanup_worker: Optional[CleanupWorker] = None
         self._award_cache_worker: Optional[AwardCacheWorker] = None
-        self._spot_processing_workers: List[SpotProcessingWorker] = []
+
+        # Single persistent worker for spot processing
+        self._spot_processing_thread = QThread()
+        self._spot_processing_worker = SpotProcessingWorker(self.spot_manager, self.spot_manager.spot_filter)
+        self._spot_processing_worker.moveToThread(self._spot_processing_thread)
+        self._spot_processing_worker.spot_processed.connect(self._on_spot_processed)
+        self._spot_processing_thread.started.connect(self._spot_processing_worker.process_spots)
+        self._spot_processing_thread.start()
 
         # Config manager for persisting band selections
         self.config_manager = get_config_manager()
@@ -285,7 +308,7 @@ class SKCCSpotWidget(QWidget):
         self._init_ui()
         self._load_band_selections()  # Load saved band selections
         self._connect_signals()
-        
+
         # Connect internal signal for thread-safe spot handling
         self._new_spot_signal.connect(self._handle_new_spot_on_main_thread)
 
@@ -621,7 +644,7 @@ class SKCCSpotWidget(QWidget):
         """
         Handle new spot on main UI thread (called via signal)
 
-        Checks for duplicates and spawns background worker for database operations.
+        Checks for duplicates and queues spot for background processing.
         This keeps the main thread responsive for UI operations like callsign input.
         """
         try:
@@ -636,54 +659,46 @@ class SKCCSpotWidget(QWidget):
                     logger.debug(f"Skipping duplicate spot: {callsign} (shown {time_since_last:.0f}s ago)")
                     return
 
-            # Spawn background worker for database-heavy operations
-            worker = SpotProcessingWorker(
-                self.spot_manager,
-                spot,
-                self.spot_manager.spot_filter
-            )
-
-            # Connect worker completion signal
-            def on_spot_processed(processed_spot: SKCCSpot, worked_callsigns: set, goal_type: str, should_store: bool):
-                """Handle spot processing completion on main thread"""
-                try:
-                    if not should_store:
-                        # Spot was filtered out
-                        return
-
-                    # Set goal type if classified
-                    if goal_type and goal_type != "NONE":
-                        processed_spot.goal_type = goal_type
-                        logger.info(f"{processed_spot.callsign} classified as {goal_type}")
-
-                    # Update tracking and add spot to display
-                    self.last_shown_time[processed_spot.callsign.upper()] = now
-                    self.spots.insert(0, processed_spot)
-
-                    # Keep only recent spots in memory
-                    if len(self.spots) > 200:
-                        self.spots = self.spots[:200]
-
-                    self._apply_filters()
-
-                except Exception as e:
-                    logger.error(f"Error in spot processing callback: {e}", exc_info=True)
-                finally:
-                    # Clean up worker
-                    if worker in self._spot_processing_workers:
-                        self._spot_processing_workers.remove(worker)
-                    worker.deleteLater()
-
-            worker.finished.connect(on_spot_processed)
-
-            # Track worker and start
-            self._spot_processing_workers.append(worker)
-            worker.start()
-
-            logger.debug(f"Started background processing for spot {callsign}")
+            # Add to queue for background processing
+            self._spot_processing_worker.add_spot(spot)
+            logger.debug(f"Queued spot {callsign} for background processing")
 
         except Exception as e:
             logger.error(f"Error handling spot {spot.callsign}: {e}", exc_info=True)
+
+    def _on_spot_processed(self, processed_spot: SKCCSpot, worked_callsigns: set, goal_type: str, should_store: bool):
+        """
+        Handle spot processing completion on main thread
+
+        Args:
+            processed_spot: The processed spot
+            worked_callsigns: Set of worked callsigns
+            goal_type: Classified goal type
+            should_store: Whether spot should be stored in display
+        """
+        try:
+            if not should_store:
+                # Spot was filtered out
+                return
+
+            # Set goal type if classified
+            if goal_type and goal_type != "NONE":
+                processed_spot.goal_type = goal_type
+                logger.info(f"{processed_spot.callsign} classified as {goal_type}")
+
+            # Update tracking and add spot to display
+            now = datetime.now(timezone.utc)
+            self.last_shown_time[processed_spot.callsign.upper()] = now
+            self.spots.insert(0, processed_spot)
+
+            # Keep only recent spots in memory
+            if len(self.spots) > 200:
+                self.spots = self.spots[:200]
+
+            self._apply_filters()
+
+        except Exception as e:
+            logger.error(f"Error in spot processing callback: {e}", exc_info=True)
 
     def _on_connection_state_changed(self, state: RBNConnectionState) -> None:
         """Handle RBN connection state change"""
