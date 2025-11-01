@@ -13,62 +13,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Try to import Rust module, fallback to Python
+# RUST DISABLED: Rust module causes segmentation faults when called from background threads
+# due to PyO3 GIL handling issues. Using Python implementation only.
+# See: https://github.com/PyO3/pyo3/issues/1205
 _USE_RUST = False
-try:
-    # First try normal import
-    import rust_grid_calc
-    _USE_RUST = hasattr(rust_grid_calc, 'calculate_distance')
-
-    if not _USE_RUST:
-        # If it's a namespace package, try to load library directly
-        # Determine platform-specific extension
-        system = platform.system()
-        if system == 'Windows':
-            extensions = ['rust_grid_calc.pyd', 'rust_grid_calc.dll']
-        elif system == 'Darwin':  # macOS
-            extensions = ['rust_grid_calc.so', 'librust_grid_calc.dylib']
-        else:  # Linux and others
-            extensions = ['rust_grid_calc.so', 'librust_grid_calc.so']
-
-        # Check multiple possible locations
-        search_locations = []
-
-        # Venv site-packages (Unix-like)
-        if hasattr(sys, 'prefix'):
-            site_packages_unix = Path(sys.prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-            search_locations.append(site_packages_unix)
-
-            # Windows site-packages
-            site_packages_win = Path(sys.prefix) / "Lib" / "site-packages"
-            search_locations.append(site_packages_win)
-
-        # Relative to current file
-        venv_site_packages_unix = Path(__file__).parent.parent.parent / "venv" / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
-        venv_site_packages_win = Path(__file__).parent.parent.parent / "venv" / "Lib" / "site-packages"
-        search_locations.extend([venv_site_packages_unix, venv_site_packages_win])
-
-        # Try all combinations of locations and extensions
-        found = False
-        for location in search_locations:
-            for ext in extensions:
-                lib_path = location / ext
-                if lib_path.exists():
-                    spec = importlib.util.spec_from_file_location("rust_grid_calc", lib_path)
-                    rust_grid_calc = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(rust_grid_calc)
-                    _USE_RUST = True
-                    sys.modules['rust_grid_calc'] = rust_grid_calc
-                    logger.info(f"Loaded Rust grid calculator from {lib_path}")
-                    found = True
-                    break
-            if found:
-                break
-
-except ImportError as e:
-    logger.debug(f"Rust grid calculator import failed: {e}")
-except Exception as e:
-    logger.warning(f"Error loading Rust grid calculator: {e}")
+logger.warning("Rust grid calculator DISABLED - using Python fallback for thread safety")
 
 if _USE_RUST:
     logger.info("Using Rust grid calculator (high performance)")
