@@ -371,6 +371,7 @@ class SKCCSpotWidget(QWidget):
         # Background worker threads
         self._cleanup_worker: Optional[CleanupWorker] = None
         self._award_cache_worker: Optional[AwardCacheWorker] = None
+        self._is_shutting_down = False  # Flag to prevent new workers during shutdown
 
         # Single persistent worker for spot processing
         self._spot_processing_thread = QThread()
@@ -894,7 +895,11 @@ class SKCCSpotWidget(QWidget):
 
     def _cleanup_old_spots(self) -> None:
         """Clean up old spots from memory and database in background thread"""
-        # Don't start new cleanup if one is already running
+        # Don't start new cleanup if shutting down or if one is already running
+        if self._is_shutting_down:
+            logger.debug("Widget is shutting down, skipping cleanup")
+            return
+
         if hasattr(self, '_cleanup_worker') and self._cleanup_worker and self._cleanup_worker.isRunning():
             logger.debug("Cleanup worker already running, skipping")
             return
@@ -968,7 +973,11 @@ class SKCCSpotWidget(QWidget):
 
     def _refresh_award_cache(self) -> None:
         """Refresh cached data for award-critical SKCC members in background thread"""
-        # Don't start new refresh if one is already running
+        # Don't start new refresh if shutting down or if one is already running
+        if self._is_shutting_down:
+            logger.debug("Widget is shutting down, skipping award cache refresh")
+            return
+
         if hasattr(self, '_award_cache_worker') and self._award_cache_worker and self._award_cache_worker.isRunning():
             logger.debug("Award cache worker already running, skipping")
             return
@@ -1144,9 +1153,13 @@ class SKCCSpotWidget(QWidget):
 
     def closeEvent(self, event) -> None:
         """Clean up when widget is closed"""
+        # Set shutdown flag FIRST to prevent new workers from being created
+        self._is_shutting_down = True
+
         try:
             self.cleanup_timer.stop()
             self.award_cache_timer.stop()
+            self._filter_debounce_timer.stop()
 
             # Stop receiving new spots from RBN FIRST (before stopping processing thread)
             # This prevents new spots from being queued while we're shutting down
@@ -1182,19 +1195,37 @@ class SKCCSpotWidget(QWidget):
                 self._spot_processing_workers.clear()
 
             # Stop any running worker threads with quick timeout
-            if hasattr(self, '_cleanup_worker') and self._cleanup_worker and self._cleanup_worker.isRunning():
-                self._cleanup_worker.quit()
-                if not self._cleanup_worker.wait(500):  # Wait max 500ms
-                    logger.warning("Cleanup worker didn't stop in time, terminating...")
-                    self._cleanup_worker.terminate()
-                    self._cleanup_worker.wait(100)
+            if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
+                # Disconnect signal before stopping thread to prevent callbacks
+                try:
+                    self._cleanup_worker.finished.disconnect()
+                except:
+                    pass
+                # Stop the worker
+                if self._cleanup_worker.isRunning():
+                    self._cleanup_worker.quit()
+                    if not self._cleanup_worker.wait(500):  # Wait max 500ms
+                        logger.warning("Cleanup worker didn't stop in time, terminating...")
+                        self._cleanup_worker.terminate()
+                        self._cleanup_worker.wait(100)
+                self._cleanup_worker.deleteLater()
+                self._cleanup_worker = None
 
-            if hasattr(self, '_award_cache_worker') and self._award_cache_worker and self._award_cache_worker.isRunning():
-                self._award_cache_worker.quit()
-                if not self._award_cache_worker.wait(500):  # Wait max 500ms
-                    logger.warning("Award cache worker didn't stop in time, terminating...")
-                    self._award_cache_worker.terminate()
-                    self._award_cache_worker.wait(100)
+            if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
+                # Disconnect signal before stopping thread to prevent callbacks
+                try:
+                    self._award_cache_worker.finished.disconnect()
+                except:
+                    pass
+                # Stop the worker
+                if self._award_cache_worker.isRunning():
+                    self._award_cache_worker.quit()
+                    if not self._award_cache_worker.wait(500):  # Wait max 500ms
+                        logger.warning("Award cache worker didn't stop in time, terminating...")
+                        self._award_cache_worker.terminate()
+                        self._award_cache_worker.wait(100)
+                self._award_cache_worker.deleteLater()
+                self._award_cache_worker = None
 
             if self.spot_manager.is_running():
                 self.spot_manager.stop()
