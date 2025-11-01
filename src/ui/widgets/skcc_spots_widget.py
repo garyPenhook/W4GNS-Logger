@@ -809,17 +809,16 @@ class SKCCSpotWidget(QWidget):
                     if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
                         # Clean up the worker even if widget is being destroyed
                         try:
-                            self._cleanup_worker.wait(100)
+                            # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
+                            # The thread has already finished (we're in the finished signal), so just schedule deletion
                             self._cleanup_worker.deleteLater()
                         except:
                             pass
                     return
 
                 if self._cleanup_worker:
-                    # Wait for thread to fully exit before accessing its data
-                    self._cleanup_worker.wait(500)
-
                     # Update spots list with cleaned spots
+                    # NOTE: We're already in the signal callback, so the thread has finished
                     self.spots = self._cleanup_worker.new_spots
 
                     # Remove tracked callsigns
@@ -832,6 +831,8 @@ class SKCCSpotWidget(QWidget):
                     except:
                         pass
 
+                    # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
+                    # The thread has already finished (we're in the finished signal), so just schedule deletion
                     self._cleanup_worker.deleteLater()
                     self._cleanup_worker = None
             except Exception as e:
@@ -882,16 +883,15 @@ class SKCCSpotWidget(QWidget):
                     if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
                         # Clean up the worker even if widget is being destroyed
                         try:
-                            self._award_cache_worker.wait(100)
+                            # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
+                            # The thread has already finished (we're in the finished signal), so just schedule deletion
                             self._award_cache_worker.deleteLater()
                         except:
                             pass
                     return
 
                 if self._award_cache_worker:
-                    # Wait for thread to fully exit before deletion
-                    self._award_cache_worker.wait(500)
-
+                    # Update cache with new data
                     self.worked_skcc_members = worked_skcc
                     self.award_critical_skcc_members = award_critical
 
@@ -901,6 +901,8 @@ class SKCCSpotWidget(QWidget):
                     except:
                         pass
 
+                    # DO NOT CALL .wait() ON UI THREAD - it blocks the entire GUI!
+                    # The thread has already finished (we're in the finished signal), so just schedule deletion
                     self._award_cache_worker.deleteLater()
                     self._award_cache_worker = None
             except Exception as e:
