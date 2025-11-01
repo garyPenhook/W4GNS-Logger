@@ -70,12 +70,119 @@ class SKCCSpotRow:
             return f"{int(self.age_seconds / 3600)}h"
 
 
+class CleanupWorker(QThread):
+    """Worker thread for cleaning up old spots"""
+    finished = pyqtSignal()
+
+    def __init__(self, spot_manager, spots: List, last_shown_time: Dict):
+        super().__init__()
+        self.spot_manager = spot_manager
+        self.spots = spots
+        self.last_shown_time = last_shown_time
+        self.new_spots = []
+        self.callsigns_to_remove = []
+
+    def run(self):
+        """Run cleanup in background thread"""
+        try:
+            # Remove spots older than 30 minutes from memory
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+            old_count = len(self.spots)
+            self.new_spots = [s for s in self.spots if s.timestamp > cutoff]
+            if old_count > len(self.new_spots):
+                logger.debug(f"Cleaned up {old_count - len(self.new_spots)} old spots from memory")
+
+            # Remove spots older than 24 hours from database
+            self.spot_manager.cleanup_old_spots(hours=24)
+
+            # Clean up old entries from duplicate tracking
+            cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=5)
+            self.callsigns_to_remove = [
+                callsign for callsign, timestamp in self.last_shown_time.items()
+                if timestamp < cutoff_tracking
+            ]
+
+            if self.callsigns_to_remove:
+                logger.debug(f"Cleaned up {len(self.callsigns_to_remove)} old entries from duplicate tracking")
+        except Exception as e:
+            logger.error(f"Error in cleanup worker: {e}")
+        finally:
+            self.finished.emit()
+
+
+class AwardCacheWorker(QThread):
+    """Worker thread for refreshing award cache"""
+    finished = pyqtSignal(set, set, set)  # worked_skcc, award_critical, all_progress
+
+    def __init__(self, spot_manager):
+        super().__init__()
+        self.spot_manager = spot_manager
+
+    def run(self):
+        """Run award cache refresh in background thread"""
+        try:
+            from src.database.models import Contact
+
+            # Get SKCC numbers we've worked
+            session = self.spot_manager.db.get_session()
+            try:
+                worked_skcc_numbers = session.query(Contact.skcc_number).filter(
+                    Contact.skcc_number.isnot(None)
+                ).distinct().all()
+                worked_skcc_members = {num[0].upper() for num in worked_skcc_numbers if num[0]}
+            finally:
+                session.close()
+
+            # Get SKCC roster
+            roster = self.spot_manager.db.skcc_members.get_roster_dict()
+
+            # Get current SKCC award progress
+            skcc_progress = self.spot_manager.db.get_award_progress("SKCC", "Members")
+
+            # Determine target count
+            target_count = self._get_target_skcc_count(skcc_progress)
+
+            # Calculate award-critical members
+            if target_count and len(worked_skcc_members) < target_count:
+                all_skcc_numbers = set(roster.keys()) if roster else set()
+                award_critical_skcc_members = all_skcc_numbers - worked_skcc_members
+            else:
+                award_critical_skcc_members = set()
+
+            logger.debug(
+                f"Award cache updated: worked={len(worked_skcc_members)}, "
+                f"critical={len(award_critical_skcc_members)}, "
+                f"target={target_count}"
+            )
+
+            self.finished.emit(worked_skcc_members, award_critical_skcc_members, set())
+        except Exception as e:
+            logger.error(f"Error in award cache worker: {e}")
+            self.finished.emit(set(), set(), set())
+
+    @staticmethod
+    def _get_target_skcc_count(progress: Dict[str, Any]) -> Optional[int]:
+        """Get target SKCC member count based on current progress"""
+        if not progress:
+            return 25  # Default to Centurion (C)
+
+        current = progress.get("current", 0)
+
+        # SKCC award levels
+        levels = [25, 50, 100, 200, 500, 1000]
+        for level in levels:
+            if current < level:
+                return level
+
+        return None  # Already at highest level
+
+
 class SKCCSpotWidget(QWidget):
     """Widget for displaying and managing SKCC spots"""
 
     # Signal when user clicks on a spot (to populate logging form)
     spot_selected = pyqtSignal(str, float)  # callsign, frequency
-    
+
     # Internal signal for thread-safe spot handling from background thread
     _new_spot_signal = pyqtSignal(object)  # SKCCSpot object
 
@@ -109,6 +216,10 @@ class SKCCSpotWidget(QWidget):
         # Duplicate detection: track last time each callsign was shown (3-minute cooldown)
         self.last_shown_time: Dict[str, datetime] = {}
         self.duplicate_cooldown_seconds = 180  # 3 minutes
+
+        # Background worker threads
+        self._cleanup_worker: Optional[CleanupWorker] = None
+        self._award_cache_worker: Optional[AwardCacheWorker] = None
 
         # Config manager for persisting band selections
         self.config_manager = get_config_manager()
@@ -450,27 +561,70 @@ class SKCCSpotWidget(QWidget):
         self._new_spot_signal.emit(spot)
     
     def _handle_new_spot_on_main_thread(self, spot: SKCCSpot) -> None:
-        """Handle new spot on main UI thread (called via signal), filtering duplicates within 3-minute cooldown"""
-        now = datetime.now(timezone.utc)
-        callsign = spot.callsign.upper()
+        """
+        Handle new spot on main UI thread (called via signal)
 
-        # Check if this callsign was shown recently
-        if callsign in self.last_shown_time:
-            time_since_last = (now - self.last_shown_time[callsign]).total_seconds()
-            if time_since_last < self.duplicate_cooldown_seconds:
-                # Duplicate within cooldown period - skip it
-                logger.debug(f"Skipping duplicate spot: {callsign} (shown {time_since_last:.0f}s ago)")
+        This runs in the main Qt thread, so database operations are safe here.
+        Filters duplicates within 3-minute cooldown and applies spot filtering.
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            callsign = spot.callsign.upper()
+
+            # Check if this callsign was shown recently
+            if callsign in self.last_shown_time:
+                time_since_last = (now - self.last_shown_time[callsign]).total_seconds()
+                if time_since_last < self.duplicate_cooldown_seconds:
+                    # Duplicate within cooldown period - skip it
+                    logger.debug(f"Skipping duplicate spot: {callsign} (shown {time_since_last:.0f}s ago)")
+                    return
+
+            # Get worked callsigns for filtering (safe in main thread)
+            from src.database.models import Contact
+            session = self.spot_manager.db.get_session()
+            try:
+                worked_callsigns_result = session.query(Contact.callsign).distinct().all()
+                worked_callsigns = {c[0].upper() for c in worked_callsigns_result if c[0]}
+            finally:
+                session.close()
+
+            # Apply spot filter
+            if not self.spot_manager.spot_filter.matches(spot, worked_callsigns):
+                logger.debug(f"Spot {callsign} filtered by spot_filter")
                 return
 
-        # Not a duplicate (or cooldown expired) - add the spot and update tracking
-        self.last_shown_time[callsign] = now
-        self.spots.insert(0, spot)
+            # Classify spot as GOAL/TARGET/BOTH based on database (safe in main thread)
+            goal_type = self.spot_manager.spot_classifier.classify_spot(spot.callsign)
+            if goal_type and goal_type != "NONE":
+                spot.goal_type = goal_type
+                logger.info(f"{callsign} classified as {goal_type}")
 
-        # Keep only recent spots in memory (reduced from 500 to 200 to reduce memory usage)
-        if len(self.spots) > 200:
-            self.spots = self.spots[:200]
+            # Store in database (safe in main thread)
+            spot_data = {
+                "frequency": round(spot.frequency, 3),
+                "dx_callsign": spot.callsign,
+                "de_callsign": spot.reporter,
+                "dx_grid": spot.grid,
+                "comment": f"Speed: {spot.speed} WPM" if spot.speed else None,
+                "received_at": spot.timestamp,
+                "spotted_date": spot.timestamp.strftime("%Y%m%d"),
+                "spotted_time": spot.timestamp.strftime("%H%M"),
+            }
+            self.spot_manager.db.add_cluster_spot(spot_data)
+            logger.debug(f"Stored spot {callsign} in database")
 
-        self._apply_filters()
+            # Not a duplicate (or cooldown expired) - add the spot and update tracking
+            self.last_shown_time[callsign] = now
+            self.spots.insert(0, spot)
+
+            # Keep only recent spots in memory (reduced from 500 to 200 to reduce memory usage)
+            if len(self.spots) > 200:
+                self.spots = self.spots[:200]
+
+            self._apply_filters()
+
+        except Exception as e:
+            logger.error(f"Error handling spot {spot.callsign}: {e}", exc_info=True)
 
     def _on_connection_state_changed(self, state: RBNConnectionState) -> None:
         """Handle RBN connection state change"""
@@ -566,30 +720,58 @@ class SKCCSpotWidget(QWidget):
         self._apply_filters()
 
     def _cleanup_old_spots(self) -> None:
-        """Clean up old spots from memory and database"""
-        # Remove spots older than 30 minutes from memory (reduced from 1 hour)
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
-        old_count = len(self.spots)
-        self.spots = [s for s in self.spots if s.timestamp > cutoff]
-        if old_count > len(self.spots):
-            logger.debug(f"Cleaned up {old_count - len(self.spots)} old spots from memory")
+        """Clean up old spots from memory and database in background thread"""
+        # Don't start new cleanup if one is already running
+        if hasattr(self, '_cleanup_worker') and self._cleanup_worker and self._cleanup_worker.isRunning():
+            logger.debug("Cleanup worker already running, skipping")
+            return
 
-        # Remove spots older than 24 hours from database
-        self.spot_manager.cleanup_old_spots(hours=24)
+        def on_cleanup_finished():
+            """Handle cleanup completion on main thread"""
+            try:
+                # Check if widget is still valid (not being destroyed)
+                if not self or not hasattr(self, 'spots'):
+                    logger.debug("SKCC spots widget destroyed, skipping cleanup update")
+                    if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
+                        # Clean up the worker even if widget is being destroyed
+                        try:
+                            self._cleanup_worker.wait(100)
+                            self._cleanup_worker.deleteLater()
+                        except:
+                            pass
+                    return
 
-        # Clean up old entries from duplicate tracking (reduced from 10 to 5 minutes)
-        cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=5)
-        removed_count = 0
-        callsigns_to_remove = [
-            callsign for callsign, timestamp in self.last_shown_time.items()
-            if timestamp < cutoff_tracking
-        ]
-        for callsign in callsigns_to_remove:
-            del self.last_shown_time[callsign]
-            removed_count += 1
+                if self._cleanup_worker:
+                    # Wait for thread to fully exit before accessing its data
+                    self._cleanup_worker.wait(500)
 
-        if removed_count > 0:
-            logger.debug(f"Cleaned up {removed_count} old entries from duplicate tracking")
+                    # Update spots list with cleaned spots
+                    self.spots = self._cleanup_worker.new_spots
+
+                    # Remove tracked callsigns
+                    for callsign in self._cleanup_worker.callsigns_to_remove:
+                        self.last_shown_time.pop(callsign, None)
+
+                    # Disconnect signal before deletion to prevent double-calls
+                    try:
+                        self._cleanup_worker.finished.disconnect()
+                    except:
+                        pass
+
+                    self._cleanup_worker.deleteLater()
+                    self._cleanup_worker = None
+            except Exception as e:
+                logger.error(f"Error handling cleanup completion: {e}")
+
+        # Start background cleanup
+        self._cleanup_worker = CleanupWorker(
+            self.spot_manager,
+            self.spots,
+            self.last_shown_time
+        )
+        self._cleanup_worker.finished.connect(on_cleanup_finished)
+        self._cleanup_worker.start()
+        logger.debug("Started background cleanup worker")
 
     @staticmethod
     def _get_band_freq_range(band: str) -> Optional[tuple]:
@@ -610,45 +792,50 @@ class SKCCSpotWidget(QWidget):
         return bands.get(band)
 
     def _refresh_award_cache(self) -> None:
-        """Refresh cached data for award-critical SKCC members"""
-        try:
-            # Get SKCC numbers we've worked (efficient query - only returns SKCC numbers, not full Contact objects)
-            session = self.spot_manager.db.get_session()
+        """Refresh cached data for award-critical SKCC members in background thread"""
+        # Don't start new refresh if one is already running
+        if hasattr(self, '_award_cache_worker') and self._award_cache_worker and self._award_cache_worker.isRunning():
+            logger.debug("Award cache worker already running, skipping")
+            return
+
+        def on_cache_refresh_finished(worked_skcc: set, award_critical: set, _: set):
+            """Handle award cache refresh completion on main thread"""
             try:
-                from src.database.models import Contact
-                worked_skcc_numbers = session.query(Contact.skcc_number).filter(
-                    Contact.skcc_number.isnot(None)
-                ).distinct().all()
-                self.worked_skcc_members = {num[0].upper() for num in worked_skcc_numbers if num[0]}
-            finally:
-                session.close()
+                # Check if widget is still valid (not being destroyed)
+                if not self or not hasattr(self, 'worked_skcc_members'):
+                    logger.debug("SKCC spots widget destroyed, skipping award cache update")
+                    if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
+                        # Clean up the worker even if widget is being destroyed
+                        try:
+                            self._award_cache_worker.wait(100)
+                            self._award_cache_worker.deleteLater()
+                        except:
+                            pass
+                    return
 
-            # Get SKCC roster to identify members we haven't worked
-            roster = self.spot_manager.db.skcc_members.get_roster_dict()
+                if self._award_cache_worker:
+                    # Wait for thread to fully exit before deletion
+                    self._award_cache_worker.wait(500)
 
-            # Get current SKCC award progress
-            skcc_progress = self.spot_manager.db.get_award_progress("SKCC", "Members")
+                    self.worked_skcc_members = worked_skcc
+                    self.award_critical_skcc_members = award_critical
 
-            # Determine how many unique SKCC members we need for our target award
-            # SKCC levels: C=25, T=50, S=100, O=200, X=500, K=1000+
-            target_count = self._get_target_skcc_count(skcc_progress)
+                    # Disconnect signal before deletion to prevent double-calls
+                    try:
+                        self._award_cache_worker.finished.disconnect()
+                    except:
+                        pass
 
-            # If we need more members, identify which ones would help
-            if target_count and len(self.worked_skcc_members) < target_count:
-                # All unworked SKCC members are "award-critical"
-                all_skcc_numbers = set(roster.keys()) if roster else set()
-                self.award_critical_skcc_members = all_skcc_numbers - self.worked_skcc_members
-            else:
-                self.award_critical_skcc_members = set()
+                    self._award_cache_worker.deleteLater()
+                    self._award_cache_worker = None
+            except Exception as e:
+                logger.error(f"Error handling award cache completion: {e}")
 
-            logger.debug(
-                f"Award cache updated: worked={len(self.worked_skcc_members)}, "
-                f"critical={len(self.award_critical_skcc_members)}, "
-                f"target={target_count}"
-            )
-
-        except Exception as e:
-            logger.error(f"Error refreshing award cache: {e}")
+        # Start background refresh
+        self._award_cache_worker = AwardCacheWorker(self.spot_manager)
+        self._award_cache_worker.finished.connect(on_cache_refresh_finished)
+        self._award_cache_worker.start()
+        logger.debug("Started background award cache worker")
 
     @staticmethod
     def _get_target_skcc_count(progress: Any) -> Optional[int]:
@@ -710,74 +897,96 @@ class SKCCSpotWidget(QWidget):
     def _update_table(self) -> None:
         """Update spots table with filtered spots"""
         from src.ui.spot_eligibility_analyzer import EligibilityLevel
-        
-        self.spots_table.setRowCount(len(self.filtered_spots))
-        self.spot_count_label.setText(f"Spots: {len(self.filtered_spots)}")
 
-        for row, spot in enumerate(self.filtered_spots):
-            row_data = SKCCSpotRow(spot)
+        # Disable updates during table rebuild to prevent flickering and improve scrolling performance
+        self.spots_table.setUpdatesEnabled(False)
+        try:
+            self.spots_table.setRowCount(len(self.filtered_spots))
+            self.spot_count_label.setText(f"Spots: {len(self.filtered_spots)}")
 
-            # Build SKCC number string - show if available, empty otherwise
-            skcc_str = spot.skcc_number if spot.skcc_number else ""
+            for row, spot in enumerate(self.filtered_spots):
+                row_data = SKCCSpotRow(spot)
 
-            items = [
-                QTableWidgetItem(row_data.callsign),
-                QTableWidgetItem(row_data.frequency),
-                QTableWidgetItem(row_data.mode),
-                QTableWidgetItem(row_data.speed),
-                QTableWidgetItem(skcc_str),  # SKCC Number
-                QTableWidgetItem(row_data.reporter),
-                QTableWidgetItem(row_data.time),
-                QTableWidgetItem(row_data.get_age_string()),
-            ]
+                # Build SKCC number string - show if available, empty otherwise
+                skcc_str = spot.skcc_number if spot.skcc_number else ""
 
-            # Use award eligibility analyzer if available
-            highlight_color = None
-            tooltip_text = ""
-            
-            if self.spot_matcher and self.spot_matcher.eligibility_analyzer:
-                try:
-                    eligibility = self.spot_matcher.get_spot_eligibility(spot)
-                    
-                    # Color based on eligibility level
-                    color_map = {
-                        EligibilityLevel.CRITICAL: QColor(255, 0, 0, 120),      # Red
-                        EligibilityLevel.HIGH: QColor(255, 100, 0, 100),        # Orange
-                        EligibilityLevel.MEDIUM: QColor(255, 200, 0, 80),       # Yellow
-                        EligibilityLevel.LOW: QColor(100, 200, 100, 60),        # Green
-                        EligibilityLevel.NONE: None,                             # No highlight
-                    }
-                    
-                    if eligibility and eligibility.eligibility_level in color_map:
-                        highlight_color = color_map[eligibility.eligibility_level]
-                        tooltip_text = eligibility.tooltip_text or ""
-                
-                except Exception as e:
-                    logger.debug(f"Error getting eligibility for {spot.callsign}: {e}")
-            
-            # Fallback to legacy award-critical highlighting if no analyzer
-            if not highlight_color:
-                is_award_critical = self._is_award_critical_spot(spot)
-                if is_award_critical:
-                    highlight_color = QColor("#90EE90")  # Light green
-                    tooltip_text = "Award-critical SKCC member"
-            
-            # Apply highlighting and tooltip
-            if highlight_color:
-                for item in items:
-                    item.setBackground(highlight_color)
-                    if tooltip_text:
-                        item.setData(Qt.ItemDataRole.ToolTipRole, tooltip_text)
+                items = [
+                    QTableWidgetItem(row_data.callsign),
+                    QTableWidgetItem(row_data.frequency),
+                    QTableWidgetItem(row_data.mode),
+                    QTableWidgetItem(row_data.speed),
+                    QTableWidgetItem(skcc_str),  # SKCC Number
+                    QTableWidgetItem(row_data.reporter),
+                    QTableWidgetItem(row_data.time),
+                    QTableWidgetItem(row_data.get_age_string()),
+                ]
 
-            for col, item in enumerate(items):
-                item.setData(Qt.ItemDataRole.UserRole, spot)
-                self.spots_table.setItem(row, col, item)
+                # Use award eligibility analyzer if available
+                highlight_color = None
+                tooltip_text = ""
+
+                if self.spot_matcher and self.spot_matcher.eligibility_analyzer:
+                    try:
+                        eligibility = self.spot_matcher.get_spot_eligibility(spot)
+
+                        # Color based on eligibility level
+                        color_map = {
+                            EligibilityLevel.CRITICAL: QColor(255, 0, 0, 120),      # Red
+                            EligibilityLevel.HIGH: QColor(255, 100, 0, 100),        # Orange
+                            EligibilityLevel.MEDIUM: QColor(255, 200, 0, 80),       # Yellow
+                            EligibilityLevel.LOW: QColor(100, 200, 100, 60),        # Green
+                            EligibilityLevel.NONE: None,                             # No highlight
+                        }
+
+                        if eligibility and eligibility.eligibility_level in color_map:
+                            highlight_color = color_map[eligibility.eligibility_level]
+                            tooltip_text = eligibility.tooltip_text or ""
+
+                    except Exception as e:
+                        logger.debug(f"Error getting eligibility for {spot.callsign}: {e}")
+
+                # Fallback to legacy award-critical highlighting if no analyzer
+                if not highlight_color:
+                    is_award_critical = self._is_award_critical_spot(spot)
+                    if is_award_critical:
+                        highlight_color = QColor("#90EE90")  # Light green
+                        tooltip_text = "Award-critical SKCC member"
+
+                # Apply highlighting and tooltip
+                if highlight_color:
+                    for item in items:
+                        item.setBackground(highlight_color)
+                        if tooltip_text:
+                            item.setData(Qt.ItemDataRole.ToolTipRole, tooltip_text)
+
+                for col, item in enumerate(items):
+                    item.setData(Qt.ItemDataRole.UserRole, spot)
+                    self.spots_table.setItem(row, col, item)
+        finally:
+            # Re-enable updates to refresh the display
+            self.spots_table.setUpdatesEnabled(True)
 
     def closeEvent(self, event) -> None:
         """Clean up when widget is closed"""
         try:
             self.cleanup_timer.stop()
             self.award_cache_timer.stop()
+
+            # Stop any running worker threads with quick timeout
+            if hasattr(self, '_cleanup_worker') and self._cleanup_worker and self._cleanup_worker.isRunning():
+                self._cleanup_worker.quit()
+                if not self._cleanup_worker.wait(500):  # Wait max 500ms
+                    logger.warning("Cleanup worker didn't stop in time, terminating...")
+                    self._cleanup_worker.terminate()
+                    self._cleanup_worker.wait(100)
+
+            if hasattr(self, '_award_cache_worker') and self._award_cache_worker and self._award_cache_worker.isRunning():
+                self._award_cache_worker.quit()
+                if not self._award_cache_worker.wait(500):  # Wait max 500ms
+                    logger.warning("Award cache worker didn't stop in time, terminating...")
+                    self._award_cache_worker.terminate()
+                    self._award_cache_worker.wait(100)
+
             if self.spot_manager.is_running():
                 self.spot_manager.stop()
         except Exception as e:
