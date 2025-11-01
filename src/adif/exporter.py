@@ -11,18 +11,11 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-# Try to import Rust accelerated functions
-try:
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'venv/lib/python3.14/site-packages'))
-    import rust_grid_calc
-    RUST_AVAILABLE = True
-    logger = logging.getLogger(__name__)
-    logger.info("ADIF exporter: Rust acceleration available")
-except ImportError:
-    RUST_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.debug("ADIF exporter: Using Python implementation")
+# RUST DISABLED: Rust module causes segmentation faults in background threads
+# See: https://github.com/PyO3/pyo3/issues/1205
+RUST_AVAILABLE = False
+logger = logging.getLogger(__name__)
+logger.warning("ADIF exporter: Rust acceleration DISABLED - using Python implementation for thread safety")
 
 
 class ADIFExporter:
