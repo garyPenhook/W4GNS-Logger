@@ -19,6 +19,7 @@ from PyQt6.QtGui import QColor, QFont
 
 from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
 from src.config.settings import get_config_manager
+from src.database.models import Contact
 
 if TYPE_CHECKING:
     from src.ui.spot_matcher import SpotMatcher
@@ -580,7 +581,6 @@ class SKCCSpotWidget(QWidget):
                     return
 
             # Get worked callsigns for filtering (safe in main thread)
-            from src.database.models import Contact
             session = self.spot_manager.db.get_session()
             try:
                 worked_callsigns_result = session.query(Contact.callsign).distinct().all()
