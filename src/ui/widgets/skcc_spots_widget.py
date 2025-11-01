@@ -383,6 +383,13 @@ class SKCCSpotWidget(QWidget):
         # Config manager for persisting band selections
         self.config_manager = get_config_manager()
 
+        # Debounce timer to throttle filter changes
+        # Prevents excessive table updates when user rapidly changes filters
+        self._filter_debounce_timer = QTimer()
+        self._filter_debounce_timer.setSingleShot(True)
+        self._filter_debounce_timer.timeout.connect(self._apply_filters_debounced)
+        self._filter_debounce_ms = 100  # Wait 100ms after last change before updating
+
         # Set up UI
         self._init_ui()
         self._load_band_selections()  # Load saved band selections
@@ -463,12 +470,12 @@ class SKCCSpotWidget(QWidget):
         self.strength_spin = QSpinBox()
         self.strength_spin.setRange(0, 50)
         self.strength_spin.setValue(0)
-        self.strength_spin.valueChanged.connect(self._apply_filters)
+        self.strength_spin.valueChanged.connect(self._on_filter_changed)  # Debounced
         filter_layout.addWidget(self.strength_spin)
 
         # Unworked only
         self.unworked_only_check = QCheckBox("Unworked Only")
-        self.unworked_only_check.stateChanged.connect(self._apply_filters)
+        self.unworked_only_check.stateChanged.connect(self._on_filter_changed)  # Debounced
         filter_layout.addWidget(self.unworked_only_check)
 
         filter_layout.addStretch()
@@ -604,17 +611,27 @@ class SKCCSpotWidget(QWidget):
             logger.warning(f"Error loading band selections: {e}")
 
     def _on_band_selection_changed(self) -> None:
-        """Handle band selection change - save selections and reapply filters"""
+        """Handle band selection change - save selections and reapply filters (debounced)"""
         try:
             # Get currently selected bands
             selected_bands = [band for band, check in self.band_checks.items() if check.isChecked()]
             # Save to config
             self.config_manager.set("dx_cluster.band_selections", ",".join(selected_bands))
             logger.debug(f"Saved band selections: {selected_bands}")
-            # Reapply filters to update displayed spots
-            self._apply_filters()
+            # Reapply filters to update displayed spots (debounced to avoid excessive updates)
+            self._on_filter_changed()
         except Exception as e:
             logger.error(f"Error saving band selections: {e}")
+
+    def _on_filter_changed(self) -> None:
+        """Debounce filter changes to prevent excessive table updates on main thread"""
+        # Restart the debounce timer
+        self._filter_debounce_timer.stop()
+        self._filter_debounce_timer.start(self._filter_debounce_ms)
+
+    def _apply_filters_debounced(self) -> None:
+        """Apply filters after debounce period (called from timer)"""
+        self._apply_filters()
 
     def _sync_roster(self) -> None:
         """Sync SKCC membership roster - force fresh download in background thread"""
@@ -763,7 +780,7 @@ class SKCCSpotWidget(QWidget):
             # Set goal type if classified
             if goal_type and goal_type != "NONE":
                 processed_spot.goal_type = goal_type
-                logger.info(f"{processed_spot.callsign} classified as {goal_type}")
+                logger.debug(f"{processed_spot.callsign} classified as {goal_type}")
 
             # Update tracking and add spot to display
             now = datetime.now(timezone.utc)
@@ -774,7 +791,9 @@ class SKCCSpotWidget(QWidget):
             if len(self.spots) > 200:
                 self.spots = self.spots[:200]
 
-            self._apply_filters()
+            # Debounce filter updates to prevent excessive main thread work
+            # This throttles table redraws from potentially 100+ spots/min to just a few updates/sec
+            self._on_filter_changed()
 
         except Exception as e:
             logger.error(f"Error in spot processing callback: {e}", exc_info=True)
@@ -794,43 +813,35 @@ class SKCCSpotWidget(QWidget):
         logger.debug(f"RBN state changed: {state.value}")
 
     def _apply_filters(self) -> None:
-        """Apply filters to spots list"""
-        self.filtered_spots = self.spots.copy()
+        """Apply filters to spots list (optimized for performance)"""
+        # Start with all spots
+        filtered_spots = self.spots
 
-        # Band filter - only include selected bands
+        # Build band frequency ranges once (optimization: avoid repeated calls to _get_band_freq_range)
         selected_bands = [band for band, check in self.band_checks.items() if check.isChecked()]
+        band_ranges = {}
         if selected_bands:
-            filtered_by_band = []
-            for spot in self.filtered_spots:
-                for band in selected_bands:
-                    freq_range = self._get_band_freq_range(band)
-                    if freq_range:
-                        low, high = freq_range
-                        if low <= spot.frequency <= high:
-                            filtered_by_band.append(spot)
-                            break
-            self.filtered_spots = filtered_by_band
+            for band in selected_bands:
+                freq_range = self._get_band_freq_range(band)
+                if freq_range:
+                    band_ranges[band] = freq_range
 
-        # Mode filter - only CW mode
-        self.filtered_spots = [
-            s for s in self.filtered_spots
-            if s.mode == "CW"
-        ]
-
-        # Strength filter
+        # Apply all filters in a single pass (optimization: avoid multiple list copies)
         min_strength = self.strength_spin.value()
-        self.filtered_spots = [
-            s for s in self.filtered_spots
-            if s.strength >= min_strength
-        ]
+        check_unworked = self.unworked_only_check.isChecked()
+        worked_callsigns = self._get_worked_callsigns_cached() if check_unworked else set()
 
-        # Unworked only
-        if self.unworked_only_check.isChecked():
-            worked = self._get_worked_callsigns_cached()
-            self.filtered_spots = [
-                s for s in self.filtered_spots
-                if s.callsign not in worked
-            ]
+        # Single-pass filtering for better performance
+        self.filtered_spots = [
+            s for s in filtered_spots
+            if s.mode == "CW"  # Mode filter
+            and s.strength >= min_strength  # Strength filter
+            and (not selected_bands or any(  # Band filter
+                low <= s.frequency <= high
+                for low, high in band_ranges.values()
+            ))
+            and (not check_unworked or s.callsign not in worked_callsigns)  # Unworked filter
+        ]
 
         self._update_table()
 
