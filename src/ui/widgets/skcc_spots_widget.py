@@ -912,9 +912,10 @@ class SKCCSpotWidget(QWidget):
                     logger.debug("SKCC spots widget destroyed, skipping cleanup update")
                     if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
                         try:
-                            # Properly clean up the worker thread
-                            self._cleanup_worker.quit()
-                            # Don't wait() on UI thread - just schedule deletion
+                            # CleanupWorker has no event loop, so call wait() not quit()
+                            # Thread has already exited (we're in finished signal), so this returns immediately
+                            if not self._cleanup_worker.wait(100):
+                                logger.warning("Cleanup worker wait() timeout")
                             self._cleanup_worker.deleteLater()
                         except:
                             pass
@@ -935,10 +936,11 @@ class SKCCSpotWidget(QWidget):
                     except:
                         pass
 
-                    # Properly stop and clean up the worker thread
-                    # quit() ensures the thread event loop stops
-                    # deleteLater() schedules the object for deletion
-                    self._cleanup_worker.quit()
+                    # Properly clean up the worker thread
+                    # Since thread has no event loop, use wait() not quit()
+                    # Thread already exited (we're in finished signal), so wait() returns immediately
+                    if not self._cleanup_worker.wait(100):
+                        logger.warning("Cleanup worker wait() timeout")
                     self._cleanup_worker.deleteLater()
                     self._cleanup_worker = None
             except Exception as e:
@@ -992,9 +994,10 @@ class SKCCSpotWidget(QWidget):
                     logger.debug("SKCC spots widget destroyed, skipping award cache update")
                     if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
                         try:
-                            # Properly clean up the worker thread
-                            self._award_cache_worker.quit()
-                            # Don't wait() on UI thread - just schedule deletion
+                            # AwardCacheWorker has no event loop, so call wait() not quit()
+                            # Thread has already exited (we're in finished signal), so this returns immediately
+                            if not self._award_cache_worker.wait(100):
+                                logger.warning("Award cache worker wait() timeout")
                             self._award_cache_worker.deleteLater()
                         except:
                             pass
@@ -1011,10 +1014,11 @@ class SKCCSpotWidget(QWidget):
                     except:
                         pass
 
-                    # Properly stop and clean up the worker thread
-                    # quit() ensures the thread event loop stops
-                    # deleteLater() schedules the object for deletion
-                    self._award_cache_worker.quit()
+                    # Properly clean up the worker thread
+                    # Since thread has no event loop, use wait() not quit()
+                    # Thread already exited (we're in finished signal), so wait() returns immediately
+                    if not self._award_cache_worker.wait(100):
+                        logger.warning("Award cache worker wait() timeout")
                     self._award_cache_worker.deleteLater()
                     self._award_cache_worker = None
             except Exception as e:
