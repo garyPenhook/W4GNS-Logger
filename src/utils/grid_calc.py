@@ -1,29 +1,14 @@
 """
 Grid Square and Distance Calculations
 
-High-performance wrapper around Rust implementation with Python fallback.
+Pure Python implementation for thread-safe grid calculations.
 """
 
 import logging
 from typing import Optional, List, Tuple, Dict, Any
-import importlib.util
-import sys
-import platform
-from pathlib import Path
+from src.services.voacap_muf_fetcher import VOACAPMUFFetcher
 
 logger = logging.getLogger(__name__)
-
-# RUST DISABLED: Rust module causes segmentation faults when called from background threads
-# due to PyO3 GIL handling issues. Using Python implementation only.
-# See: https://github.com/PyO3/pyo3/issues/1205
-_USE_RUST = False
-logger.warning("Rust grid calculator DISABLED - using Python fallback for thread safety")
-
-if _USE_RUST:
-    logger.info("Using Rust grid calculator (high performance)")
-else:
-    logger.warning("Rust grid calculator not available, using Python fallback")
-    from src.services.voacap_muf_fetcher import VOACAPMUFFetcher
 
 
 def calculate_distance(grid1: str, grid2: str) -> Optional[float]:
@@ -38,10 +23,7 @@ def calculate_distance(grid1: str, grid2: str) -> Optional[float]:
         Distance in kilometers, or None if invalid
     """
     try:
-        if _USE_RUST:
-            return rust_grid_calc.calculate_distance(grid1, grid2)
-        else:
-            return VOACAPMUFFetcher._grid_distance(grid1, grid2)
+        return VOACAPMUFFetcher._grid_distance(grid1, grid2)
     except Exception as e:
         logger.debug(f"Error calculating distance {grid1} → {grid2}: {e}")
         return None
@@ -58,14 +40,11 @@ def batch_calculate_distances(home_grid: str, grids: List[str]) -> List[Optional
     Returns:
         List of distances in kilometers (None for invalid grids)
     """
-    if _USE_RUST:
-        return rust_grid_calc.batch_calculate_distances(home_grid, grids)
-    else:
-        # Python fallback
-        results = []
-        for grid in grids:
-            results.append(calculate_distance(home_grid, grid))
-        return results
+    # Python implementation
+    results = []
+    for grid in grids:
+        results.append(calculate_distance(home_grid, grid))
+    return results
 
 
 def calculate_bearing(grid1: str, grid2: str) -> Optional[float]:
@@ -80,89 +59,76 @@ def calculate_bearing(grid1: str, grid2: str) -> Optional[float]:
         Bearing in degrees (0-360), or None if invalid
     """
     try:
-        if _USE_RUST:
-            return rust_grid_calc.calculate_bearing(grid1, grid2)
-        else:
-            # Python fallback not implemented
-            logger.warning("Bearing calculation only available with Rust module")
-            return None
+        # Python fallback not implemented
+        logger.warning("Bearing calculation not yet implemented")
+        return None
     except Exception as e:
         logger.debug(f"Error calculating bearing {grid1} → {grid2}: {e}")
         return None
 
 
 def is_rust_available() -> bool:
-    """Check if Rust acceleration is available"""
-    return _USE_RUST
+    """Check if Rust acceleration is available - always False, using Python only"""
+    return False
 
 
 # Award calculation functions
 def calculate_centurion_progress_rust(contacts: List[Tuple]) -> Tuple[int, List]:
     """
-    Calculate Centurion award progress using Rust.
-    
+    Calculate Centurion award progress (Python implementation).
+
     Args:
         contacts: List of (callsign, skcc_number, mode, key_type, qso_date, band)
-        
+
     Returns:
         (unique_count, details_list)
     """
-    if not _USE_RUST:
-        raise RuntimeError("Rust module not available")
-    return rust_grid_calc.calculate_centurion_progress(contacts)
+    raise NotImplementedError("Centurion progress calculation requires database queries")
 
 
 def calculate_tribune_progress_rust(contacts: List[Tuple]) -> Tuple[int, List]:
     """
-    Calculate Tribune award progress using Rust.
-    
+    Calculate Tribune award progress (Python implementation).
+
     Args:
         contacts: List of (callsign, skcc_number, mode, key_type, qso_date, band)
-        
+
     Returns:
         (unique_count, details_list)
     """
-    if not _USE_RUST:
-        raise RuntimeError("Rust module not available")
-    return rust_grid_calc.calculate_tribune_progress(contacts)
+    raise NotImplementedError("Tribune progress calculation requires database queries")
 
 
 def calculate_qrp_mpw_progress_rust(contacts: List[Tuple]) -> Tuple[int, float, float, List]:
     """
-    Calculate QRP MPW award progress using Rust.
-    
+    Calculate QRP MPW award progress (Python implementation).
+
     Args:
         contacts: List of (callsign, tx_power, distance_km, mode, date, band)
-        
+
     Returns:
         (qualifying_count, best_mpw, average_mpw, details_list)
     """
-    if not _USE_RUST:
-        raise RuntimeError("Rust module not available")
-    return rust_grid_calc.calculate_qrp_mpw_progress(contacts)
+    raise NotImplementedError("QRP MPW progress calculation requires database queries")
 
 
 def count_unique_states_rust(states: List[str]) -> int:
-    """Count unique states using Rust"""
-    if not _USE_RUST:
-        return len(set(s for s in states if s))
-    return rust_grid_calc.count_unique_states(states)
+    """Count unique states (Python implementation)"""
+    return len(set(s for s in states if s))
 
 
 def count_unique_prefixes_rust(callsigns: List[str]) -> int:
-    """Count unique prefixes using Rust"""
-    if not _USE_RUST:
-        # Python fallback
-        prefixes = set()
-        for call in callsigns:
-            if call:
-                # Simple prefix extraction
-                for i, c in enumerate(call):
-                    if c.isdigit():
-                        prefixes.add(call[:i+1])
-                        break
-        return len(prefixes)
-    return rust_grid_calc.count_unique_prefixes(callsigns)
+    """Count unique prefixes (Python implementation)"""
+    # Python implementation
+    prefixes = set()
+    for call in callsigns:
+        if call:
+            # Simple prefix extraction
+            for i, c in enumerate(call):
+                if c.isdigit():
+                    prefixes.add(call[:i+1])
+                    break
+    return len(prefixes)
 
 
 # Spot matcher functions (for RBN/DX Cluster real-time filtering)
@@ -230,13 +196,7 @@ def frequency_to_band(freq_mhz: float) -> str:
     Returns:
         Band name (e.g., "20M", "40M") or "UNK" if unknown
     """
-    if _USE_RUST:
-        try:
-            return rust_grid_calc.frequency_to_band(freq_mhz)
-        except Exception as e:
-            logger.debug(f"Rust frequency_to_band failed: {e}")
-    
-    # Python fallback
+    # Python implementation
     if 1.8 <= freq_mhz <= 2.0:
         return "160M"
     elif 3.5 <= freq_mhz <= 4.0:

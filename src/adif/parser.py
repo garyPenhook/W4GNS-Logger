@@ -3,7 +3,7 @@ ADIF Parser Module
 
 Handles parsing of ADIF (ADI and ADX) format files.
 Implements ADIF 3.x specification compliance.
-Accelerated with Rust when available.
+Pure Python implementation for thread safety.
 """
 
 import logging
@@ -11,11 +11,7 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 
-# RUST DISABLED: Rust module causes segmentation faults in background threads
-# See: https://github.com/PyO3/pyo3/issues/1205
-RUST_AVAILABLE = False
 logger = logging.getLogger(__name__)
-logger.warning("ADIF parser: Rust acceleration DISABLED - using Python implementation for thread safety")
 
 
 class ADIFParser:
@@ -146,27 +142,6 @@ class ADIFParser:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-
-            # Try Rust accelerated parsing first
-            if RUST_AVAILABLE:
-                try:
-                    import time
-                    start = time.time()
-                    records_list, header_dict = rust_grid_calc.parse_adi(content)
-                    elapsed = time.time() - start
-                    
-                    # Convert to standard Python types
-                    self.records = [dict(rec) for rec in records_list]
-                    self.header = dict(header_dict)
-                    
-                    logger.info(f"Parsed {len(self.records)} records from {file_path} in {elapsed*1000:.2f}ms (Rust)")
-                    return self.records, self.header
-                    
-                except Exception as e:
-                    logger.warning(f"Rust parser failed, falling back to Python: {e}")
-                    # Reset for Python parsing
-                    self.records = []
-                    self.header = {}
 
             # Split header and records
             if "<EOH>" in content:

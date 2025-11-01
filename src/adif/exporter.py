@@ -3,7 +3,7 @@ ADIF Exporter Module
 
 Handles exporting contacts to ADIF (ADI and ADX) format files.
 Implements ADIF 3.x specification compliance.
-Accelerated with Rust when available.
+Pure Python implementation for thread safety.
 """
 
 import logging
@@ -11,11 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-# RUST DISABLED: Rust module causes segmentation faults in background threads
-# See: https://github.com/PyO3/pyo3/issues/1205
-RUST_AVAILABLE = False
 logger = logging.getLogger(__name__)
-logger.warning("ADIF exporter: Rust acceleration DISABLED - using Python implementation for thread safety")
 
 
 class ADIFExporter:
@@ -184,37 +180,7 @@ class ADIFExporter:
             raise ValueError("No contacts to export")
 
         try:
-            # Try Rust accelerated export first
-            if RUST_AVAILABLE:
-                try:
-                    import time
-                    start = time.time()
-                    
-                    # Convert contacts to dicts
-                    records = [self._contact_to_dict(contact, include_fields) for contact in contacts]
-                    
-                    # Build header dict
-                    header_dict = {
-                        'ADIF_VER': '3.1.5',
-                        'PROGRAMID': 'W4GNSLogger',
-                        'PROGRAMVERSION': '1.0'
-                    }
-                    
-                    # Export with Rust
-                    content = rust_grid_calc.export_adi(records, header_dict, 'W4GNSLogger', '1.0')
-                    elapsed = time.time() - start
-                    
-                    # Write to file
-                    with open(filename, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    
-                    logger.info(f"Exported {len(contacts)} contacts to {filename} in {elapsed*1000:.2f}ms (Rust)")
-                    return
-                    
-                except Exception as e:
-                    logger.warning(f"Rust exporter failed, falling back to Python: {e}")
-            
-            # Fallback to Python implementation
+            # Python implementation
             with open(filename, 'w', encoding='utf-8') as f:
                 # Write ADIF header with record count
                 header = self._build_header(my_skcc, len(contacts), my_callsign)
