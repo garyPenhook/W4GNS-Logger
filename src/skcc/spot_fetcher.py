@@ -7,6 +7,7 @@ and filter them based on user preferences (bands, modes, unworked stations, etc.
 
 import logging
 import socket
+import select
 import threading
 import time
 from datetime import datetime, timezone
@@ -104,19 +105,36 @@ class RBNSpotFetcher:
         logger.info("SKCC spot fetcher started")
 
     def stop(self) -> None:
-        """Stop monitoring for SKCC spots"""
+        """Stop monitoring for SKCC spots with proper cleanup"""
+        logger.info("Stopping SKCC spot fetcher...")
         self._stop_event.set()
+
+        # Close socket to interrupt recv() call
         if self.socket:
+            try:
+                # Shutdown both directions to ensure recv() gets interrupted
+                self.socket.shutdown(socket.SHUT_RDWR)
+            except Exception as e:
+                logger.debug(f"Socket shutdown error (may be already closed): {e}")
+
             try:
                 self.socket.close()
             except Exception as e:
-                logger.error(f"Error closing socket: {e}")
+                logger.debug(f"Error closing socket: {e}")
+
         self.socket = None
+
+        # Wait for listener thread to finish (with timeout)
+        if self._listener_thread and self._listener_thread.is_alive():
+            self._listener_thread.join(timeout=2.0)
+            if self._listener_thread.is_alive():
+                logger.warning("Listener thread did not stop within timeout")
+
         self._set_state(RBNConnectionState.DISCONNECTED)
         logger.info("SKCC spot fetcher stopped")
 
     def _run(self) -> None:
-        """Main loop for spot fetching"""
+        """Main loop for spot fetching with proper shutdown handling"""
         if self.use_test_spots:
             logger.warning("Using TEST spot simulation (no real RBN connection)")
             self._generate_test_spots()
@@ -127,9 +145,10 @@ class RBNSpotFetcher:
                 except Exception as e:
                     logger.error(f"Spot fetcher error: {e}", exc_info=True)
                     self._set_state(RBNConnectionState.ERROR)
-                    # Backoff before reconnecting
-                    for _ in range(30):
+                    # Backoff before reconnecting - check stop event every second
+                    for i in range(60):
                         if self._stop_event.is_set():
+                            logger.info("Stop event received during reconnect backoff, exiting")
                             return
                         time.sleep(1)
 
@@ -187,7 +206,7 @@ class RBNSpotFetcher:
         time.sleep(60)
 
     def _listen_for_spots(self) -> None:
-        """Listen for incoming RBN spots"""
+        """Listen for incoming RBN spots with proper shutdown handling"""
         buffer = ""
         line_count = 0
         spot_count = 0
@@ -195,6 +214,15 @@ class RBNSpotFetcher:
 
         while not self._stop_event.is_set() and self.socket:
             try:
+                # Use select() with 0.5 second timeout to allow checking stop event
+                # This prevents blocking indefinitely on socket.recv()
+                ready = select.select([self.socket], [], [], 0.5)
+
+                if not ready[0]:
+                    # Timeout - check stop event and loop again
+                    continue
+
+                # Socket is ready for reading
                 data = self.socket.recv(1024).decode("utf-8", errors="ignore")
                 if not data:
                     logger.warning("RBN connection closed by server")
@@ -220,7 +248,9 @@ class RBNSpotFetcher:
                         else:
                             skip_count += 1
 
-            except socket.timeout:
+            except select.error as e:
+                logger.debug(f"Select error (may be normal during shutdown): {e}")
+                # Continue - select.error can occur during shutdown
                 continue
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
