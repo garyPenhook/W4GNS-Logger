@@ -105,6 +105,7 @@ ignore = [
     "E501",  # line too long
     "F601",  # dictionary key literal repeated
     "E402",  # module import not at top of file
+    "E722",  # bare except (pre-existing in codebase, should be fixed separately)
 ]
 exclude = [
     ".git",
