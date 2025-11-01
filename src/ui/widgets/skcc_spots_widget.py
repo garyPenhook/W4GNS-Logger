@@ -837,11 +837,12 @@ class SKCCSpotWidget(QWidget):
             except Exception as e:
                 logger.error(f"Error handling cleanup completion: {e}")
 
-        # Start background cleanup
+        # Start background cleanup with COPIES of mutable data to avoid race conditions
+        # The worker thread will iterate over these copies, not the live references
         self._cleanup_worker = CleanupWorker(
             self.spot_manager,
-            self.spots,
-            self.last_shown_time
+            self.spots.copy(),  # COPY to avoid race condition while main thread modifies
+            self.last_shown_time.copy()  # COPY to avoid race condition while main thread modifies
         )
         self._cleanup_worker.finished.connect(on_cleanup_finished)
         self._cleanup_worker.start()
