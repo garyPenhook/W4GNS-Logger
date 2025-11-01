@@ -41,12 +41,19 @@ class DatabaseRepository:
                 echo=False,
                 connect_args={
                     'timeout': 10.0,  # 10 second timeout for database lock
-                    'check_same_thread': False  # Allow multi-threaded access
+                    'check_same_thread': False,  # Allow multi-threaded access
+                    'isolation_level': None  # Autocommit mode for better concurrency
                 },
                 poolclass=pool.SingletonThreadPool,  # Use singleton pool for SQLite
                 pool_pre_ping=True  # Verify connections before use
             )
             self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+
+            # Enable WAL mode for SQLite to allow concurrent reads and writes
+            with self.engine.connect() as conn:
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA wal_autocheckpoint=1000"))  # Checkpoint every 1000 pages
+                conn.execute(text("PRAGMA busy_timeout=10000"))  # 10 second timeout
 
             # Create tables if they don't exist
             Base.metadata.create_all(self.engine)

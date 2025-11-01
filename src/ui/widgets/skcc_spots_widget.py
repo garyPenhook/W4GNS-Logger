@@ -72,7 +72,7 @@ class SKCCSpotRow:
 
 
 class SpotProcessingWorker(QObject):
-    """Queue-based worker for processing spots in background thread"""
+    """Queue-based worker for processing spots in background thread with batched database writes"""
     spot_processed = pyqtSignal(object, set, str, bool)  # spot, worked_callsigns, goal_type, should_store
 
     def __init__(self, spot_manager, spot_filter: SKCCSpotFilter):
@@ -82,31 +82,50 @@ class SpotProcessingWorker(QObject):
         self.running = True
         self.spot_queue: List[SKCCSpot] = []
 
+        # Batching parameters to reduce database lock contention
+        self.batch_write_size = 10  # Write spots in batches of 10
+        self.batch_timeout_ms = 500  # Or every 500ms, whichever comes first
+        self.pending_spots = []  # Spots waiting to be written
+        self.last_batch_time = datetime.now(timezone.utc)
+
+        # Cache worked callsigns to avoid repeated queries
+        self._worked_callsigns_cache: Optional[set] = None
+        self._cache_timestamp: Optional[datetime] = None
+        self._cache_ttl_seconds = 5  # Refresh cache every 5 seconds
+
     def add_spot(self, spot: SKCCSpot):
-        """Add spot to processing queue"""
+        """Add spot to processing queue with overflow protection"""
         self.spot_queue.append(spot)
 
+        # Safety valve: if queue gets too large, drop oldest spots
+        # This prevents memory explosion if processing can't keep up with spots
+        max_queue_size = 1000  # Max 1000 pending spots in queue
+        if len(self.spot_queue) > max_queue_size:
+            overflow_count = len(self.spot_queue) - max_queue_size
+            self.spot_queue = self.spot_queue[overflow_count:]
+            logger.warning(f"Spot queue overflow: dropped {overflow_count} old spots to prevent memory leak")
+
     def process_spots(self):
-        """Process all queued spots (called from worker thread)"""
+        """Process all queued spots with batched database writes"""
         while self.running:
             # Process all spots in queue
             while self.spot_queue and self.running:
                 spot = self.spot_queue.pop(0)
                 self._process_single_spot(spot)
 
+            # Check if we should flush pending writes
+            time_since_last_batch = (datetime.now(timezone.utc) - self.last_batch_time).total_seconds() * 1000
+            if self.pending_spots and time_since_last_batch >= self.batch_timeout_ms:
+                self._flush_pending_writes()
+
             # Sleep briefly to avoid busy-waiting
             QThread.msleep(10)
 
     def _process_single_spot(self, spot: SKCCSpot):
-        """Process a single spot"""
+        """Process a single spot (without writing to database yet)"""
         try:
-            # Get worked callsigns for filtering
-            session = self.spot_manager.db.get_session()
-            try:
-                worked_callsigns_result = session.query(Contact.callsign).distinct().all()
-                worked_callsigns = {c[0].upper() for c in worked_callsigns_result if c[0]}
-            finally:
-                session.close()
+            # Get worked callsigns with caching to reduce database queries
+            worked_callsigns = self._get_worked_callsigns_cached()
 
             # Apply spot filter
             if not self.spot_filter.matches(spot, worked_callsigns):
@@ -117,7 +136,7 @@ class SpotProcessingWorker(QObject):
             # Classify spot as GOAL/TARGET/BOTH
             goal_type = self.spot_manager.spot_classifier.classify_spot(spot.callsign)
 
-            # Store in database
+            # Prepare spot data for batched write
             spot_data = {
                 "frequency": round(spot.frequency, 3),
                 "dx_callsign": spot.callsign,
@@ -128,18 +147,76 @@ class SpotProcessingWorker(QObject):
                 "spotted_date": spot.timestamp.strftime("%Y%m%d"),
                 "spotted_time": spot.timestamp.strftime("%H%M"),
             }
-            self.spot_manager.db.add_cluster_spot(spot_data)
-            logger.debug(f"Stored spot {spot.callsign} in database")
 
-            self.spot_processed.emit(spot, worked_callsigns, goal_type, True)
+            # Add to pending batch instead of writing immediately
+            self.pending_spots.append((spot_data, spot, worked_callsigns, goal_type))
+
+            # Flush if batch is full
+            if len(self.pending_spots) >= self.batch_write_size:
+                self._flush_pending_writes()
+
+            logger.debug(f"Queued spot {spot.callsign} for batched write (pending: {len(self.pending_spots)})")
 
         except Exception as e:
-            logger.error(f"Error processing spot {spot.callsign}: {e}", exc_info=True)
+            logger.error(f"Error processing spot: {e}", exc_info=True)
             self.spot_processed.emit(spot, set(), "NONE", False)
 
+    def _get_worked_callsigns_cached(self) -> set:
+        """Get worked callsigns with caching to reduce database queries"""
+        now = datetime.now(timezone.utc)
+
+        # Use cache if still valid
+        if (self._worked_callsigns_cache is not None and
+            self._cache_timestamp is not None and
+            (now - self._cache_timestamp).total_seconds() < self._cache_ttl_seconds):
+            return self._worked_callsigns_cache
+
+        # Refresh cache
+        session = self.spot_manager.db.get_session()
+        try:
+            worked_callsigns_result = session.query(Contact.callsign).distinct().all()
+            self._worked_callsigns_cache = {c[0].upper() for c in worked_callsigns_result if c[0]}
+            self._cache_timestamp = now
+            return self._worked_callsigns_cache
+        finally:
+            session.close()
+
+    def _flush_pending_writes(self):
+        """Flush all pending spots to database in a single transaction"""
+        if not self.pending_spots:
+            return
+
+        session = self.spot_manager.db.get_session()
+        try:
+            # Batch write all pending spots in a single transaction
+            from src.database.models import ClusterSpot
+            batch_count = len(self.pending_spots)
+
+            for spot_data, spot, worked_callsigns, goal_type in self.pending_spots:
+                db_spot = ClusterSpot(**spot_data)
+                session.add(db_spot)
+                # Emit signal for UI update (non-blocking)
+                self.spot_processed.emit(spot, worked_callsigns, goal_type, True)
+
+            session.commit()
+            logger.debug(f"Flushed {batch_count} spots to database in batch write")
+            self.pending_spots.clear()
+            self.last_batch_time = datetime.now(timezone.utc)
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error in batch write: {e}", exc_info=True)
+            # Emit failure for all pending spots
+            for spot_data, spot, worked_callsigns, goal_type in self.pending_spots:
+                self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
+            self.pending_spots.clear()
+        finally:
+            session.close()
+
     def stop(self):
-        """Stop processing"""
+        """Stop processing and flush any pending writes"""
         self.running = False
+        # Flush remaining spots before stopping
+        self._flush_pending_writes()
 
 
 class CleanupWorker(QThread):
@@ -157,8 +234,8 @@ class CleanupWorker(QThread):
     def run(self):
         """Run cleanup in background thread"""
         try:
-            # Remove spots older than 30 minutes from memory
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+            # Remove spots older than 10 minutes from memory (was 30) - more aggressive cleanup
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
             old_count = len(self.spots)
             self.new_spots = [s for s in self.spots if s.timestamp > cutoff]
             if old_count > len(self.new_spots):
@@ -167,8 +244,8 @@ class CleanupWorker(QThread):
             # Remove spots older than 24 hours from database
             self.spot_manager.cleanup_old_spots(hours=24)
 
-            # Clean up old entries from duplicate tracking
-            cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=5)
+            # Clean up old entries from duplicate tracking - much more aggressive (was 5 minutes)
+            cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=2)
             self.callsigns_to_remove = [
                 callsign for callsign, timestamp in self.last_shown_time.items()
                 if timestamp < cutoff_tracking
@@ -177,7 +254,7 @@ class CleanupWorker(QThread):
             if self.callsigns_to_remove:
                 logger.debug(f"Cleaned up {len(self.callsigns_to_remove)} old entries from duplicate tracking")
         except Exception as e:
-            logger.error(f"Error in cleanup worker: {e}")
+            logger.error(f"Error in cleanup worker: {e}", exc_info=True)
         finally:
             self.finished.emit()
 
@@ -275,15 +352,17 @@ class SKCCSpotWidget(QWidget):
         self.filtered_spots: List[SKCCSpot] = []
 
         # Worked callsigns cache for "Unworked only" filter
+        # Cache on startup and refresh every 30 minutes (not 60 seconds) to reduce DB load
         self._worked_callsigns_cache: set[str] = set()
         self._worked_cache_timestamp: Optional[datetime] = None
-        self._worked_cache_ttl_seconds: int = 60
+        self._worked_cache_ttl_seconds: int = 1800  # 30 minutes (was 60 seconds)
 
         # Cache for award-critical spots (legacy, still used as fallback)
         self.award_critical_skcc_members: set = set()
         self.worked_skcc_members: set = set()
-        # Defer award cache refresh to avoid blocking GUI initialization
-        QTimer.singleShot(500, self._refresh_award_cache)
+
+        # Load caches on startup (non-blocking) instead of deferring
+        QTimer.singleShot(100, self._load_startup_caches)
 
         # Duplicate detection: track last time each callsign was shown (3-minute cooldown)
         self.last_shown_time: Dict[str, datetime] = {}
@@ -313,10 +392,10 @@ class SKCCSpotWidget(QWidget):
         self._new_spot_signal.connect(self._handle_new_spot_on_main_thread)
 
         # Auto-cleanup timer (runs periodically to clean up old spots)
-        # More frequent cleanup (2 min) to prevent memory buildup
+        # Frequent cleanup to prevent memory buildup from high-volume RBN spots
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self._cleanup_old_spots)
-        self.cleanup_timer.start(120000)  # Cleanup every 2 minutes
+        self.cleanup_timer.start(30000)  # Cleanup every 30 seconds (was 2 minutes)
 
         # Award cache refresh timer (runs periodically to update award-critical member list)
         # Reduced frequency to avoid excessive database queries and memory pressure
@@ -755,8 +834,17 @@ class SKCCSpotWidget(QWidget):
 
         self._update_table()
 
+    def _load_startup_caches(self) -> None:
+        """Load caches on startup to avoid queries during normal operation"""
+        try:
+            logger.info("Loading startup caches...")
+            self._get_worked_callsigns_cached()  # Pre-load worked callsigns
+            logger.info("Startup caches loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading startup caches: {e}", exc_info=True)
+
     def _get_worked_callsigns_cached(self) -> set[str]:
-        """Return worked callsigns with a short TTL to avoid frequent DB reads."""
+        """Return worked callsigns with a 30-minute TTL to reduce DB queries."""
         now = datetime.now(timezone.utc)
         if (
             self._worked_cache_timestamp is None or
@@ -1048,6 +1136,28 @@ class SKCCSpotWidget(QWidget):
         try:
             self.cleanup_timer.stop()
             self.award_cache_timer.stop()
+
+            # Stop receiving new spots from RBN FIRST (before stopping processing thread)
+            # This prevents new spots from being queued while we're shutting down
+            if hasattr(self, 'spot_manager') and self.spot_manager:
+                # Disconnect the new spot signal callback
+                try:
+                    self._new_spot_signal.disconnect()
+                except:
+                    pass  # Already disconnected
+
+            # Stop the persistent spot processing thread
+            if hasattr(self, '_spot_processing_thread') and self._spot_processing_thread:
+                if hasattr(self, '_spot_processing_worker') and self._spot_processing_worker:
+                    # Signal the worker to stop
+                    self._spot_processing_worker.stop()
+
+                # Quit the thread gracefully
+                self._spot_processing_thread.quit()
+                if not self._spot_processing_thread.wait(500):  # Wait max 500ms
+                    logger.warning("Spot processing thread didn't stop in time, terminating...")
+                    self._spot_processing_thread.terminate()
+                    self._spot_processing_thread.wait(100)
 
             # Stop any running spot processing workers
             if hasattr(self, '_spot_processing_workers'):
