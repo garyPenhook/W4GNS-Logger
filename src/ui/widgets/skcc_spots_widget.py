@@ -425,8 +425,40 @@ class SKCCSpotWidget(QWidget):
                     logger.warning("Cannot start spotting - SKCC roster is empty")
                     return
 
+                # Export ADIF file for SKCC Skimmer (it needs an ADIF file to know what you've already worked)
+                logger.info("Exporting ADIF file for SKCC Skimmer...")
+                self.status_label.setText("Status: Exporting contacts to ADIF...")
+                try:
+                    from src.backup.backup_manager import BackupManager
+
+                    all_contacts = self.db.get_all_contacts()
+                    if all_contacts and len(all_contacts) > 0:
+                        backup_manager = BackupManager()
+                        my_skcc = self.config_manager.get("adif.my_skcc_number", "")
+                        my_callsign = self.config_manager.get("general.operator_callsign", "")
+
+                        project_root = Path(__file__).parent.parent.parent
+                        adif_path = project_root / "logs" / "contacts.adi"
+
+                        result = backup_manager.export_single_adif(
+                            contacts=all_contacts,
+                            output_path=adif_path,
+                            my_skcc=my_skcc if my_skcc else None,
+                            my_callsign=my_callsign if my_callsign and my_callsign != 'MYCALL' else None
+                        )
+
+                        if result["success"]:
+                            logger.info(f"ADIF exported: {result['message']}")
+                        else:
+                            logger.warning(f"ADIF export failed: {result['message']}")
+                    else:
+                        logger.warning("No contacts to export for SKCC Skimmer")
+                except Exception as export_error:
+                    logger.error(f"Error exporting ADIF: {export_error}", exc_info=True)
+
                 # Start SKCC Skimmer for intelligent spot filtering
                 logger.info("Starting SKCC Skimmer subprocess for intelligent spot filtering...")
+                self.status_label.setText("Status: Starting SKCC Skimmer...")
                 success = self.skcc_skimmer.start()
 
                 if success:
