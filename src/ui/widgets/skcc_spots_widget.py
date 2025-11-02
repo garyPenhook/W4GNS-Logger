@@ -430,6 +430,7 @@ class SKCCSpotWidget(QWidget):
                 self.status_label.setText("Status: Exporting contacts to ADIF...")
                 try:
                     from src.backup.backup_manager import BackupManager
+                    from pathlib import Path as PathlibPath
 
                     all_contacts = self.db.get_all_contacts()
                     if all_contacts and len(all_contacts) > 0:
@@ -437,7 +438,7 @@ class SKCCSpotWidget(QWidget):
                         my_skcc = self.config_manager.get("adif.my_skcc_number", "")
                         my_callsign = self.config_manager.get("general.operator_callsign", "")
 
-                        project_root = Path(__file__).parent.parent.parent
+                        project_root = PathlibPath(__file__).parent.parent.parent.parent
                         adif_path = project_root / "logs" / "contacts.adi"
 
                         result = backup_manager.export_single_adif(
@@ -818,10 +819,12 @@ class SKCCSpotWidget(QWidget):
         state_str = state.value.upper() if state else "UNKNOWN"
         logger.info(f"SKCC Skimmer state changed: {state_str}")
 
-        if state == SkimmerConnectionState.RUNNING:
+        if state == SkimmerConnectionState.DISCONNECTED:
+            self.status_label.setText(f"Status: SKCC Skimmer disconnected")
+        elif state == SkimmerConnectionState.STARTING:
+            self.status_label.setText(f"Status: SKCC Skimmer starting...")
+        elif state == SkimmerConnectionState.RUNNING:
             self.status_label.setText(f"Status: SKCC Skimmer active (filtering spots)")
-        elif state == SkimmerConnectionState.CONNECTING:
-            self.status_label.setText(f"Status: SKCC Skimmer connecting...")
         elif state == SkimmerConnectionState.ERROR:
             self.status_label.setText(f"Status: SKCC Skimmer error - check configuration")
         elif state == SkimmerConnectionState.STOPPED:
