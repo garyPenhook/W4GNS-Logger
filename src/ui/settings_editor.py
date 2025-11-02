@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QGroupBox, QLabel, QLineEdit, QSpinBox, QDoubleSpinBox,
     QComboBox, QCheckBox, QPushButton, QMessageBox,
-    QFormLayout, QFileDialog, QTabWidget
+    QFormLayout, QFileDialog, QTabWidget, QGridLayout
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
@@ -304,56 +304,70 @@ class SettingsEditor(QWidget):
     def _create_features_tab(self) -> QWidget:
         """Create Features settings tab"""
         widget = QWidget()
-        form_layout = QFormLayout()
-        form_layout.setSpacing(5)  # Reduce spacing between label and field
+        main_layout = QVBoxLayout()
 
-        # DX Cluster
+        # Create scrollable area for all content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(10)
+        scroll_layout.setContentsMargins(5, 5, 5, 5)
+
+        # DX Cluster Section
+        cluster_group = QGroupBox("DX Cluster")
+        cluster_layout = QVBoxLayout()
+
         cluster_check = QCheckBox("Enable DX Cluster")
         cluster_check.setChecked(self.config_manager.get("dx_cluster.enabled", True))
         self.settings_widgets["dx_cluster.enabled"] = cluster_check
-        form_layout.addRow("", cluster_check)
+        cluster_layout.addWidget(cluster_check)
 
         cluster_auto_check = QCheckBox("Auto-connect to cluster")
         cluster_auto_check.setChecked(self.config_manager.get("dx_cluster.auto_connect", False))
         self.settings_widgets["dx_cluster.auto_connect"] = cluster_auto_check
-        form_layout.addRow("", cluster_auto_check)
+        cluster_layout.addWidget(cluster_auto_check)
 
+        heartbeat_layout = QHBoxLayout()
+        heartbeat_layout.addWidget(QLabel("Cluster Heartbeat:"))
         cluster_heartbeat = QSpinBox()
         cluster_heartbeat.setRange(10, 300)
         cluster_heartbeat.setValue(self.config_manager.get("dx_cluster.heartbeat_interval", 60))
         cluster_heartbeat.setSuffix(" seconds")
+        cluster_heartbeat.setMaximumWidth(150)
         self.settings_widgets["dx_cluster.heartbeat_interval"] = cluster_heartbeat
-        form_layout.addRow("Cluster Heartbeat:", cluster_heartbeat)
+        heartbeat_layout.addWidget(cluster_heartbeat)
+        heartbeat_layout.addStretch()
+        cluster_layout.addLayout(heartbeat_layout)
 
-        form_layout.addRow("", QLabel(""))  # Spacer
+        cluster_group.setLayout(cluster_layout)
+        scroll_layout.addWidget(cluster_group)
 
-        # Note: QRZ.com settings are in the dedicated QRZ.com tab
-        form_layout.addRow("", QLabel("QRZ.com settings are in the QRZ.com tab"))
+        # Awards Section
+        awards_group = QGroupBox("Awards")
+        awards_layout = QVBoxLayout()
 
-        form_layout.addRow("", QLabel(""))  # Spacer
-
-        # Awards
         awards_check = QCheckBox("Enable award tracking")
         awards_check.setChecked(self.config_manager.get("awards.enabled", True))
         self.settings_widgets["awards.enabled"] = awards_check
-        form_layout.addRow("", awards_check)
+        awards_layout.addWidget(awards_check)
 
         awards_auto_check = QCheckBox("Auto-calculate award progress")
         awards_auto_check.setChecked(self.config_manager.get("awards.auto_calculate", True))
         self.settings_widgets["awards.auto_calculate"] = awards_auto_check
-        form_layout.addRow("", awards_auto_check)
+        awards_layout.addWidget(awards_auto_check)
 
-        form_layout.addRow("", QLabel(""))  # Spacer
+        awards_group.setLayout(awards_layout)
+        scroll_layout.addWidget(awards_group)
 
         # SKCC Skimmer Configuration Section
-        form_layout.addRow(QLabel("<b>SKCC Skimmer Configuration</b>"), QLabel(""))
+        skcc_group = QGroupBox("SKCC Skimmer Configuration")
+        skcc_layout = QVBoxLayout()
 
-        form_layout.addRow(QLabel(""), QLabel(
-            "Point to your main ADIF logfile (from N1MM, LogView, etc)\n"
-            "NOT a file in this app's logs folder"
-        ))
+        skcc_layout.addWidget(QLabel("Point to your main ADIF logfile (from N1MM, LogView, etc)"))
+        skcc_layout.addWidget(QLabel("NOT a file in this app's logs folder"))
 
-        # ADIF Master File Path (like SKCC Skimmer's ADI_FILE)
+        # ADIF Master File Path
         adif_file_layout = QHBoxLayout()
         adif_file_input = QLineEdit()
         adif_file_input.setText(self.config_manager.get("skcc.adif_master_file", ""))
@@ -363,13 +377,15 @@ class SettingsEditor(QWidget):
             "This is the master file from your radio logging software, NOT an app-created file"
         )
         self.settings_widgets["skcc.adif_master_file"] = adif_file_input
-        adif_file_layout.addWidget(adif_file_input)
+        adif_file_layout.addWidget(QLabel("ADIF Master File:"), 0)
+        adif_file_layout.addWidget(adif_file_input, 1)
 
         adif_file_browse = QPushButton("Browse...")
+        adif_file_browse.setMaximumWidth(100)
         adif_file_browse.clicked.connect(lambda: self._browse_adif_file(adif_file_input))
-        adif_file_layout.addWidget(adif_file_browse)
+        adif_file_layout.addWidget(adif_file_browse, 0)
 
-        form_layout.addRow("ADIF Master File:", adif_file_layout)
+        skcc_layout.addLayout(adif_file_layout)
 
         # Auto-sync ADIF checkbox
         auto_sync_check = QCheckBox("Auto-sync contacts from ADIF file on startup")
@@ -379,72 +395,97 @@ class SettingsEditor(QWidget):
             "This reads from your main logfile to determine which stations you've already worked."
         )
         self.settings_widgets["skcc.auto_sync_adif"] = auto_sync_check
-        form_layout.addRow("", auto_sync_check)
+        skcc_layout.addWidget(auto_sync_check)
 
-        form_layout.addRow("", QLabel(""))  # Spacer
+        skcc_group.setLayout(skcc_layout)
+        scroll_layout.addWidget(skcc_group)
 
-        # SKCC Spots Monitoring
+        # SKCC Spots Monitoring Section
+        spots_group = QGroupBox("SKCC Spots Monitoring")
+        spots_layout = QVBoxLayout()
+
         skcc_spots_check = QCheckBox("Enable SKCC member spot monitoring")
         skcc_spots_check.setChecked(self.config_manager.get("skcc.spots_enabled", False))
         self.settings_widgets["skcc.spots_enabled"] = skcc_spots_check
-        form_layout.addRow("", skcc_spots_check)
+        spots_layout.addWidget(skcc_spots_check)
 
         skcc_auto_start_check = QCheckBox("Auto-start monitoring on launch")
         skcc_auto_start_check.setChecked(self.config_manager.get("skcc.auto_start_spots", False))
         self.settings_widgets["skcc.auto_start_spots"] = skcc_auto_start_check
-        form_layout.addRow("", skcc_auto_start_check)
+        spots_layout.addWidget(skcc_auto_start_check)
 
         skcc_unworked_check = QCheckBox("Show unworked stations only")
         skcc_unworked_check.setChecked(self.config_manager.get("skcc.unworked_only", False))
         self.settings_widgets["skcc.unworked_only"] = skcc_unworked_check
-        form_layout.addRow("", skcc_unworked_check)
+        spots_layout.addWidget(skcc_unworked_check)
 
+        # Signal strength and age in a row
+        params_layout = QHBoxLayout()
+        params_layout.addWidget(QLabel("Minimum Signal Strength:"))
         skcc_min_strength = QSpinBox()
         skcc_min_strength.setRange(0, 50)
         skcc_min_strength.setValue(self.config_manager.get("skcc.min_signal_strength", 0))
         skcc_min_strength.setSuffix(" dB")
+        skcc_min_strength.setMaximumWidth(150)
         self.settings_widgets["skcc.min_signal_strength"] = skcc_min_strength
-        form_layout.addRow("Minimum Signal Strength:", skcc_min_strength)
-
+        params_layout.addWidget(skcc_min_strength)
+        params_layout.addSpacing(30)
+        params_layout.addWidget(QLabel("Max Spot Age:"))
         skcc_spot_age = QSpinBox()
         skcc_spot_age.setRange(60, 3600)
         skcc_spot_age.setValue(self.config_manager.get("skcc.max_spot_age_seconds", 300))
         skcc_spot_age.setSuffix(" seconds")
+        skcc_spot_age.setMaximumWidth(150)
         self.settings_widgets["skcc.max_spot_age_seconds"] = skcc_spot_age
-        form_layout.addRow("Max Spot Age:", skcc_spot_age)
+        params_layout.addWidget(skcc_spot_age)
+        params_layout.addStretch()
+        spots_layout.addLayout(params_layout)
 
-        form_layout.addRow("", QLabel(""))  # Spacer
+        spots_group.setLayout(spots_layout)
+        scroll_layout.addWidget(spots_group)
 
-        # SKCC Goals (awards you're pursuing)
-        form_layout.addRow(QLabel("<b>SKCC Goals (Awards You're Pursuing)</b>"), QLabel(""))
+        # SKCC Goals Section (in 3-column grid)
+        goals_group = QGroupBox("SKCC Goals (Awards You're Pursuing)")
+        goals_grid = QGridLayout()
+        goals_grid.setSpacing(5)
 
-        # Create goal checkboxes
         goals_available = ["Centurion", "Tribune", "Senator", "WAS-C", "WAS-T", "WAS-S",
                           "QRP", "QRP-MPW", "K3Y", "Rag Chew", "DX", "TripleKey", "Canadian Maple"]
         current_goals = self.config_manager.get("skcc.goals", [])
 
-        for goal in goals_available:
+        for idx, goal in enumerate(goals_available):
             goal_check = QCheckBox(goal)
             goal_check.setChecked(goal in current_goals)
             self.settings_widgets[f"skcc.goals.{goal}"] = goal_check
-            form_layout.addRow("", goal_check)
+            goals_grid.addWidget(goal_check, idx // 3, idx % 3)
 
-        form_layout.addRow("", QLabel(""))  # Spacer
+        goals_group.setLayout(goals_grid)
+        scroll_layout.addWidget(goals_group)
 
-        # SKCC Targets (awards you want to help others earn)
-        form_layout.addRow(QLabel("<b>SKCC Targets (Help Others Achieve)</b>"), QLabel(""))
+        # SKCC Targets Section (in 3-column grid)
+        targets_group = QGroupBox("SKCC Targets (Help Others Achieve)")
+        targets_grid = QGridLayout()
+        targets_grid.setSpacing(5)
 
         targets_available = ["Centurion", "Tribune", "Senator", "WAS-C", "WAS-T", "WAS-S",
                            "QRP", "QRP-MPW", "K3Y", "Rag Chew", "DX", "TripleKey", "Canadian Maple"]
         current_targets = self.config_manager.get("skcc.targets", [])
 
-        for target in targets_available:
+        for idx, target in enumerate(targets_available):
             target_check = QCheckBox(target)
             target_check.setChecked(target in current_targets)
             self.settings_widgets[f"skcc.targets.{target}"] = target_check
-            form_layout.addRow("", target_check)
+            targets_grid.addWidget(target_check, idx // 3, idx % 3)
 
-        widget.setLayout(form_layout)
+        targets_group.setLayout(targets_grid)
+        scroll_layout.addWidget(targets_group)
+
+        # Add stretch at the end
+        scroll_layout.addStretch()
+
+        scroll.setWidget(scroll_widget)
+        main_layout.addWidget(scroll)
+        widget.setLayout(main_layout)
         return widget
 
     def _create_qrz_tab(self) -> QWidget:
