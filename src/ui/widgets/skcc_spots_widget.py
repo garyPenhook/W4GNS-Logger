@@ -262,8 +262,15 @@ class CleanupWorker(QThread):
             if old_count > len(self.new_spots):
                 logger.debug(f"Cleaned up {old_count - len(self.new_spots)} old spots from memory")
 
-            # Remove spots older than 24 hours from database
-            self.spot_manager.cleanup_old_spots(hours=24)
+            # Remove spots older than 24 hours from database (with error handling for closed database)
+            try:
+                self.spot_manager.cleanup_old_spots(hours=24)
+            except Exception as db_error:
+                # Handle case where database connection is closed during shutdown
+                if "closed database" in str(db_error).lower() or "database is locked" in str(db_error).lower():
+                    logger.debug(f"Database unavailable during cleanup (shutdown in progress): {db_error}")
+                else:
+                    logger.error(f"Error cleaning up old spots: {db_error}", exc_info=True)
 
             # Clean up old entries from duplicate tracking - much more aggressive (was 5 minutes)
             cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=2)
@@ -293,41 +300,50 @@ class AwardCacheWorker(QThread):
         try:
             from src.database.models import Contact
 
-            # Get SKCC numbers we've worked
-            session = self.spot_manager.db.get_session()
             try:
-                worked_skcc_numbers = session.query(Contact.skcc_number).filter(
-                    Contact.skcc_number.isnot(None)
-                ).distinct().all()
-                worked_skcc_members = {num[0].upper() for num in worked_skcc_numbers if num[0]}
-            finally:
-                session.close()
+                # Get SKCC numbers we've worked (with error handling for closed database)
+                session = self.spot_manager.db.get_session()
+                try:
+                    worked_skcc_numbers = session.query(Contact.skcc_number).filter(
+                        Contact.skcc_number.isnot(None)
+                    ).distinct().all()
+                    worked_skcc_members = {num[0].upper() for num in worked_skcc_numbers if num[0]}
+                finally:
+                    session.close()
 
-            # Get SKCC roster
-            roster = self.spot_manager.db.skcc_members.get_roster_dict()
+                # Get SKCC roster
+                roster = self.spot_manager.db.skcc_members.get_roster_dict()
 
-            # Get current SKCC award progress
-            skcc_progress = self.spot_manager.db.get_award_progress("SKCC", "Members")
+                # Get current SKCC award progress
+                skcc_progress = self.spot_manager.db.get_award_progress("SKCC", "Members")
 
-            # Determine target count
-            target_count = self._get_target_skcc_count(skcc_progress)
+                # Determine target count
+                target_count = self._get_target_skcc_count(skcc_progress)
 
-            # Calculate award-critical members
-            if target_count and len(worked_skcc_members) < target_count:
-                all_skcc_numbers = set(roster.keys()) if roster else set()
-                award_critical_skcc_members = all_skcc_numbers - worked_skcc_members
-            else:
-                award_critical_skcc_members = set()
+                # Calculate award-critical members
+                if target_count and len(worked_skcc_members) < target_count:
+                    all_skcc_numbers = set(roster.keys()) if roster else set()
+                    award_critical_skcc_members = all_skcc_numbers - worked_skcc_members
+                else:
+                    award_critical_skcc_members = set()
 
-            logger.debug(
-                f"Award cache updated: worked={len(worked_skcc_members)}, "
-                f"critical={len(award_critical_skcc_members)}, "
-                f"target={target_count}"
-            )
+                logger.debug(
+                    f"Award cache updated: worked={len(worked_skcc_members)}, "
+                    f"critical={len(award_critical_skcc_members)}, "
+                    f"target={target_count}"
+                )
 
-            self.finished.emit(worked_skcc_members, award_critical_skcc_members, set())
+                self.finished.emit(worked_skcc_members, award_critical_skcc_members, set())
+            except Exception as db_error:
+                # Handle case where database connection is closed during shutdown
+                if "closed database" in str(db_error).lower() or "database is locked" in str(db_error).lower():
+                    logger.debug(f"Database unavailable during award cache refresh (shutdown in progress): {db_error}")
+                    self.finished.emit(set(), set(), set())
+                else:
+                    logger.error(f"Error in award cache worker: {db_error}", exc_info=True)
+                    self.finished.emit(set(), set(), set())
         except Exception as e:
-            logger.error(f"Error in award cache worker: {e}")
+            logger.error(f"Unexpected error in award cache worker: {e}", exc_info=True)
             self.finished.emit(set(), set(), set())
 
     @staticmethod

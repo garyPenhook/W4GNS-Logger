@@ -897,13 +897,23 @@ class MainWindow(QMainWindow):
                 # Clean up database resources
                 progress.setLabelText("Closing database connection...")
                 progress.setValue(90)
-                
+
                 try:
                     if hasattr(self, 'db') and self.db:
-                        self.db.engine.dispose()
-                        logger.info("Database connection closed gracefully")
+                        try:
+                            self.db.engine.dispose()
+                            logger.info("Database connection closed gracefully")
+                        except Exception as dispose_error:
+                            # Suppress "Cannot operate on a closed database" errors during cleanup
+                            # These are harmless and occur when SQLAlchemy tries to clean up connections
+                            # that were already closed or are in the process of closing
+                            error_msg = str(dispose_error).lower()
+                            if "closed database" in error_msg or "database is locked" in error_msg:
+                                logger.debug(f"Harmless database cleanup error during shutdown: {dispose_error}")
+                            else:
+                                logger.error(f"Error closing database connection: {dispose_error}", exc_info=True)
                 except Exception as db_error:
-                    logger.error(f"Error closing database connection: {db_error}", exc_info=True)
+                    logger.error(f"Unexpected error during database cleanup: {db_error}", exc_info=True)
 
                 progress.setLabelText("Finishing up...")
                 progress.setValue(100)
@@ -929,7 +939,13 @@ class MainWindow(QMainWindow):
                         logger.warning(f"Error stopping spot manager during error cleanup: {spot_error}")
 
                 if hasattr(self, 'db') and self.db:
-                    self.db.engine.dispose()
+                    try:
+                        self.db.engine.dispose()
+                    except Exception as dispose_error:
+                        # Suppress harmless database cleanup errors
+                        error_msg = str(dispose_error).lower()
+                        if "closed database" not in error_msg and "database is locked" not in error_msg:
+                            logger.warning(f"Error closing database during error cleanup: {dispose_error}")
             except Exception as cleanup_error:
                 logger.warning(f"Error during final cleanup: {cleanup_error}")
                 # Continue with exit even if cleanup fails
