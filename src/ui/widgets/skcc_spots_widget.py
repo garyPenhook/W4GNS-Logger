@@ -187,6 +187,8 @@ class SpotProcessingWorker(QObject):
             return
 
         session = self.spot_manager.db.get_session()
+        signals_to_emit = []  # Collect signals to emit AFTER transaction completes
+
         try:
             # Batch write all pending spots in a single transaction
             from src.database.models import ClusterSpot
@@ -195,10 +197,15 @@ class SpotProcessingWorker(QObject):
             for spot_data, spot, worked_callsigns, goal_type in self.pending_spots:
                 db_spot = ClusterSpot(**spot_data)
                 session.add(db_spot)
-                # Emit signal for UI update (non-blocking)
-                self.spot_processed.emit(spot, worked_callsigns, goal_type, True)
+                # Queue signal emission for AFTER commit
+                signals_to_emit.append((spot, worked_callsigns, goal_type, True))
 
             session.commit()
+
+            # Now emit all signals AFTER commit is successful
+            for spot, worked_callsigns, goal_type, should_store in signals_to_emit:
+                self.spot_processed.emit(spot, worked_callsigns, goal_type, should_store)
+
             logger.debug(f"Flushed {batch_count} spots to database in batch write")
             self.pending_spots.clear()
             self.last_batch_time = datetime.now(timezone.utc)
