@@ -142,7 +142,14 @@ class SpotProcessingWorker(QObject):
             # Apply spot filter
             if not self.spot_filter.matches(spot, worked_callsigns):
                 logger.debug(f"Spot {spot.callsign} filtered by spot_filter")
-                self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
+                try:
+                    self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
+                except RuntimeError as emit_error:
+                    # Suppress error if worker was deleted during shutdown
+                    if "has been deleted" in str(emit_error):
+                        logger.debug(f"Worker deleted during shutdown, skipping signal emit")
+                    else:
+                        raise
                 return
 
             # Classify spot as GOAL/TARGET/BOTH
@@ -173,7 +180,14 @@ class SpotProcessingWorker(QObject):
 
         except Exception as e:
             logger.error(f"Error processing spot: {e}", exc_info=True)
-            self.spot_processed.emit(spot, set(), "NONE", False)
+            try:
+                self.spot_processed.emit(spot, set(), "NONE", False)
+            except RuntimeError as emit_error:
+                # Suppress error if worker was deleted during shutdown
+                if "has been deleted" in str(emit_error):
+                    logger.debug(f"Worker deleted during shutdown, skipping error signal emit")
+                else:
+                    raise
 
     def _get_worked_callsigns_cached(self) -> set:
         """Get worked callsigns with caching to reduce database queries"""
@@ -234,7 +248,14 @@ class SpotProcessingWorker(QObject):
 
             # Now emit all signals AFTER commit is successful
             for spot, worked_callsigns, goal_type, should_store in signals_to_emit:
-                self.spot_processed.emit(spot, worked_callsigns, goal_type, should_store)
+                try:
+                    self.spot_processed.emit(spot, worked_callsigns, goal_type, should_store)
+                except RuntimeError as emit_error:
+                    # Suppress error if worker was deleted during shutdown
+                    if "has been deleted" in str(emit_error):
+                        logger.debug(f"Worker deleted during shutdown, skipping success signal emit")
+                    else:
+                        raise
 
             logger.debug(
                 f"Flushed {batch_count} spots to database in {flush_time:.3f}s "
@@ -246,7 +267,14 @@ class SpotProcessingWorker(QObject):
             logger.error(f"Error in batch write: {e}", exc_info=True)
             # Emit failure for all spots
             for spot_data, spot, worked_callsigns, goal_type in spots_to_write:
-                self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
+                try:
+                    self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
+                except RuntimeError as emit_error:
+                    # Suppress error if worker was deleted during shutdown
+                    if "has been deleted" in str(emit_error):
+                        logger.debug(f"Worker deleted during shutdown, skipping error flush signal emit")
+                    else:
+                        raise
         finally:
             session.close()
 
