@@ -68,7 +68,7 @@ class SpotEligibilityAnalyzer:
     """
 
     # Cache validity timeout
-    CACHE_TIMEOUT = 300  # 5 minutes
+    CACHE_TIMEOUT = 1800  # 30 minutes (award eligibility changes infrequently)
 
     def __init__(self, db: DatabaseRepository, config_manager, my_callsign: str, my_skcc_number: str):
         """

@@ -49,6 +49,11 @@ class ContactsListWidget(QWidget):
         self._needs_refresh = False
         self._has_initial_data = False
 
+        # Debounce timer for search input (prevents database query on every keystroke)
+        self._search_timer = QTimer()
+        self._search_timer.setSingleShot(True)
+        self._search_timer.timeout.connect(self.refresh)
+
         self._init_ui()
         self.refresh()
 
@@ -129,12 +134,13 @@ class ContactsListWidget(QWidget):
         group = QGroupBox("Search & Filter")
         layout = QHBoxLayout()
 
-        # Callsign search
+        # Callsign search with debouncing (300ms) to prevent freezing on every keystroke
         layout.addWidget(QLabel("Callsign:"))
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search callsigns...")
         self.search_input.setMaximumWidth(100)  # Reduced by 80% from unrestricted width
-        self.search_input.textChanged.connect(self.refresh)
+        # Debounce search input: only query database 300ms after user stops typing
+        self.search_input.textChanged.connect(lambda: self._on_search_changed())
         layout.addWidget(self.search_input)
 
         # Band filter
@@ -201,6 +207,13 @@ class ContactsListWidget(QWidget):
                 self.refresh()
         except Exception as e:
             logger.error(f"Error in showEvent: {e}", exc_info=True)
+
+    def _on_search_changed(self) -> None:
+        """Handle search input changes with debouncing (300ms)"""
+        # Stop existing timer if running
+        self._search_timer.stop()
+        # Restart timer - will only fire if user stops typing for 300ms
+        self._search_timer.start(300)
 
     def refresh(self) -> None:
         """Refresh the contacts table"""
