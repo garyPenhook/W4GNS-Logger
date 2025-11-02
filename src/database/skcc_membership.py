@@ -568,11 +568,14 @@ class SKCCMembershipManager:
             logger.error(f"Error parsing HTML roster: {e}")
             return []
 
-    def sync_membership_data(self) -> bool:
+    def sync_membership_data(self, force_refresh: bool = False) -> bool:
         """
         Synchronize membership data with official SKCC roster
 
         Checks if cache is stale, downloads fresh data if needed
+
+        Args:
+            force_refresh: If True, always download fresh data and skip cache check
 
         Returns:
             True if sync successful or cache still valid, False otherwise
@@ -580,7 +583,7 @@ class SKCCMembershipManager:
         try:
             # Check if we have any cached members
             member_count = self.get_member_count()
-            if member_count > 0:
+            if member_count > 0 and not force_refresh:
                 # Check if cache is fresh
                 if not self.is_cache_stale(max_age_hours=24):
                     logger.info(f"Using fresh cached membership data ({member_count} members)")

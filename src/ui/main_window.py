@@ -521,8 +521,12 @@ class MainWindow(QMainWindow):
         if self.status_label:
             self.status_label.showMessage(message)
 
-    def _start_background_roster_sync(self) -> None:
-        """Start SKCC roster sync in background thread (non-blocking)"""
+    def _start_background_roster_sync(self, force_refresh: bool = True) -> None:
+        """Start SKCC roster sync in background thread (non-blocking)
+
+        Args:
+            force_refresh: If True, download fresh data on startup (default). Set False to use cache if available.
+        """
         import threading
 
         def sync_roster():
@@ -532,7 +536,7 @@ class MainWindow(QMainWindow):
                 self.status_message.emit("Syncing SKCC roster... (background)")
                 logger.info("Starting background SKCC roster sync...")
 
-                success = self.db.skcc_members.sync_membership_data()
+                success = self.db.skcc_members.sync_membership_data(force_refresh=force_refresh)
                 member_count = self.db.skcc_members.get_member_count()
 
                 if success and member_count > 0:
