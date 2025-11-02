@@ -240,10 +240,7 @@ class MainWindow(QMainWindow):
 
         # Add DX Cluster spots (bottom ~70%)
         # Using SKCC Skimmer's proven RBN connection (fixes segmentation faults)
-        # Pass configured goals and targets for intelligent spot filtering
-        configured_goals = self.config_manager.get("skcc.goals", [])
-        configured_targets = self.config_manager.get("skcc.targets", [])
-        spot_manager = SKCCSpotManager(self.db, configured_goals, configured_targets)
+        spot_manager = SKCCSpotManager(self.db)
         
         # Get user's callsign and SKCC number for award eligibility analysis
         my_callsign = self.config_manager.get("general.operator_callsign", "")

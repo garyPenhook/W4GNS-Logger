@@ -30,22 +30,17 @@ class SKCCSpotManager:
     - UI callbacks
     """
 
-    def __init__(self, db: DatabaseRepository, configured_goals: Optional[List[str]] = None,
-                 configured_targets: Optional[List[str]] = None):
+    def __init__(self, db: DatabaseRepository):
         """
         Initialize SKCC spot manager
 
         Args:
             db: Database repository instance
-            configured_goals: User's configured award goals (e.g., ["Centurion", "Tribune"])
-            configured_targets: Awards user wants to help others achieve
         """
         self.db = db
         self.fetcher: Optional[SkccSkimmerRBNFetcher] = None
         self.spot_filter = SKCCSpotFilter()
         self.use_test_spots = False
-        self.configured_goals = configured_goals or []
-        self.configured_targets = configured_targets or []
 
         # Spot source adapter
         self.spot_source_adapter = SpotSourceAdapter()
