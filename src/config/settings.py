@@ -57,7 +57,13 @@ class ConfigManager:
         "skcc": {
             "spots_enabled": False,  # Enable SKCC member spot monitoring
             "auto_start_spots": False,  # Auto-start monitoring on launch
+            # SKCC Skimmer-style goals and targets configuration
+            "goals": [],  # Personal awards pursuing (e.g., ["Centurion", "Tribune", "Senator", "WAS-C"])
+            "targets": [],  # Awards user wants to help others earn
+            # Spot filtering
             "unworked_only": False,  # Show unworked stations only
+            "enabled_bands": [],  # Empty = all bands, or ["20M", "40M", etc.]
+            "enabled_modes": [],  # Empty = all modes, or ["CW", "SSB", etc.]
             "min_signal_strength": 0,  # dB
             "max_spot_age_seconds": 300,  # seconds
         },

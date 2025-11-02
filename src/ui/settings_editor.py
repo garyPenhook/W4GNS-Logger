@@ -375,6 +375,37 @@ class SettingsEditor(QWidget):
         self.settings_widgets["skcc.max_spot_age_seconds"] = skcc_spot_age
         form_layout.addRow("Max Spot Age:", skcc_spot_age)
 
+        form_layout.addRow("", QLabel(""))  # Spacer
+
+        # SKCC Goals (awards you're pursuing)
+        form_layout.addRow(QLabel("<b>SKCC Goals (Awards You're Pursuing)</b>"), QLabel(""))
+
+        # Create goal checkboxes
+        goals_available = ["Centurion", "Tribune", "Senator", "WAS-C", "WAS-T", "WAS-S",
+                          "QRP", "QRP-MPW", "K3Y", "Rag Chew", "DX", "TripleKey", "Canadian Maple"]
+        current_goals = self.config_manager.get("skcc.goals", [])
+
+        for goal in goals_available:
+            goal_check = QCheckBox(goal)
+            goal_check.setChecked(goal in current_goals)
+            self.settings_widgets[f"skcc.goals.{goal}"] = goal_check
+            form_layout.addRow("", goal_check)
+
+        form_layout.addRow("", QLabel(""))  # Spacer
+
+        # SKCC Targets (awards you want to help others earn)
+        form_layout.addRow(QLabel("<b>SKCC Targets (Help Others Achieve)</b>"), QLabel(""))
+
+        targets_available = ["Centurion", "Tribune", "Senator", "WAS-C", "WAS-T", "WAS-S",
+                           "QRP", "QRP-MPW", "K3Y", "Rag Chew", "DX", "TripleKey", "Canadian Maple"]
+        current_targets = self.config_manager.get("skcc.targets", [])
+
+        for target in targets_available:
+            target_check = QCheckBox(target)
+            target_check.setChecked(target in current_targets)
+            self.settings_widgets[f"skcc.targets.{target}"] = target_check
+            form_layout.addRow("", target_check)
+
         widget.setLayout(form_layout)
         return widget
 
@@ -725,7 +756,24 @@ class SettingsEditor(QWidget):
         """Save all settings"""
         try:
             # Update settings from widgets
+            # Collect goals and targets separately
+            goals = []
+            targets = []
+
             for key, widget in self.settings_widgets.items():
+                # Handle goals and targets specially - collect checked items into lists
+                if key.startswith("skcc.goals."):
+                    if isinstance(widget, QCheckBox) and widget.isChecked():
+                        goal_name = key.split(".")[-1]
+                        goals.append(goal_name)
+                    continue
+                elif key.startswith("skcc.targets."):
+                    if isinstance(widget, QCheckBox) and widget.isChecked():
+                        target_name = key.split(".")[-1]
+                        targets.append(target_name)
+                    continue
+
+                # Handle regular settings
                 if isinstance(widget, QLineEdit):
                     value = widget.text()
                 elif isinstance(widget, QSpinBox):
@@ -743,6 +791,10 @@ class SettingsEditor(QWidget):
                     continue
 
                 self.config_manager.set(key, value)
+
+            # Save collected goals and targets
+            self.config_manager.set("skcc.goals", goals)
+            self.config_manager.set("skcc.targets", targets)
 
             # Only try to save raw config if it was actually modified by user
             raw_text = self.raw_config_editor.toPlainText()
