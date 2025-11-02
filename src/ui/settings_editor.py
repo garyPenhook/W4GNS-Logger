@@ -345,6 +345,33 @@ class SettingsEditor(QWidget):
 
         form_layout.addRow("", QLabel(""))  # Spacer
 
+        # SKCC Skimmer Configuration Section
+        form_layout.addRow(QLabel("<b>SKCC Skimmer Configuration</b>"), QLabel(""))
+
+        # ADIF Master File Path (like SKCC Skimmer's ADI_FILE)
+        adif_file_layout = QHBoxLayout()
+        adif_file_input = QLineEdit()
+        adif_file_input.setText(self.config_manager.get("skcc.adif_master_file", ""))
+        adif_file_input.setPlaceholderText("Path to your ADIF master file")
+        adif_file_input.setToolTip("Path to your ADIF logfile (e.g., ~/logs/w4gns.adi)")
+        self.settings_widgets["skcc.adif_master_file"] = adif_file_input
+        adif_file_layout.addWidget(adif_file_input)
+
+        adif_file_browse = QPushButton("Browse...")
+        adif_file_browse.clicked.connect(lambda: self._browse_adif_file(adif_file_input))
+        adif_file_layout.addWidget(adif_file_browse)
+
+        form_layout.addRow("ADIF Master File:", adif_file_layout)
+
+        # Auto-sync ADIF checkbox
+        auto_sync_check = QCheckBox("Auto-sync contacts from ADIF file on startup")
+        auto_sync_check.setChecked(self.config_manager.get("skcc.auto_sync_adif", False))
+        auto_sync_check.setToolTip("Automatically import new contacts from your ADIF file when starting the app")
+        self.settings_widgets["skcc.auto_sync_adif"] = auto_sync_check
+        form_layout.addRow("", auto_sync_check)
+
+        form_layout.addRow("", QLabel(""))  # Spacer
+
         # SKCC Spots Monitoring
         skcc_spots_check = QCheckBox("Enable SKCC member spot monitoring")
         skcc_spots_check.setChecked(self.config_manager.get("skcc.spots_enabled", False))
@@ -751,6 +778,17 @@ class SettingsEditor(QWidget):
                 "Error",
                 f"Backup operation failed: {str(e)}"
             )
+
+    def _browse_adif_file(self, file_input: QLineEdit) -> None:
+        """Browse for ADIF master file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select ADIF Master File",
+            str(Path.home()),
+            "ADIF Files (*.adi *.adx);;All Files (*)"
+        )
+        if file_path:
+            file_input.setText(file_path)
 
     def _save_settings(self) -> None:
         """Save all settings"""

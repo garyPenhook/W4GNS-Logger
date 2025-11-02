@@ -55,6 +55,9 @@ class ConfigManager:
             "auto_calculate": True,
         },
         "skcc": {
+            # SKCC Skimmer-style configuration
+            "adif_master_file": "",  # Path to ADIF master file (like SKCC Skimmer's ADI_FILE)
+            "auto_sync_adif": False,  # Auto-sync new contacts from ADIF file on startup
             "spots_enabled": False,  # Enable SKCC member spot monitoring
             "auto_start_spots": False,  # Auto-start monitoring on launch
             # SKCC Skimmer-style goals and targets configuration
