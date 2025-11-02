@@ -83,10 +83,13 @@ class SpotProcessingWorker(QObject):
         self.spot_queue: List[SKCCSpot] = []
 
         # Batching parameters to reduce database lock contention
-        self.batch_write_size = 10  # Write spots in batches of 10
-        self.batch_timeout_ms = 500  # Or every 500ms, whichever comes first
+        # Increased from 10 to 50 to process more spots per commit (reduces commit overhead)
+        self.batch_write_size = 50
+        # Reduced from 500ms to 200ms to flush more frequently and prevent queue overflow
+        self.batch_timeout_ms = 200
         self.pending_spots = []  # Spots waiting to be written
         self.last_batch_time = datetime.now(timezone.utc)
+        self._flush_times = []  # Track flush operation timing for performance monitoring
 
         # Thread synchronization lock for pending_spots list
         # Prevents race condition between add_spot() and _flush_pending_writes()
@@ -104,7 +107,8 @@ class SpotProcessingWorker(QObject):
 
         # Safety valve: if queue gets too large, drop oldest spots
         # This prevents memory explosion if processing can't keep up with spots
-        max_queue_size = 1000  # Max 1000 pending spots in queue
+        # Increased from 1000 to 5000 to allow more buffering during DB writes
+        max_queue_size = 5000
         if len(self.spot_queue) > max_queue_size:
             overflow_count = len(self.spot_queue) - max_queue_size
             self.spot_queue = self.spot_queue[overflow_count:]
@@ -193,6 +197,7 @@ class SpotProcessingWorker(QObject):
 
     def _flush_pending_writes(self):
         """Flush all pending spots to database in a single transaction"""
+        import time
         # Acquire lock and get copy of pending spots
         with self._pending_spots_lock:
             if not self.pending_spots:
@@ -204,6 +209,7 @@ class SpotProcessingWorker(QObject):
         # Now do database work OUTSIDE the lock to allow concurrent add_spot() calls
         session = self.spot_manager.db.get_session()
         signals_to_emit = []  # Collect signals to emit AFTER transaction completes
+        flush_start = time.time()
 
         try:
             # Batch write all spots in a single transaction
@@ -217,12 +223,23 @@ class SpotProcessingWorker(QObject):
                 signals_to_emit.append((spot, worked_callsigns, goal_type, True))
 
             session.commit()
+            flush_time = time.time() - flush_start
+            self._flush_times.append(flush_time)
+
+            # Keep last 100 flush times for averaging
+            if len(self._flush_times) > 100:
+                self._flush_times = self._flush_times[-100:]
+
+            avg_flush_time = sum(self._flush_times) / len(self._flush_times)
 
             # Now emit all signals AFTER commit is successful
             for spot, worked_callsigns, goal_type, should_store in signals_to_emit:
                 self.spot_processed.emit(spot, worked_callsigns, goal_type, should_store)
 
-            logger.debug(f"Flushed {batch_count} spots to database in batch write")
+            logger.debug(
+                f"Flushed {batch_count} spots to database in {flush_time:.3f}s "
+                f"(avg: {avg_flush_time:.3f}s)"
+            )
             self.last_batch_time = datetime.now(timezone.utc)
         except Exception as e:
             session.rollback()
