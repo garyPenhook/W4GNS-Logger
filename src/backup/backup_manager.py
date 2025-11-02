@@ -223,9 +223,20 @@ class BackupManager:
 
             # Use default location if not specified
             if backup_location is None:
-                # Default to project root logs directory
-                project_root = Path(__file__).parent.parent.parent
-                backup_location = project_root / "logs"
+                # Try to use configured backup destination (USB/SD card), fallback to ~/.w4gns_logger/Logs
+                try:
+                    from src.config.settings import get_config_manager
+                    config_mgr = get_config_manager()
+                    backup_dest = config_mgr.get("database.backup_destination", "")
+                    if backup_dest:
+                        backup_location = Path(backup_dest)
+                    else:
+                        # Fallback to user's .w4gns_logger directory (NOT project root)
+                        backup_location = Path.home() / ".w4gns_logger" / "Logs"
+                except Exception as e:
+                    logger.warning(f"Could not load config for backup location: {e}")
+                    # Fallback to user's .w4gns_logger directory (NOT project root)
+                    backup_location = Path.home() / ".w4gns_logger" / "Logs"
 
             # Ensure directory exists
             backup_location.mkdir(parents=True, exist_ok=True)
@@ -293,6 +304,70 @@ class BackupManager:
                 "message": f"ADIF backup failed: {str(e)}"
             }
 
+    def export_single_adif(
+        self,
+        contacts: List[Any],
+        output_path: Path,
+        my_skcc: Optional[str] = None,
+        my_callsign: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Export contacts to a single ADIF file (overwrites existing file)
+
+        Used to create a single master ADIF file for tools like SKCC Skimmer that need
+        a consistent file path.
+
+        Args:
+            contacts: List of Contact objects to export
+            output_path: Full path to output file (e.g., ~/logs/contacts.adi)
+            my_skcc: Operator's SKCC number (optional)
+            my_callsign: Operator's callsign (optional)
+
+        Returns:
+            Dictionary with:
+            - success: True if export successful
+            - file_path: Path to exported file
+            - contact_count: Number of contacts exported
+            - message: Human-readable status message
+        """
+        try:
+            if not contacts:
+                raise ValueError("No contacts to export")
+
+            # Ensure directory exists
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Import ADIF exporter
+            from src.adif.exporter import ADIFExporter
+
+            # Export contacts to ADIF
+            exporter = ADIFExporter()
+            exporter.export_to_file(
+                filename=str(output_path),
+                contacts=contacts,
+                my_skcc=my_skcc,
+                my_callsign=my_callsign,
+                include_fields=None  # Export all non-empty fields
+            )
+            logger.info(f"Exported ADIF file: {output_path}")
+
+            return {
+                "success": True,
+                "file_path": output_path,
+                "contact_count": len(contacts),
+                "message": f"ADIF file exported: {output_path.name} ({len(contacts)} contacts)"
+            }
+
+        except Exception as e:
+            logger.error(f"ADIF export failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "file_path": None,
+                "contact_count": 0,
+                "message": f"ADIF export failed: {str(e)}"
+            }
+
     def create_database_backup(
         self,
         database_path: Path,
@@ -326,9 +401,20 @@ class BackupManager:
 
             # Use default location if not specified
             if backup_location is None:
-                # Default to project root logs directory
-                project_root = Path(__file__).parent.parent.parent
-                backup_location = project_root / "logs"
+                # Try to use configured backup destination (USB/SD card), fallback to ~/.w4gns_logger/Logs
+                try:
+                    from src.config.settings import get_config_manager
+                    config_mgr = get_config_manager()
+                    backup_dest = config_mgr.get("database.backup_destination", "")
+                    if backup_dest:
+                        backup_location = Path(backup_dest)
+                    else:
+                        # Fallback to user's .w4gns_logger directory (NOT project root)
+                        backup_location = Path.home() / ".w4gns_logger" / "Logs"
+                except Exception as e:
+                    logger.warning(f"Could not load config for backup location: {e}")
+                    # Fallback to user's .w4gns_logger directory (NOT project root)
+                    backup_location = Path.home() / ".w4gns_logger" / "Logs"
 
             # Ensure directory exists
             backup_location.mkdir(parents=True, exist_ok=True)

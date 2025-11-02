@@ -766,13 +766,13 @@ class MainWindow(QMainWindow):
                 except Exception as spot_error:
                     logger.error(f"Error stopping background services: {spot_error}", exc_info=True)
 
-                # Create ADIF backup on shutdown (with timeout protection)
-                progress.setLabelText("Creating ADIF backup...")
+                # Create single ADIF export and timestamped backup on shutdown
+                progress.setLabelText("Exporting contacts...")
                 progress.setValue(20)
                 QApplication.processEvents()  # Keep UI responsive
 
                 try:
-                    logger.info("Creating ADIF backup on shutdown...")
+                    logger.info("Exporting contacts on shutdown...")
                     if hasattr(self, 'db') and self.db:
                         # Get all contacts from database
                         all_contacts = self.db.get_all_contacts()
@@ -781,22 +781,39 @@ class MainWindow(QMainWindow):
                             my_skcc = self.config_manager.get("adif.my_skcc_number", "")
                             my_callsign = self.config_manager.get("general.operator_callsign", "")
 
-                            result = backup_manager.create_adif_backup(
+                            # 1. Export single ADIF file for SKCC Skimmer (no timestamp)
+                            project_root = Path(__file__).parent.parent.parent
+                            single_adif_path = project_root / "logs" / "contacts.adi"
+
+                            result1 = backup_manager.export_single_adif(
+                                contacts=all_contacts,
+                                output_path=single_adif_path,
+                                my_skcc=my_skcc if my_skcc else None,
+                                my_callsign=my_callsign if my_callsign and my_callsign != 'MYCALL' else None
+                            )
+
+                            if result1["success"]:
+                                logger.info(f"ADIF file exported: {result1['message']}")
+                            else:
+                                logger.warning(f"ADIF export failed: {result1['message']}")
+
+                            # 2. Create timestamped backup to secondary backup location
+                            result2 = backup_manager.create_adif_backup(
                                 contacts=all_contacts,
                                 my_skcc=my_skcc if my_skcc else None,
                                 my_callsign=my_callsign if my_callsign and my_callsign != 'MYCALL' else None,
-                                backup_location=None,  # Uses default: ~/.w4gns_logger/Logs
+                                backup_location=None,  # Uses configured backup destination or ~/.w4gns_logger/Logs
                                 max_backups=5
                             )
 
-                            if result["success"]:
-                                logger.info(f"ADIF backup created on shutdown: {result['message']}")
+                            if result2["success"]:
+                                logger.info(f"ADIF backup created: {result2['message']}")
                             else:
-                                logger.warning(f"ADIF backup on shutdown failed: {result['message']}")
+                                logger.warning(f"ADIF backup failed: {result2['message']}")
                         else:
-                            logger.warning("No contacts found for ADIF backup")
-                except Exception as adif_backup_error:
-                    logger.error(f"Error creating ADIF backup on shutdown (continuing anyway): {adif_backup_error}", exc_info=True)
+                            logger.warning("No contacts found for export/backup")
+                except Exception as adif_error:
+                    logger.error(f"Error exporting contacts on shutdown (continuing anyway): {adif_error}", exc_info=True)
 
                 # Create database backup on shutdown (with timeout protection)
                 progress.setLabelText("Creating database backup...")
