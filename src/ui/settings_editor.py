@@ -348,12 +348,20 @@ class SettingsEditor(QWidget):
         # SKCC Skimmer Configuration Section
         form_layout.addRow(QLabel("<b>SKCC Skimmer Configuration</b>"), QLabel(""))
 
+        form_layout.addRow(QLabel(""), QLabel(
+            "Point to your main ADIF logfile (from N1MM, LogView, etc)\n"
+            "NOT a file in this app's logs folder"
+        ))
+
         # ADIF Master File Path (like SKCC Skimmer's ADI_FILE)
         adif_file_layout = QHBoxLayout()
         adif_file_input = QLineEdit()
         adif_file_input.setText(self.config_manager.get("skcc.adif_master_file", ""))
         adif_file_input.setPlaceholderText("Path to your ADIF master file")
-        adif_file_input.setToolTip("Path to your ADIF logfile (e.g., ~/logs/w4gns.adi)")
+        adif_file_input.setToolTip(
+            "Path to your main ADIF logfile (e.g., ~/Documents/w4gns.adi or ~/n1mm/w4gns.adi)\n"
+            "This is the master file from your radio logging software, NOT an app-created file"
+        )
         self.settings_widgets["skcc.adif_master_file"] = adif_file_input
         adif_file_layout.addWidget(adif_file_input)
 
@@ -366,7 +374,10 @@ class SettingsEditor(QWidget):
         # Auto-sync ADIF checkbox
         auto_sync_check = QCheckBox("Auto-sync contacts from ADIF file on startup")
         auto_sync_check.setChecked(self.config_manager.get("skcc.auto_sync_adif", False))
-        auto_sync_check.setToolTip("Automatically import new contacts from your ADIF file when starting the app")
+        auto_sync_check.setToolTip(
+            "Automatically import new contacts from your ADIF file when starting the app.\n"
+            "This reads from your main logfile to determine which stations you've already worked."
+        )
         self.settings_widgets["skcc.auto_sync_adif"] = auto_sync_check
         form_layout.addRow("", auto_sync_check)
 
