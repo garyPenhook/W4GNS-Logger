@@ -906,6 +906,35 @@ class SKCCSpotWidget(QWidget):
         self.status_label.setText(state_messages.get(state, f"Status: {state.value}"))
         logger.debug(f"RBN state changed: {state.value}")
 
+    def _is_valid_skcc_suffix(self, callsign: str, skcc_roster: dict) -> bool:
+        """
+        Check if a callsign has valid SKCC suffix (C, T, or S).
+        Looks up the SKCC number from the roster.
+
+        Args:
+            callsign: The callsign to check
+            skcc_roster: Dictionary mapping callsign to SKCC member info
+
+        Returns:
+            True if callsign has SKCC number ending with C, T, or S, False otherwise
+        """
+        if not skcc_roster:
+            return False
+
+        callsign_upper = callsign.upper()
+        member_info = skcc_roster.get(callsign_upper)
+
+        if not member_info:
+            return False
+
+        # member_info is typically a dict with 'skcc_number' key
+        skcc_number = member_info.get('skcc_number') if isinstance(member_info, dict) else member_info
+
+        if not skcc_number:
+            return False
+
+        return skcc_number[-1] in ('C', 'T', 'S')
+
     def _apply_filters(self) -> None:
         """Apply filters to spots list (optimized for performance)"""
         # Start with all spots
@@ -925,6 +954,12 @@ class SKCCSpotWidget(QWidget):
         check_unworked = self.unworked_only_check.isChecked()
         worked_callsigns = self._get_worked_callsigns_cached() if check_unworked else set()
 
+        # Get SKCC roster for suffix filtering (C, T, S only)
+        try:
+            skcc_roster = self.spot_manager.db.skcc_members.get_roster_dict()
+        except Exception:
+            skcc_roster = {}
+
         # Single-pass filtering for better performance
         self.filtered_spots = [
             s for s in filtered_spots
@@ -935,7 +970,7 @@ class SKCCSpotWidget(QWidget):
                 for low, high in band_ranges.values()
             ))
             and (not check_unworked or s.callsign not in worked_callsigns)  # Unworked filter
-            and (s.skcc_number and s.skcc_number[-1] in ('C', 'T', 'S'))  # SKCC suffix filter (C, T, or S only)
+            and self._is_valid_skcc_suffix(s.callsign, skcc_roster)  # SKCC suffix filter (C, T, or S only)
         ]
 
         self._update_table()
