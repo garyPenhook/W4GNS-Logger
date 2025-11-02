@@ -18,6 +18,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QFont
 
 from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
+from src.skcc.skcc_skimmer_subprocess import SkccSkimmerSubprocess, SkimmerConnectionState
 from src.config.settings import get_config_manager
 from src.database.models import Contact
 
@@ -439,6 +440,12 @@ class SKCCSpotWidget(QWidget):
         self.spots: List[SKCCSpot] = []
         self.filtered_spots: List[SKCCSpot] = []
 
+        # SKCC Skimmer subprocess for intelligent filtering
+        config_manager = get_config_manager()
+        adif_file = config_manager.get("skcc.adif_master_file", "")
+        self.skcc_skimmer = SkccSkimmerSubprocess(adif_file=adif_file if adif_file else None)
+        self.using_skcc_skimmer = False  # Track whether we're using SKCC Skimmer or internal RBN
+
         # Worked callsigns cache for "Unworked only" filter
         # Cache on startup and refresh every 30 minutes (not 60 seconds) to reduce DB load
         self._worked_callsigns_cache: set[str] = set()
@@ -795,10 +802,16 @@ class SKCCSpotWidget(QWidget):
     def _toggle_monitoring(self) -> None:
         """Toggle RBN monitoring on/off"""
         try:
-            if self.spot_manager.is_running():
+            if self.using_skcc_skimmer and self.skcc_skimmer.is_running():
+                self.skcc_skimmer.stop()
+                self.connect_btn.setText("Start Monitoring")
+                self.status_label.setText("Status: Stopped")
+                self.using_skcc_skimmer = False
+            elif self.spot_manager.is_running():
                 self.spot_manager.stop()
                 self.connect_btn.setText("Start Monitoring")
                 self.status_label.setText("Status: Stopped")
+                self.using_skcc_skimmer = False
             else:
                 self.connect_btn.setEnabled(False)
                 self.status_label.setText("Status: Starting... (check logs if stuck)")
@@ -813,11 +826,28 @@ class SKCCSpotWidget(QWidget):
                     logger.warning("Cannot start spotting - SKCC roster is empty")
                     return
 
-                self.spot_manager.start()
-                self.connect_btn.setText("Stop Monitoring")
-                self.connect_btn.setEnabled(True)
-                mode = "TEST SPOTS" if self.spot_manager.use_test_spots else "RBN"
-                self.status_label.setText(f"Status: {mode} mode active (roster: {roster_count} members)")
+                # Use SKCC Skimmer for intelligent spot filtering
+                logger.info("Starting SKCC Skimmer subprocess for intelligent spot filtering...")
+                success = self.skcc_skimmer.start()
+
+                if success:
+                    self.using_skcc_skimmer = True
+                    self.skcc_skimmer.set_callbacks(
+                        on_spot=self._on_skimmer_spot_line,
+                        on_state_change=self._on_skimmer_state_changed
+                    )
+                    self.connect_btn.setText("Stop Monitoring")
+                    self.connect_btn.setEnabled(True)
+                    self.status_label.setText(f"Status: SKCC Skimmer active (filtering spots)")
+                else:
+                    logger.warning("Failed to start SKCC Skimmer, falling back to internal RBN...")
+                    # Fallback: use internal RBN fetcher
+                    self.using_skcc_skimmer = False
+                    self.spot_manager.start()
+                    self.connect_btn.setText("Stop Monitoring")
+                    self.connect_btn.setEnabled(True)
+                    mode = "RBN"
+                    self.status_label.setText(f"Status: {mode} mode active (roster: {roster_count} members)")
 
         except Exception as e:
             logger.error(f"Error toggling monitoring: {e}", exc_info=True)
@@ -1295,6 +1325,89 @@ class SKCCSpotWidget(QWidget):
             # Re-enable updates to refresh the display
             self.spots_table.setUpdatesEnabled(True)
 
+    def _on_skimmer_spot_line(self, line: str) -> None:
+        """
+        Handle SKCC Skimmer console output line (called from subprocess thread)
+
+        Parse SKCC Skimmer's spot format and convert to SKCCSpot
+        Format: "HH:MM:SS ± CALLSIGN (SKCC#) on FREQUENCY MHz MODE DETAILS"
+        """
+        try:
+            logger.debug(f"SKCC Skimmer output: {line}")
+
+            # Parse SKCC Skimmer spot line format
+            # Example: "14:23:45 + K4ABC (12345T) on 14025.0 MHz CW 23 dB 15 WPM"
+
+            # Basic parsing - extract key elements from the line
+            import re
+
+            # Extract callsign (word after + or - or space indicator)
+            callsign_match = re.search(r'[\s+\-◆]\s+(\w{2,})\s', line)
+            if not callsign_match:
+                return
+            callsign = callsign_match.group(1).upper()
+
+            # Extract SKCC number if present
+            skcc_match = re.search(r'\((\d+[A-Z]*)\)', line)
+            skcc_number = skcc_match.group(1) if skcc_match else None
+
+            # Extract frequency
+            freq_match = re.search(r'(\d+[.,]?\d*)\s*(kHz|MHz)', line)
+            if not freq_match:
+                return
+            freq_str = freq_match.group(1).replace(',', '.')
+            freq_mhz = float(freq_str)
+            if 'kHz' in freq_match.group(2):
+                freq_mhz = freq_mhz / 1000  # Convert kHz to MHz
+
+            # Extract mode (CW, SSB, etc.)
+            mode_match = re.search(r'\b(CW|SSB|LSB|USB|FM|RTTY|FT8|FT4)\b', line, re.IGNORECASE)
+            mode = mode_match.group(1).upper() if mode_match else "CW"
+
+            # Extract signal strength
+            signal_match = re.search(r'(\d+)\s*dB', line)
+            strength = int(signal_match.group(1)) if signal_match else 0
+
+            # Extract speed (WPM) for CW
+            speed_match = re.search(r'(\d+)\s*WPM', line)
+            speed = int(speed_match.group(1)) if speed_match else None
+
+            # Create SKCCSpot object
+            spot = SKCCSpot(
+                callsign=callsign,
+                frequency=freq_mhz,
+                mode=mode,
+                grid=None,
+                reporter="SKCC_Skimmer",
+                strength=strength,
+                speed=speed if mode == "CW" else None,
+                timestamp=datetime.now(timezone.utc),
+                is_skcc=True,  # SKCC Skimmer only shows SKCC spots
+                skcc_number=skcc_number,
+            )
+
+            # Add to processing queue
+            if hasattr(self, '_spot_processing_worker'):
+                self._spot_processing_worker.add_spot(spot)
+                logger.debug(f"Queued SKCC Skimmer spot: {callsign} on {freq_mhz} MHz")
+
+        except Exception as e:
+            logger.error(f"Error parsing SKCC Skimmer spot line: {e}")
+
+    def _on_skimmer_state_changed(self, state: SkimmerConnectionState) -> None:
+        """Handle SKCC Skimmer state changes"""
+        state_str = state.value.upper() if state else "UNKNOWN"
+        logger.info(f"SKCC Skimmer state changed: {state_str}")
+
+        if state == SkimmerConnectionState.RUNNING:
+            self.status_label.setText(f"Status: SKCC Skimmer active (filtering spots)")
+        elif state == SkimmerConnectionState.CONNECTING:
+            self.status_label.setText(f"Status: SKCC Skimmer connecting...")
+        elif state == SkimmerConnectionState.ERROR:
+            self.status_label.setText(f"Status: SKCC Skimmer error - check configuration")
+        elif state == SkimmerConnectionState.STOPPED:
+            self.status_label.setText(f"Status: Stopped")
+
     def closeEvent(self, event) -> None:
         """Clean up when widget is closed"""
         # Set shutdown flag FIRST to prevent new workers from being created
@@ -1304,6 +1417,12 @@ class SKCCSpotWidget(QWidget):
             self.cleanup_timer.stop()
             self.award_cache_timer.stop()
             self._filter_debounce_timer.stop()
+
+            # Stop SKCC Skimmer subprocess if running
+            if hasattr(self, 'skcc_skimmer') and self.skcc_skimmer:
+                if self.skcc_skimmer.is_running():
+                    logger.info("Stopping SKCC Skimmer subprocess...")
+                    self.skcc_skimmer.stop()
 
             # Stop receiving new spots from RBN FIRST (before stopping processing thread)
             # This prevents new spots from being queued while we're shutting down
