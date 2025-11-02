@@ -158,22 +158,10 @@ class ContactEditDialog(QDialog):
             form_layout.addWidget(self.qth_input, row, 1)
             row += 1
 
-            # Operator Name
-            form_layout.addWidget(QLabel("Operator Name:"), row, 0)
-            self.name_input = QLineEdit()
-            form_layout.addWidget(self.name_input, row, 1)
-            row += 1
-
             # SKCC Number
             form_layout.addWidget(QLabel("SKCC Number:"), row, 0)
             self.skcc_number_input = QLineEdit()
             form_layout.addWidget(self.skcc_number_input, row, 1)
-            row += 1
-
-            # County
-            form_layout.addWidget(QLabel("County:"), row, 0)
-            self.county_input = QLineEdit()
-            form_layout.addWidget(self.county_input, row, 1)
             row += 1
 
             # TX Power
@@ -257,9 +245,7 @@ class ContactEditDialog(QDialog):
             self.state_combo.setCurrentText(self.contact.state or "")
             self.grid_input.setText(self.contact.gridsquare or "")
             self.qth_input.setText(self.contact.qth or "")
-            self.name_input.setText(self.contact.name or "")
             self.skcc_number_input.setText(self.contact.skcc_number or "")
-            self.county_input.setText(self.contact.county or "")
             self.power_input.setValue(int(self.contact.tx_power or 0))
             self.my_rig_make_input.setText(self.contact.my_rig_make or "")
             self.my_rig_model_input.setText(self.contact.my_rig_model or "")
@@ -298,9 +284,7 @@ class ContactEditDialog(QDialog):
                 'state': self.state_combo.currentText() or None,
                 'gridsquare': self.grid_input.text().strip() or None,
                 'qth': self.qth_input.text().strip() or None,
-                'name': self.name_input.text().strip() or None,
                 'skcc_number': self.skcc_number_input.text().strip() or None,
-                'county': self.county_input.text().strip() or None,
                 'tx_power': self.power_input.value() if self.power_input.value() > 0 else None,
                 'my_rig_make': self.my_rig_make_input.text().strip() or None,
                 'my_rig_model': self.my_rig_model_input.text().strip() or None,

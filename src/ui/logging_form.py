@@ -408,43 +408,9 @@ class LoggingForm(QWidget):
 
         main_layout.addLayout(row3)
 
-        # ROW 4: Key Type, Operator Name
+        # ROW 4: QRP and Power
         row4 = QHBoxLayout()
         row4.setSpacing(15)
-
-        # Key Type
-        self.key_type_combo = QComboBox()
-        self.key_type_combo.addItems(["STRAIGHT", "BUG", "SIDESWIPER", "NONE"])
-        self.key_type_combo.setMaximumWidth(120)
-        font = self.key_type_combo.font()
-        font.setPointSize(int(font.pointSize() * 1.15))
-        self.key_type_combo.setFont(font)
-        self.key_type_combo.setMinimumHeight(35)
-        row4.addWidget(create_label("Key Type:"))
-        row4.addWidget(self.key_type_combo, 0)
-        row4.addSpacing(10)
-
-        # Operator Name
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Operator name")
-        self.name_input.setMaximumWidth(130)
-        self.name_input.setMinimumHeight(35)
-        # Keep normal font size (not enlarged)
-        row4.addWidget(create_label("Name:"))
-        row4.addWidget(self.name_input, 0)
-        row4.addSpacing(10)
-
-        # County
-        self.county_input = QLineEdit()
-        self.county_input.setPlaceholderText("County")
-        self.county_input.setMaximumWidth(95)
-        font = self.county_input.font()
-        font.setPointSize(int(font.pointSize() * 1.15))
-        self.county_input.setFont(font)
-        self.county_input.setMinimumHeight(35)
-        row4.addWidget(create_label("County:"))
-        row4.addWidget(self.county_input, 0)
-        row4.addSpacing(10)
 
         # QRP Checkbox
         self.qrp_checkbox = QCheckBox("QRP")
@@ -778,14 +744,11 @@ class LoggingForm(QWidget):
 
                 # Build comment from SKCC info
                 skcc_num = self.skcc_number_input.text().strip() if self.skcc_number_input.text().strip() else None
-                contact_name = self.name_input.text().strip() if self.name_input.text().strip() else None
                 contact_state = self.state_combo.currentText() if self.state_combo.currentText() else None
                 contact_country = self.country_combo.currentText() if self.country_combo.currentText() else None
                 location = contact_state or contact_country or "UNKNOWN"
 
-                if skcc_num and contact_name:
-                    comment = f"SKCC: {skcc_num} - {contact_name} - {location}"
-                elif skcc_num:
+                if skcc_num:
                     comment = f"SKCC: {skcc_num} - {location}"
                 else:
                     comment = None
@@ -800,14 +763,11 @@ class LoggingForm(QWidget):
                     frequency=self.frequency_input.value(),
                     country=contact_country if contact_country else None,
                     state=contact_state if contact_state else None,
-                    county=self.county_input.text().strip() if self.county_input.text().strip() else None,
                     gridsquare=self.grid_input.text().strip() if self.grid_input.text().strip() else None,
                     qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
                     rst_sent=str(self.rst_sent_input.value()),
                     rst_rcvd=str(self.rst_rcvd_input.value()),
                     skcc_number=skcc_num,
-                    key_type=self.key_type_combo.currentText(),
-                    name=contact_name,
                     tx_power=self.power_input.value() if self.power_input.value() > 0 else None,
                     # Add operator and station information from config
                     operator=self.config_manager.get('general.operator_callsign', 'W4GNS'),
@@ -844,17 +804,15 @@ class LoggingForm(QWidget):
                 self.db.add_contact(contact)
                 logger.info(f"Contact saved successfully: {contact.callsign} on {contact.band} {contact.mode}")
 
-                # Save last used band, power, and key type for next QSO
+                # Save last used band and power for next QSO
                 try:
                     last_band = self.band_combo.currentText()
                     last_power = self.power_input.value()
-                    last_key_type = self.key_type_combo.currentText()
                     self.config_manager.set('logging.last_band', last_band)
                     self.config_manager.set('logging.last_power', last_power)
-                    self.config_manager.set('logging.last_key_type', last_key_type)
-                    logger.debug(f"Saved last band '{last_band}', power '{last_power}', and key type '{last_key_type}' for next QSO")
+                    logger.debug(f"Saved last band '{last_band}' and power '{last_power}' for next QSO")
                 except Exception as e:
-                    logger.warning(f"Failed to save last band/power/key_type: {e}")
+                    logger.warning(f"Failed to save last band/power: {e}")
                     # Don't fail contact save if config save fails
 
             except Exception as e:
@@ -939,10 +897,10 @@ class LoggingForm(QWidget):
 
     def _restore_last_band_and_power(self) -> None:
         """
-        Restore last used band, power, and key type from config on form initialization
+        Restore last used band and power from config on form initialization
 
-        Loads previously saved band, power, and key type values so operator doesn't need
-        to re-enter them if working multiple QSOs on same band/power/key_type.
+        Loads previously saved band and power values so operator doesn't need
+        to re-enter them if working multiple QSOs on same band/power.
         """
         try:
             # Restore last used band
@@ -958,16 +916,8 @@ class LoggingForm(QWidget):
             if last_power:
                 self.power_input.setValue(int(last_power))
                 logger.debug(f"On init: Restored last power: {last_power}W")
-
-            # Restore last used key type
-            last_key_type = self.config_manager.get('logging.last_key_type', None)
-            if last_key_type:
-                index = self.key_type_combo.findText(last_key_type)
-                if index >= 0:
-                    self.key_type_combo.setCurrentIndex(index)
-                    logger.debug(f"On init: Restored last key type: {last_key_type}")
         except Exception as e:
-            logger.warning(f"Failed to restore last band/power/key_type on init: {e}")
+            logger.warning(f"Failed to restore last band/power on init: {e}")
             # Not critical - just use defaults if restore fails
 
     def clear_form(self) -> None:
@@ -1011,24 +961,6 @@ class LoggingForm(QWidget):
             self.rst_rcvd_input.setValue(599)  # Reset to 599 (5,9,9)
             self.skcc_number_input.clear()
 
-            # Restore last used key type (or set to first if none saved)
-            try:
-                last_key_type = self.config_manager.get('logging.last_key_type', None)
-                if last_key_type:
-                    index = self.key_type_combo.findText(last_key_type)
-                    if index >= 0:
-                        self.key_type_combo.setCurrentIndex(index)
-                        logger.debug(f"Restored last key type: {last_key_type}")
-                    else:
-                        self.key_type_combo.setCurrentIndex(0)
-                else:
-                    self.key_type_combo.setCurrentIndex(0)
-            except Exception as e:
-                logger.warning(f"Failed to restore last key type: {e}")
-                self.key_type_combo.setCurrentIndex(0)
-
-            self.name_input.clear()
-            self.county_input.clear()
             self.qrp_checkbox.setChecked(False)
 
             # Restore last used power (or set to 0 if none saved)
@@ -1107,8 +1039,6 @@ class LoggingForm(QWidget):
                     self.rst_sent_input.setMaximumWidth(width)
                 elif field_name == 'rst_rcvd':
                     self.rst_rcvd_input.setMaximumWidth(width)
-                elif field_name == 'operator':
-                    self.name_input.setMaximumWidth(width)
                 else:
                     raise ValueError(f"Unknown field_name: {field_name}")
 
@@ -1167,8 +1097,6 @@ class LoggingForm(QWidget):
             return self.rst_sent_input.width()
         elif field_name == 'rst_rcvd':
             return self.rst_rcvd_input.width()
-        elif field_name == 'operator':
-            return self.name_input.width()
         return 0
 
     def get_dropdown_width(self, dropdown_name: str) -> int:
@@ -1426,22 +1354,6 @@ class LoggingForm(QWidget):
             info: CallsignInfo object from QRZ
         """
         try:
-            # Fill in name if available and not already filled
-            # QRZ returns fname (first name) and name (last name) separately
-            # Combine them: "First Last" or just the one that's available
-            if (info.fname or info.name) and not self.name_input.text().strip():
-                full_name = ""
-                if info.fname and info.name:
-                    full_name = f"{info.fname} {info.name}"
-                elif info.fname:
-                    full_name = info.fname
-                else:
-                    full_name = info.name
-
-                if full_name:
-                    self.name_input.setText(full_name)
-                    logger.debug(f"Filled operator name from QRZ: {full_name}")
-
             # Fill in state if available
             if info.state:
                 # Try to set state combo if it exists
@@ -1460,11 +1372,6 @@ class LoggingForm(QWidget):
             if info.qth and not self.qth_input.text().strip():
                 self.qth_input.setText(info.qth)
                 logger.debug(f"Filled QTH from QRZ: {info.qth}")
-
-            # Fill in county if available
-            if info.county and not self.county_input.text().strip():
-                self.county_input.setText(info.county)
-                logger.debug(f"Filled county from QRZ: {info.county}")
 
             # Fill in country if available
             if info.country:
