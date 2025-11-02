@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 
 from src.database.repository import DatabaseRepository
-from src.skcc.spot_fetcher import SKCCSpot
+from src.skcc.skcc_skimmer_rbn_fetcher import SKCCSpot
 
 if TYPE_CHECKING:
     from src.ui.spot_eligibility_analyzer import SpotEligibilityAnalyzer, SpotEligibility

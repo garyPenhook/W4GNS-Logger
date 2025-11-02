@@ -236,7 +236,7 @@ def determine_mode(freq_mhz: float, mode_hint: Optional[str] = None) -> str:
     """
     # IMPORTANT: Always use Python implementation for determine_mode
     # The Rust version causes segmentation faults when called from background threads
-    # (spot_fetcher.py uses daemon threads to parse RBN spots)
+    # (RBN fetcher uses daemon threads to parse RBN spots)
     # This is due to PyO3 GIL handling issues when creating Python objects from Rust
     # See: https://github.com/PyO3/pyo3/issues/1205
 

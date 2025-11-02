@@ -15,7 +15,7 @@ from typing import Union, Optional, Dict, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
-from .spot_fetcher import SKCCSpot, RBNConnectionState
+from .skcc_skimmer_rbn_fetcher import SKCCSpot, RBNConnectionState
 
 logger = logging.getLogger(__name__)
 

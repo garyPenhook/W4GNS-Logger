@@ -9,7 +9,7 @@ from typing import Optional, Callable, Dict, Any
 from datetime import datetime
 from enum import Enum
 
-from .spot_fetcher import SKCCSpot, RBNConnectionState
+from .skcc_skimmer_rbn_fetcher import SKCCSpot, RBNConnectionState
 
 logger = logging.getLogger(__name__)
 

@@ -96,11 +96,8 @@ def main():
         signal.signal(signal.SIGTERM, signal_handler)  # type: ignore # Kill signal
         logger.debug("Signal handlers registered for graceful shutdown (SIGINT, SIGTERM)")
 
-        # Note: SKCC Skimmer is an interactive terminal application, not a daemon.
-        # It processes awards and displays spots, then exits. It doesn't continuously
-        # write spots to a file. Therefore, we use Direct RBN for real-time spots.
-        # SKCC Skimmer can still be used manually as a one-time award reporting tool.
-        logger.info("Using Direct RBN connection for real-time spots. (SKCC Skimmer is available manually if needed.)")
+        # Using SKCC Skimmer's proven RBN connection approach for stable, segfault-free spot reception.
+        logger.info("Using SKCC Skimmer's RBN connection for real-time spots (fixes segmentation faults)")
 
         # Create and show main window
         main_window = MainWindow(config)

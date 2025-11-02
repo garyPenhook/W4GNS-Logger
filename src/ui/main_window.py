@@ -239,6 +239,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(separator)
 
         # Add DX Cluster spots (bottom ~70%)
+        # Using SKCC Skimmer's proven RBN connection (fixes segmentation faults)
         spot_manager = SKCCSpotManager(self.db)
         
         # Get user's callsign and SKCC number for award eligibility analysis

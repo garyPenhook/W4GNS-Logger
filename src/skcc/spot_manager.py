@@ -10,7 +10,7 @@ import logging
 from typing import Optional, Callable, Dict, List, Any
 from datetime import datetime, timezone
 
-from .spot_fetcher import RBNSpotFetcher, SKCCSpot, SKCCSpotFilter, RBNConnectionState
+from .skcc_skimmer_rbn_fetcher import SkccSkimmerRBNFetcher, SKCCSpot, SKCCSpotFilter, RBNConnectionState
 from .spot_source_adapter import SpotSourceAdapter, SpotSource
 from .spot_classifier import SpotClassifier
 from src.database.repository import DatabaseRepository
@@ -38,10 +38,10 @@ class SKCCSpotManager:
             db: Database repository instance
         """
         self.db = db
-        self.fetcher: Optional[RBNSpotFetcher] = None
+        self.fetcher: Optional[SkccSkimmerRBNFetcher] = None
         self.spot_filter = SKCCSpotFilter()
         self.use_test_spots = False
-        
+
         # Spot source adapter
         self.spot_source_adapter = SpotSourceAdapter()
         self.active_source: SpotSource = SpotSource.DIRECT_RBN
@@ -72,24 +72,23 @@ class SKCCSpotManager:
                 logger.warning("SKCC roster is empty! Spots will not be identified as SKCC members. "
                              "Try downloading the roster from Settings or running sync_membership_data()")
 
-            # Use direct RBN connection
-            logger.info("Using direct RBN connection for spots")
+            # Use SKCC Skimmer's proven RBN connection (fixes segmentation faults)
             self.active_source = SpotSource.DIRECT_RBN
             self.spot_source_adapter.use_direct_rbn()
-            
-            # Create and configure fetcher for direct RBN
-            self.fetcher = RBNSpotFetcher(roster, use_test_spots=self.use_test_spots)
+
+            logger.info("Using SKCC Skimmer's proven RBN connection for spots")
+            self.fetcher = SkccSkimmerRBNFetcher(roster)
+
             self.fetcher.set_callbacks(
                 on_spot=self._on_rbn_spot,
                 on_state_change=self._on_connection_state_changed,
             )
             self.fetcher.start()
-            
+
             if self.on_source_changed:
                 self.on_source_changed(SpotSource.DIRECT_RBN)
 
-            mode = "TEST SPOTS" if self.use_test_spots else "RBN"
-            logger.info(f"SKCC spot manager started (source: Direct RBN, roster: {roster_count} members, mode: {mode})")
+            logger.info(f"SKCC spot manager started (source: SKCC Skimmer RBN, roster: {roster_count} members)")
 
         except Exception as e:
             logger.error(f"Failed to start spot manager: {e}", exc_info=True)

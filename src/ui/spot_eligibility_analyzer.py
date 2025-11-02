@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from src.database.repository import DatabaseRepository
-from src.skcc.spot_fetcher import SKCCSpot
+from src.skcc.skcc_skimmer_rbn_fetcher import SKCCSpot
 from src.utils.skcc_number import get_member_type
 
 logger = logging.getLogger(__name__)

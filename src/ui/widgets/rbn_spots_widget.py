@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 
-from src.skcc.spot_fetcher import RBNConnectionState, SKCCSpot
+from src.skcc.skcc_skimmer_rbn_fetcher import RBNConnectionState, SKCCSpot
 from src.skcc.spot_source_adapter import SpotSource
 from src.ui.spot_matcher import SpotMatcher
 
