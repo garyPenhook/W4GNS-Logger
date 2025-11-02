@@ -408,9 +408,21 @@ class LoggingForm(QWidget):
 
         main_layout.addLayout(row3)
 
-        # ROW 4: QRP and Power
+        # ROW 4: Key Type, QRP and Power
         row4 = QHBoxLayout()
         row4.setSpacing(15)
+
+        # Key Type
+        self.key_type_combo = QComboBox()
+        self.key_type_combo.addItems(["", "STRAIGHT", "BUG", "SIDESWIPER"])
+        font = self.key_type_combo.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.key_type_combo.setFont(font)
+        self.key_type_combo.setMinimumHeight(35)
+        self.key_type_combo.setMaximumWidth(120)
+        self.key_type_combo.setToolTip("Type of key used: Straight key, Bug, or Sideswiper")
+        row4.addWidget(create_label("Key:"))
+        row4.addWidget(self.key_type_combo, 0)
 
         # QRP Checkbox
         self.qrp_checkbox = QCheckBox("QRP")
@@ -768,6 +780,7 @@ class LoggingForm(QWidget):
                     rst_sent=str(self.rst_sent_input.value()),
                     rst_rcvd=str(self.rst_rcvd_input.value()),
                     skcc_number=skcc_num,
+                    key_type=self.key_type_combo.currentText() if self.key_type_combo.currentText() else None,
                     tx_power=self.power_input.value() if self.power_input.value() > 0 else None,
                     # Add operator and station information from config
                     operator=self.config_manager.get('general.operator_callsign', 'W4GNS'),
@@ -952,6 +965,7 @@ class LoggingForm(QWidget):
                 self.band_combo.setCurrentIndex(0)
 
             self.mode_combo.setCurrentIndex(0)
+            self.key_type_combo.setCurrentIndex(0)
             self.frequency_input.setValue(0.0)
             self.country_combo.setCurrentIndex(0)
             self.state_combo.setCurrentIndex(0)

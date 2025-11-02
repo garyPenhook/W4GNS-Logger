@@ -163,28 +163,6 @@ class SpotMatcher:
                 contact_date=contact_date
             )
 
-    def get_highlight_color(self, match: SpotMatch) -> Optional[Tuple[int, int, int, int]]:
-        """
-        Get highlight color for a matched spot (RGBA format)
-
-        Args:
-            match: SpotMatch object
-
-        Returns:
-            Tuple of (R, G, B, Alpha) or None if no highlighting
-        """
-        if match.match_type == "RECENT":
-            # Recently worked: bright yellow/orange
-            return (255, 200, 0, 120)  # RGBA
-
-        elif match.match_type == "WORKED":
-            # Previously worked: light orange
-            return (255, 160, 0, 80)  # RGBA
-
-        else:
-            # No match: no highlighting
-            return None
-
     def get_match_tooltip(self, match: SpotMatch) -> str:
         """
         Get tooltip text describing the spot match

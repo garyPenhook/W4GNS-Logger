@@ -372,42 +372,6 @@ class SpotEligibilityAnalyzer:
         else:
             return EligibilityLevel.MEDIUM
 
-    def _get_highlight_color(
-        self, level: EligibilityLevel, is_worked: bool, worked_recently: bool
-    ) -> Optional[Tuple[int, int, int, int]]:
-        """
-        Get highlight color for the spot (RGBA format)
-
-        Color scheme:
-        - RED: Critical award need (almost qualified)
-        - ORANGE: Important award need
-        - YELLOW: Medium/long-term award need
-        - GREEN: Recently worked (already in book)
-        - GRAY: Already worked long ago or not needed
-        - None: No highlighting
-        """
-
-        if not self.enable_eligibility:
-            return None
-
-        if level == EligibilityLevel.CRITICAL:
-            return (255, 0, 0, 120)  # Red - CRITICAL!
-
-        elif level == EligibilityLevel.HIGH:
-            return (255, 100, 0, 100)  # Orange - Important
-
-        elif level == EligibilityLevel.MEDIUM:
-            return (255, 200, 0, 80)  # Yellow - Helpful
-
-        elif level == EligibilityLevel.LOW:
-            if worked_recently:
-                return (100, 200, 100, 60)  # Green - Recently worked
-            else:
-                return (150, 150, 150, 40)  # Gray - Already worked
-
-        else:
-            return None
-
     def _generate_tooltip(
         self, callsign: str, is_worked: bool, worked_count: int,
         worked_days_ago: Optional[int], needed_for_awards: List[str],

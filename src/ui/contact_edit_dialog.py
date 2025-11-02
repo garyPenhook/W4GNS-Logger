@@ -109,6 +109,13 @@ class ContactEditDialog(QDialog):
             form_layout.addWidget(self.mode_combo, row, 1)
             row += 1
 
+            # Key Type
+            form_layout.addWidget(QLabel("Key Type:"), row, 0)
+            self.key_type_combo = QComboBox()
+            self.key_type_combo.addItems(["", "STRAIGHT", "BUG", "SIDESWIPER"])
+            form_layout.addWidget(self.key_type_combo, row, 1)
+            row += 1
+
             # Frequency
             form_layout.addWidget(QLabel("Frequency (MHz):"), row, 0)
             self.frequency_input = QDoubleSpinBox()
@@ -238,6 +245,7 @@ class ContactEditDialog(QDialog):
             self.time_off_input.setText(self.contact.time_off or "")
             self.band_combo.setCurrentText(self.contact.band or "")
             self.mode_combo.setCurrentText(self.contact.mode or "")
+            self.key_type_combo.setCurrentText(self.contact.key_type or "")
             self.frequency_input.setValue(self.contact.frequency or 0.0)
             self.rst_sent_input.setValue(int(self.contact.rst_sent) if self.contact.rst_sent else 599)
             self.rst_rcvd_input.setValue(int(self.contact.rst_rcvd) if self.contact.rst_rcvd else 599)
@@ -277,6 +285,7 @@ class ContactEditDialog(QDialog):
                 'time_off': self.time_off_input.text().strip() or None,
                 'band': self.band_combo.currentText() or None,
                 'mode': self.mode_combo.currentText() or None,
+                'key_type': self.key_type_combo.currentText() or None,
                 'frequency': self.frequency_input.value() if self.frequency_input.value() > 0 else None,
                 'rst_sent': str(self.rst_sent_input.value()) if self.rst_sent_input.value() else None,
                 'rst_rcvd': str(self.rst_rcvd_input.value()) if self.rst_rcvd_input.value() else None,
