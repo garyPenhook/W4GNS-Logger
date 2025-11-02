@@ -91,10 +91,11 @@ class SpotProcessingWorker(QObject):
         self.last_batch_time = datetime.now(timezone.utc)
         self._flush_times = []  # Track flush operation timing for performance monitoring
 
-        # Thread synchronization lock for pending_spots list
-        # Prevents race condition between add_spot() and _flush_pending_writes()
+        # Thread synchronization locks
+        # Prevents race conditions between multiple threads accessing shared lists
         from threading import Lock
-        self._pending_spots_lock = Lock()
+        self._queue_lock = Lock()  # Protects spot_queue (add_spot vs process_spots)
+        self._pending_spots_lock = Lock()  # Protects pending_spots (_process_single_spot vs _flush_pending_writes)
 
         # Cache worked callsigns to avoid repeated queries
         self._worked_callsigns_cache: Optional[set] = None
@@ -103,23 +104,28 @@ class SpotProcessingWorker(QObject):
 
     def add_spot(self, spot: SKCCSpot):
         """Add spot to processing queue with overflow protection"""
-        self.spot_queue.append(spot)
+        with self._queue_lock:
+            self.spot_queue.append(spot)
 
-        # Safety valve: if queue gets too large, drop oldest spots
-        # This prevents memory explosion if processing can't keep up with spots
-        # Increased from 1000 to 5000 to allow more buffering during DB writes
-        max_queue_size = 5000
-        if len(self.spot_queue) > max_queue_size:
-            overflow_count = len(self.spot_queue) - max_queue_size
-            self.spot_queue = self.spot_queue[overflow_count:]
-            logger.warning(f"Spot queue overflow: dropped {overflow_count} old spots to prevent memory leak")
+            # Safety valve: if queue gets too large, drop oldest spots
+            # This prevents memory explosion if processing can't keep up with spots
+            # Increased from 1000 to 5000 to allow more buffering during DB writes
+            max_queue_size = 5000
+            if len(self.spot_queue) > max_queue_size:
+                overflow_count = len(self.spot_queue) - max_queue_size
+                self.spot_queue = self.spot_queue[overflow_count:]
+                logger.warning(f"Spot queue overflow: dropped {overflow_count} old spots to prevent memory leak")
 
     def process_spots(self):
         """Process all queued spots with batched database writes"""
         while self.running:
-            # Process all spots in queue
-            while self.spot_queue and self.running:
-                spot = self.spot_queue.pop(0)
+            # Process all spots in queue (safely pop with lock to prevent race condition)
+            spot = None
+            with self._queue_lock:
+                if self.spot_queue and self.running:
+                    spot = self.spot_queue.pop(0)
+
+            if spot:
                 self._process_single_spot(spot)
 
             # Check if we should flush pending writes (check with lock)
