@@ -88,6 +88,11 @@ class SpotProcessingWorker(QObject):
         self.pending_spots = []  # Spots waiting to be written
         self.last_batch_time = datetime.now(timezone.utc)
 
+        # Thread synchronization lock for pending_spots list
+        # Prevents race condition between add_spot() and _flush_pending_writes()
+        from threading import Lock
+        self._pending_spots_lock = Lock()
+
         # Cache worked callsigns to avoid repeated queries
         self._worked_callsigns_cache: Optional[set] = None
         self._cache_timestamp: Optional[datetime] = None
@@ -113,9 +118,12 @@ class SpotProcessingWorker(QObject):
                 spot = self.spot_queue.pop(0)
                 self._process_single_spot(spot)
 
-            # Check if we should flush pending writes
+            # Check if we should flush pending writes (check with lock)
             time_since_last_batch = (datetime.now(timezone.utc) - self.last_batch_time).total_seconds() * 1000
-            if self.pending_spots and time_since_last_batch >= self.batch_timeout_ms:
+            with self._pending_spots_lock:
+                has_pending = len(self.pending_spots) > 0
+
+            if has_pending and time_since_last_batch >= self.batch_timeout_ms:
                 self._flush_pending_writes()
 
             # Sleep briefly to avoid busy-waiting
@@ -148,14 +156,16 @@ class SpotProcessingWorker(QObject):
                 "spotted_time": spot.timestamp.strftime("%H%M"),
             }
 
-            # Add to pending batch instead of writing immediately
-            self.pending_spots.append((spot_data, spot, worked_callsigns, goal_type))
+            # Add to pending batch instead of writing immediately (with lock to prevent race condition)
+            with self._pending_spots_lock:
+                self.pending_spots.append((spot_data, spot, worked_callsigns, goal_type))
+                pending_count = len(self.pending_spots)
 
-            # Flush if batch is full
-            if len(self.pending_spots) >= self.batch_write_size:
-                self._flush_pending_writes()
+                # Flush if batch is full
+                if pending_count >= self.batch_write_size:
+                    self._flush_pending_writes()
 
-            logger.debug(f"Queued spot {spot.callsign} for batched write (pending: {len(self.pending_spots)})")
+            logger.debug(f"Queued spot {spot.callsign} for batched write (pending: {pending_count})")
 
         except Exception as e:
             logger.error(f"Error processing spot: {e}", exc_info=True)
@@ -183,18 +193,24 @@ class SpotProcessingWorker(QObject):
 
     def _flush_pending_writes(self):
         """Flush all pending spots to database in a single transaction"""
-        if not self.pending_spots:
-            return
+        # Acquire lock and get copy of pending spots
+        with self._pending_spots_lock:
+            if not self.pending_spots:
+                return
+            # Make a copy and clear the pending list while holding the lock
+            spots_to_write = self.pending_spots.copy()
+            self.pending_spots.clear()
 
+        # Now do database work OUTSIDE the lock to allow concurrent add_spot() calls
         session = self.spot_manager.db.get_session()
         signals_to_emit = []  # Collect signals to emit AFTER transaction completes
 
         try:
-            # Batch write all pending spots in a single transaction
+            # Batch write all spots in a single transaction
             from src.database.models import ClusterSpot
-            batch_count = len(self.pending_spots)
+            batch_count = len(spots_to_write)
 
-            for spot_data, spot, worked_callsigns, goal_type in self.pending_spots:
+            for spot_data, spot, worked_callsigns, goal_type in spots_to_write:
                 db_spot = ClusterSpot(**spot_data)
                 session.add(db_spot)
                 # Queue signal emission for AFTER commit
@@ -207,15 +223,13 @@ class SpotProcessingWorker(QObject):
                 self.spot_processed.emit(spot, worked_callsigns, goal_type, should_store)
 
             logger.debug(f"Flushed {batch_count} spots to database in batch write")
-            self.pending_spots.clear()
             self.last_batch_time = datetime.now(timezone.utc)
         except Exception as e:
             session.rollback()
             logger.error(f"Error in batch write: {e}", exc_info=True)
-            # Emit failure for all pending spots
-            for spot_data, spot, worked_callsigns, goal_type in self.pending_spots:
+            # Emit failure for all spots
+            for spot_data, spot, worked_callsigns, goal_type in spots_to_write:
                 self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
-            self.pending_spots.clear()
         finally:
             session.close()
 
