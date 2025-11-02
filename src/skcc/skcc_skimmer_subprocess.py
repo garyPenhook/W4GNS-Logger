@@ -14,8 +14,24 @@ from pathlib import Path
 from typing import Optional, Callable, List
 from datetime import datetime, timezone
 from enum import Enum
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SKCCSpot:
+    """Represents a SKCC spot from SKCC Skimmer"""
+    callsign: str
+    frequency: float
+    mode: str
+    grid: Optional[str]
+    reporter: str
+    strength: int
+    speed: Optional[int]
+    timestamp: datetime
+    is_skcc: bool = True
+    skcc_number: Optional[str] = None
 
 
 class SkimmerConnectionState(Enum):

@@ -217,11 +217,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def _create_logging_tab(self) -> QWidget:
-        """Create contact logging tab with logging form and DX cluster spots"""
+        """Create contact logging tab with logging form and SKCC Skimmer spots"""
         from src.ui.logging_form import LoggingForm
-        from src.skcc import SKCCSpotManager
         from src.ui.widgets.skcc_spots_widget import SKCCSpotWidget
-        from src.ui.spot_matcher import SpotMatcher
 
         widget = QWidget()
         layout = QVBoxLayout()
@@ -238,22 +236,9 @@ class MainWindow(QMainWindow):
         separator.setStyleSheet("background-color: #cccccc;")
         layout.addWidget(separator)
 
-        # Add DX Cluster spots (bottom ~70%)
-        # Using SKCC Skimmer's proven RBN connection (fixes segmentation faults)
-        spot_manager = SKCCSpotManager(self.db)
-        
-        # Get user's callsign and SKCC number for award eligibility analysis
-        my_callsign = self.config_manager.get("general.operator_callsign", "")
-        my_skcc_number = self.config_manager.get("adif.my_skcc_number", "")
-        
-        # Create spot matcher with award eligibility analyzer
-        spot_matcher = SpotMatcher(self.db, self.config_manager, my_callsign, my_skcc_number)
-        
-        # Enable award eligibility analysis if we have SKCC number
-        if my_callsign and my_skcc_number:
-            spot_matcher.enable_award_eligibility(my_callsign, my_skcc_number)
-        
-        spots_widget = SKCCSpotWidget(spot_manager, spot_matcher)
+        # Add SKCC Skimmer spots (bottom ~70%)
+        # Uses K7MJG's SKCC Skimmer for intelligent spot filtering
+        spots_widget = SKCCSpotWidget(self.db)
 
         # Connect spot selection to logging form
         spots_widget.spot_selected.connect(self._on_spot_selected)
@@ -262,9 +247,7 @@ class MainWindow(QMainWindow):
 
         widget.setLayout(layout)
 
-        # Store references for cleanup
-        self.spot_manager = spot_manager
-        self.spot_matcher = spot_matcher
+        # Store reference for cleanup
         self.spots_widget = spots_widget
 
         return widget
@@ -748,12 +731,6 @@ class MainWindow(QMainWindow):
                     progress.setLabelText("Stopping background services...")
                     progress.setValue(10)
 
-                    # Stop spot manager first
-                    if hasattr(self, 'spot_manager') and self.spot_manager:
-                        logger.info("Stopping SKCC spot manager...")
-                        self.spot_manager.stop()
-                        QApplication.processEvents()
-
                     # Close all tab widgets to trigger their closeEvent handlers
                     # This ensures all worker threads are stopped
                     logger.info("Closing all tab widgets...")
@@ -932,13 +909,6 @@ class MainWindow(QMainWindow):
             logger.error(f"Error in closeEvent: {e}", exc_info=True)
             # Accept event anyway to allow exit on error
             try:
-                # Try to stop spot manager if it exists
-                if hasattr(self, 'spot_manager') and self.spot_manager:
-                    try:
-                        self.spot_manager.stop()
-                    except Exception as spot_error:
-                        logger.warning(f"Error stopping spot manager during error cleanup: {spot_error}")
-
                 if hasattr(self, 'db') and self.db:
                     try:
                         self.db.engine.dispose()

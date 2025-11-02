@@ -17,8 +17,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QFont
 
-from src.skcc import SKCCSpotManager, SKCCSpot, SKCCSpotFilter, RBNConnectionState
-from src.skcc.skcc_skimmer_subprocess import SkccSkimmerSubprocess, SkimmerConnectionState
+from src.skcc import SkccSkimmerSubprocess, SkimmerConnectionState, SKCCSpot
 from src.config.settings import get_config_manager
 from src.database.models import Contact
 

@@ -1,18 +1,15 @@
 """
 SKCC (Straight Key Century Club) module
 
-Provides SKCC member spotting, roster management, and award tracking.
-
-Uses SKCC Skimmer's proven RBN connection approach to fix segmentation faults.
+Uses K7MJG's SKCC Skimmer for intelligent SKCC member spot filtering.
+SKCC Skimmer analyzes user's ADIF file and goals/targets to provide
+relevant spot recommendations.
 """
 
-from .skcc_skimmer_rbn_fetcher import SkccSkimmerRBNFetcher, SKCCSpot, SKCCSpotFilter, RBNConnectionState
-from .spot_manager import SKCCSpotManager
+from .skcc_skimmer_subprocess import SkccSkimmerSubprocess, SkimmerConnectionState, SKCCSpot
 
 __all__ = [
-    "SkccSkimmerRBNFetcher",
+    "SkccSkimmerSubprocess",
+    "SkimmerConnectionState",
     "SKCCSpot",
-    "SKCCSpotFilter",
-    "RBNConnectionState",
-    "SKCCSpotManager",
 ]
