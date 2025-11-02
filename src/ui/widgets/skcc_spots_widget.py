@@ -6,7 +6,7 @@ with the logging form.
 """
 
 import logging
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtWidgets import (
@@ -21,31 +21,29 @@ from src.skcc import SkccSkimmerSubprocess, SkimmerConnectionState, SKCCSpot
 from src.config.settings import get_config_manager
 from src.database.models import Contact
 
-if TYPE_CHECKING:
-    from src.ui.spot_matcher import SpotMatcher
-
 logger = logging.getLogger(__name__)
 
 
 class SKCCSpotStatusIndicator(QLabel):
-    """Status indicator for RBN connection"""
+    """Status indicator for SKCC Skimmer connection"""
 
     def __init__(self):
         super().__init__()
         self.setFixedSize(16, 16)
-        self.update_state(RBNConnectionState.DISCONNECTED)
+        self.update_state(SkimmerConnectionState.DISCONNECTED)
 
-    def update_state(self, state: RBNConnectionState) -> None:
+    def update_state(self, state: SkimmerConnectionState) -> None:
         """Update indicator color based on connection state"""
         colors = {
-            RBNConnectionState.DISCONNECTED: "#cccccc",
-            RBNConnectionState.CONNECTING: "#ffff00",
-            RBNConnectionState.CONNECTED: "#00ff00",
-            RBNConnectionState.ERROR: "#ff0000",
+            SkimmerConnectionState.DISCONNECTED: "#cccccc",
+            SkimmerConnectionState.STARTING: "#ffff00",
+            SkimmerConnectionState.RUNNING: "#00ff00",
+            SkimmerConnectionState.ERROR: "#ff0000",
+            SkimmerConnectionState.STOPPED: "#cccccc",
         }
         color = colors.get(state, "#cccccc")
         self.setStyleSheet(f"background-color: {color}; border-radius: 8px;")
-        self.setToolTip(f"RBN Status: {state.value}")
+        self.setToolTip(f"SKCC Skimmer Status: {state.value}")
 
 
 class SKCCSpotRow:
@@ -71,371 +69,26 @@ class SKCCSpotRow:
             return f"{int(self.age_seconds / 3600)}h"
 
 
-class SpotProcessingWorker(QObject):
-    """Queue-based worker for processing spots in background thread with batched database writes"""
-    spot_processed = pyqtSignal(object, set, str, bool)  # spot, worked_callsigns, goal_type, should_store
-
-    def __init__(self, spot_manager, spot_filter: SKCCSpotFilter):
-        super().__init__()
-        self.spot_manager = spot_manager
-        self.spot_filter = spot_filter
-        self.running = True
-        self.spot_queue: List[SKCCSpot] = []
-
-        # Batching parameters to reduce database lock contention
-        # Increased from 10 to 50 to process more spots per commit (reduces commit overhead)
-        self.batch_write_size = 50
-        # Reduced from 500ms to 200ms to flush more frequently and prevent queue overflow
-        self.batch_timeout_ms = 200
-        self.pending_spots = []  # Spots waiting to be written
-        self.last_batch_time = datetime.now(timezone.utc)
-        self._flush_times = []  # Track flush operation timing for performance monitoring
-
-        # Thread synchronization locks
-        # Prevents race conditions between multiple threads accessing shared lists
-        from threading import Lock
-        self._queue_lock = Lock()  # Protects spot_queue (add_spot vs process_spots)
-        self._pending_spots_lock = Lock()  # Protects pending_spots (_process_single_spot vs _flush_pending_writes)
-
-        # Cache worked callsigns to avoid repeated queries
-        self._worked_callsigns_cache: Optional[set] = None
-        self._cache_timestamp: Optional[datetime] = None
-        self._cache_ttl_seconds = 5  # Refresh cache every 5 seconds
-
-    def add_spot(self, spot: SKCCSpot):
-        """Add spot to processing queue with overflow protection"""
-        with self._queue_lock:
-            self.spot_queue.append(spot)
-
-            # Safety valve: if queue gets too large, drop oldest spots
-            # This prevents memory explosion if processing can't keep up with spots
-            # Increased from 1000 to 5000 to allow more buffering during DB writes
-            max_queue_size = 5000
-            if len(self.spot_queue) > max_queue_size:
-                overflow_count = len(self.spot_queue) - max_queue_size
-                self.spot_queue = self.spot_queue[overflow_count:]
-                logger.warning(f"Spot queue overflow: dropped {overflow_count} old spots to prevent memory leak")
-
-    def process_spots(self):
-        """Process all queued spots with batched database writes"""
-        while self.running:
-            # Process all spots in queue (safely pop with lock to prevent race condition)
-            spot = None
-            with self._queue_lock:
-                if self.spot_queue and self.running:
-                    spot = self.spot_queue.pop(0)
-
-            if spot:
-                self._process_single_spot(spot)
-
-            # Check if we should flush pending writes (check with lock)
-            time_since_last_batch = (datetime.now(timezone.utc) - self.last_batch_time).total_seconds() * 1000
-            with self._pending_spots_lock:
-                has_pending = len(self.pending_spots) > 0
-
-            if has_pending and time_since_last_batch >= self.batch_timeout_ms:
-                self._flush_pending_writes()
-
-            # Sleep briefly to avoid busy-waiting
-            QThread.msleep(10)
-
-    def _process_single_spot(self, spot: SKCCSpot):
-        """Process a single spot (without writing to database yet)"""
-        try:
-            # Get worked callsigns with caching to reduce database queries
-            worked_callsigns = self._get_worked_callsigns_cached()
-
-            # Apply spot filter
-            if not self.spot_filter.matches(spot, worked_callsigns):
-                logger.debug(f"Spot {spot.callsign} filtered by spot_filter")
-                try:
-                    self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
-                except RuntimeError as emit_error:
-                    # Suppress error if worker was deleted during shutdown
-                    if "has been deleted" in str(emit_error):
-                        logger.debug(f"Worker deleted during shutdown, skipping signal emit")
-                    else:
-                        raise
-                return
-
-            # Classify spot as GOAL/TARGET/BOTH
-            goal_type = self.spot_manager.spot_classifier.classify_spot(spot.callsign)
-
-            # Prepare spot data for batched write
-            spot_data = {
-                "frequency": round(spot.frequency, 3),
-                "dx_callsign": spot.callsign,
-                "de_callsign": spot.reporter,
-                "dx_grid": spot.grid,
-                "comment": f"Speed: {spot.speed} WPM" if spot.speed else None,
-                "received_at": spot.timestamp,
-                "spotted_date": spot.timestamp.strftime("%Y%m%d"),
-                "spotted_time": spot.timestamp.strftime("%H%M"),
-            }
-
-            # Add to pending batch instead of writing immediately (with lock to prevent race condition)
-            with self._pending_spots_lock:
-                self.pending_spots.append((spot_data, spot, worked_callsigns, goal_type))
-                pending_count = len(self.pending_spots)
-
-                # Flush if batch is full
-                if pending_count >= self.batch_write_size:
-                    self._flush_pending_writes()
-
-            logger.debug(f"Queued spot {spot.callsign} for batched write (pending: {pending_count})")
-
-        except Exception as e:
-            logger.error(f"Error processing spot: {e}", exc_info=True)
-            try:
-                self.spot_processed.emit(spot, set(), "NONE", False)
-            except RuntimeError as emit_error:
-                # Suppress error if worker was deleted during shutdown
-                if "has been deleted" in str(emit_error):
-                    logger.debug(f"Worker deleted during shutdown, skipping error signal emit")
-                else:
-                    raise
-
-    def _get_worked_callsigns_cached(self) -> set:
-        """Get worked callsigns with caching to reduce database queries"""
-        now = datetime.now(timezone.utc)
-
-        # Use cache if still valid
-        if (self._worked_callsigns_cache is not None and
-            self._cache_timestamp is not None and
-            (now - self._cache_timestamp).total_seconds() < self._cache_ttl_seconds):
-            return self._worked_callsigns_cache
-
-        # Refresh cache
-        session = self.spot_manager.db.get_session()
-        try:
-            worked_callsigns_result = session.query(Contact.callsign).distinct().all()
-            self._worked_callsigns_cache = {c[0].upper() for c in worked_callsigns_result if c[0]}
-            self._cache_timestamp = now
-            return self._worked_callsigns_cache
-        finally:
-            session.close()
-
-    def _flush_pending_writes(self):
-        """Flush all pending spots to database in a single transaction"""
-        import time
-        # Acquire lock and get copy of pending spots
-        with self._pending_spots_lock:
-            if not self.pending_spots:
-                return
-            # Make a copy and clear the pending list while holding the lock
-            spots_to_write = self.pending_spots.copy()
-            self.pending_spots.clear()
-
-        # Now do database work OUTSIDE the lock to allow concurrent add_spot() calls
-        session = self.spot_manager.db.get_session()
-        signals_to_emit = []  # Collect signals to emit AFTER transaction completes
-        flush_start = time.time()
-
-        try:
-            # Batch write all spots in a single transaction
-            from src.database.models import ClusterSpot
-            batch_count = len(spots_to_write)
-
-            for spot_data, spot, worked_callsigns, goal_type in spots_to_write:
-                db_spot = ClusterSpot(**spot_data)
-                session.add(db_spot)
-                # Queue signal emission for AFTER commit
-                signals_to_emit.append((spot, worked_callsigns, goal_type, True))
-
-            session.commit()
-            flush_time = time.time() - flush_start
-            self._flush_times.append(flush_time)
-
-            # Keep last 100 flush times for averaging
-            if len(self._flush_times) > 100:
-                self._flush_times = self._flush_times[-100:]
-
-            avg_flush_time = sum(self._flush_times) / len(self._flush_times)
-
-            # Now emit all signals AFTER commit is successful
-            for spot, worked_callsigns, goal_type, should_store in signals_to_emit:
-                try:
-                    self.spot_processed.emit(spot, worked_callsigns, goal_type, should_store)
-                except RuntimeError as emit_error:
-                    # Suppress error if worker was deleted during shutdown
-                    if "has been deleted" in str(emit_error):
-                        logger.debug(f"Worker deleted during shutdown, skipping success signal emit")
-                    else:
-                        raise
-
-            logger.debug(
-                f"Flushed {batch_count} spots to database in {flush_time:.3f}s "
-                f"(avg: {avg_flush_time:.3f}s)"
-            )
-            self.last_batch_time = datetime.now(timezone.utc)
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Error in batch write: {e}", exc_info=True)
-            # Emit failure for all spots
-            for spot_data, spot, worked_callsigns, goal_type in spots_to_write:
-                try:
-                    self.spot_processed.emit(spot, worked_callsigns, "NONE", False)
-                except RuntimeError as emit_error:
-                    # Suppress error if worker was deleted during shutdown
-                    if "has been deleted" in str(emit_error):
-                        logger.debug(f"Worker deleted during shutdown, skipping error flush signal emit")
-                    else:
-                        raise
-        finally:
-            session.close()
-
-    def stop(self):
-        """Stop processing and flush any pending writes"""
-        self.running = False
-        # Flush remaining spots before stopping
-        self._flush_pending_writes()
 
 
-class CleanupWorker(QThread):
-    """Worker thread for cleaning up old spots"""
-    finished = pyqtSignal()
-
-    def __init__(self, spot_manager, spots: List, last_shown_time: Dict):
-        super().__init__()
-        self.spot_manager = spot_manager
-        self.spots = spots
-        self.last_shown_time = last_shown_time
-        self.new_spots = []
-        self.callsigns_to_remove = []
-
-    def run(self):
-        """Run cleanup in background thread"""
-        try:
-            # Remove spots older than 10 minutes from memory (was 30) - more aggressive cleanup
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-            old_count = len(self.spots)
-            self.new_spots = [s for s in self.spots if s.timestamp > cutoff]
-            if old_count > len(self.new_spots):
-                logger.debug(f"Cleaned up {old_count - len(self.new_spots)} old spots from memory")
-
-            # Remove spots older than 24 hours from database (with error handling for closed database)
-            try:
-                self.spot_manager.cleanup_old_spots(hours=24)
-            except Exception as db_error:
-                # Handle case where database connection is closed during shutdown
-                if "closed database" in str(db_error).lower() or "database is locked" in str(db_error).lower():
-                    logger.debug(f"Database unavailable during cleanup (shutdown in progress): {db_error}")
-                else:
-                    logger.error(f"Error cleaning up old spots: {db_error}", exc_info=True)
-
-            # Clean up old entries from duplicate tracking - much more aggressive (was 5 minutes)
-            cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=2)
-            self.callsigns_to_remove = [
-                callsign for callsign, timestamp in self.last_shown_time.items()
-                if timestamp < cutoff_tracking
-            ]
-
-            if self.callsigns_to_remove:
-                logger.debug(f"Cleaned up {len(self.callsigns_to_remove)} old entries from duplicate tracking")
-        except Exception as e:
-            logger.error(f"Error in cleanup worker: {e}", exc_info=True)
-        finally:
-            self.finished.emit()
-
-
-class AwardCacheWorker(QThread):
-    """Worker thread for refreshing award cache"""
-    finished = pyqtSignal(set, set, set)  # worked_skcc, award_critical, all_progress
-
-    def __init__(self, spot_manager):
-        super().__init__()
-        self.spot_manager = spot_manager
-
-    def run(self):
-        """Run award cache refresh in background thread"""
-        try:
-            from src.database.models import Contact
-
-            try:
-                # Get SKCC numbers we've worked (with error handling for closed database)
-                session = self.spot_manager.db.get_session()
-                try:
-                    worked_skcc_numbers = session.query(Contact.skcc_number).filter(
-                        Contact.skcc_number.isnot(None)
-                    ).distinct().all()
-                    worked_skcc_members = {num[0].upper() for num in worked_skcc_numbers if num[0]}
-                finally:
-                    session.close()
-
-                # Get SKCC roster
-                roster = self.spot_manager.db.skcc_members.get_roster_dict()
-
-                # Get current SKCC award progress
-                skcc_progress = self.spot_manager.db.get_award_progress("SKCC", "Members")
-
-                # Determine target count
-                target_count = self._get_target_skcc_count(skcc_progress)
-
-                # Calculate award-critical members
-                if target_count and len(worked_skcc_members) < target_count:
-                    all_skcc_numbers = set(roster.keys()) if roster else set()
-                    award_critical_skcc_members = all_skcc_numbers - worked_skcc_members
-                else:
-                    award_critical_skcc_members = set()
-
-                logger.debug(
-                    f"Award cache updated: worked={len(worked_skcc_members)}, "
-                    f"critical={len(award_critical_skcc_members)}, "
-                    f"target={target_count}"
-                )
-
-                self.finished.emit(worked_skcc_members, award_critical_skcc_members, set())
-            except Exception as db_error:
-                # Handle case where database connection is closed during shutdown
-                if "closed database" in str(db_error).lower() or "database is locked" in str(db_error).lower():
-                    logger.debug(f"Database unavailable during award cache refresh (shutdown in progress): {db_error}")
-                    self.finished.emit(set(), set(), set())
-                else:
-                    logger.error(f"Error in award cache worker: {db_error}", exc_info=True)
-                    self.finished.emit(set(), set(), set())
-        except Exception as e:
-            logger.error(f"Unexpected error in award cache worker: {e}", exc_info=True)
-            self.finished.emit(set(), set(), set())
-
-    @staticmethod
-    def _get_target_skcc_count(progress: Dict[str, Any]) -> Optional[int]:
-        """Get target SKCC member count based on current progress"""
-        if not progress:
-            return 25  # Default to Centurion (C)
-
-        current = progress.get("current", 0)
-
-        # SKCC award levels
-        levels = [25, 50, 100, 200, 500, 1000]
-        for level in levels:
-            if current < level:
-                return level
-
-        return None  # Already at highest level
 
 
 class SKCCSpotWidget(QWidget):
-    """Widget for displaying and managing SKCC spots"""
+    """Widget for displaying and managing SKCC spots from SKCC Skimmer"""
 
     # Signal when user clicks on a spot (to populate logging form)
     spot_selected = pyqtSignal(str, float)  # callsign, frequency
 
-    # Internal signal for thread-safe spot handling from background thread
-    _new_spot_signal = pyqtSignal(object)  # SKCCSpot object
-
-    def __init__(self, spot_manager: SKCCSpotManager, spot_matcher: Optional['SpotMatcher'] = None, 
-                 parent: Optional[QWidget] = None):
+    def __init__(self, db, parent: Optional[QWidget] = None):
         """
         Initialize SKCC spots widget
 
         Args:
-            spot_manager: SKCCSpotManager instance
-            spot_matcher: Optional SpotMatcher instance for award eligibility analysis
+            db: Database instance for querying worked callsigns
             parent: Parent widget
         """
         super().__init__(parent)
-        self.spot_manager = spot_manager
-        self.spot_matcher = spot_matcher
+        self.db = db
         self.spots: List[SKCCSpot] = []
         self.filtered_spots: List[SKCCSpot] = []
 
@@ -443,50 +96,30 @@ class SKCCSpotWidget(QWidget):
         config_manager = get_config_manager()
         adif_file = config_manager.get("skcc.adif_master_file", "")
         self.skcc_skimmer = SkccSkimmerSubprocess(adif_file=adif_file if adif_file else None)
-        self.using_skcc_skimmer = False  # Track whether we're using SKCC Skimmer or internal RBN
 
         # Worked callsigns cache for "Unworked only" filter
-        # Cache on startup and refresh every 30 minutes (not 60 seconds) to reduce DB load
         self._worked_callsigns_cache: set[str] = set()
         self._worked_cache_timestamp: Optional[datetime] = None
-        self._worked_cache_ttl_seconds: int = 1800  # 30 minutes (was 60 seconds)
+        self._worked_cache_ttl_seconds: int = 1800  # 30 minutes
 
         # SKCC roster cache for suffix filtering (C, T, S only)
-        # Critical: This prevents thread safety issues from calling get_roster_dict() on every filter
-        # Caching avoids repeated database calls during high-volume RBN spot processing
         self._skcc_roster_cache: dict = {}
         self._skcc_roster_cache_timestamp: Optional[datetime] = None
-        self._skcc_roster_cache_ttl_seconds: int = 1800  # 30 minutes (same as worked callsigns)
+        self._skcc_roster_cache_ttl_seconds: int = 1800  # 30 minutes
 
-        # Cache for award-critical spots (legacy, still used as fallback)
-        self.award_critical_skcc_members: set = set()
-        self.worked_skcc_members: set = set()
-
-        # Load caches on startup (non-blocking) instead of deferring
+        # Load caches on startup (non-blocking)
         QTimer.singleShot(100, self._load_startup_caches)
 
         # Duplicate detection: track last time each callsign+frequency was shown (4-hour cooldown)
         self.last_shown_time: Dict[str, datetime] = {}
-        self.duplicate_cooldown_seconds = 14400  # 4 hours (prevents same spot reappearing in a session)
+        self.duplicate_cooldown_seconds = 14400  # 4 hours
 
-        # Background worker threads
-        self._cleanup_worker: Optional[CleanupWorker] = None
-        self._award_cache_worker: Optional[AwardCacheWorker] = None
-        self._is_shutting_down = False  # Flag to prevent new workers during shutdown
-
-        # Single persistent worker for spot processing
-        self._spot_processing_thread = QThread()
-        self._spot_processing_worker = SpotProcessingWorker(self.spot_manager, self.spot_manager.spot_filter)
-        self._spot_processing_worker.moveToThread(self._spot_processing_thread)
-        self._spot_processing_worker.spot_processed.connect(self._on_spot_processed)
-        self._spot_processing_thread.started.connect(self._spot_processing_worker.process_spots)
-        self._spot_processing_thread.start()
+        self._is_shutting_down = False  # Flag to prevent new operations during shutdown
 
         # Config manager for persisting band selections
         self.config_manager = get_config_manager()
 
         # Debounce timer to throttle filter changes
-        # Prevents excessive table updates when user rapidly changes filters
         self._filter_debounce_timer = QTimer()
         self._filter_debounce_timer.setSingleShot(True)
         self._filter_debounce_timer.timeout.connect(self._apply_filters_debounced)
@@ -495,25 +128,11 @@ class SKCCSpotWidget(QWidget):
         # Set up UI
         self._init_ui()
         self._load_band_selections()  # Load saved band selections
-        self._connect_signals()
-
-        # Connect internal signal for thread-safe spot handling
-        self._new_spot_signal.connect(self._handle_new_spot_on_main_thread)
 
         # Auto-cleanup timer (runs periodically to clean up old spots)
-        # Frequent cleanup to prevent memory buildup from high-volume RBN spots
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self._cleanup_old_spots)
-        self.cleanup_timer.start(30000)  # Cleanup every 30 seconds (was 2 minutes)
-
-        # Award cache refresh timer (runs periodically to update award-critical member list)
-        # Reduced frequency to avoid excessive database queries and memory pressure
-        self.award_cache_timer = QTimer()
-        self.award_cache_timer.timeout.connect(self._refresh_award_cache)
-        self.award_cache_timer.start(300000)  # Refresh every 5 minutes (was 60s)
-
-        # Note: Spot display refresh is now event-driven via _on_new_spot() callback
-        # instead of polling every 5 seconds. This significantly reduces CPU usage.
+        self.cleanup_timer.start(30000)  # Cleanup every 30 seconds
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -524,7 +143,7 @@ class SKCCSpotWidget(QWidget):
 
         # Status indicator
         self.status_indicator = SKCCSpotStatusIndicator()
-        header_layout.addWidget(QLabel("RBN Status:"))
+        header_layout.addWidget(QLabel("SKCC Skimmer Status:"))
         header_layout.addWidget(self.status_indicator)
 
         # Sync roster button
@@ -691,12 +310,6 @@ class SKCCSpotWidget(QWidget):
 
         self.setLayout(layout)
 
-    def _connect_signals(self) -> None:
-        """Connect spot manager signals"""
-        self.spot_manager.set_callbacks(
-            on_new_spot=self._on_new_spot,
-            on_connection_state=self._on_connection_state_changed,
-        )
 
     def _load_band_selections(self) -> None:
         """Load saved band selections from config and apply them"""
@@ -743,16 +356,16 @@ class SKCCSpotWidget(QWidget):
 
             # Force fresh download by clearing cache first
             logger.info("Force-clearing SKCC roster cache for fresh download...")
-            self.spot_manager.db.skcc_members.clear_cache()
+            self.db.skcc_members.clear_cache()
 
             # Create background thread for roster download
             class RosterSyncThread(QThread):
                 finished_signal = pyqtSignal(bool, int)  # success, member_count
-                
+
                 def __init__(self, db):
                     super().__init__()
                     self.db = db
-                
+
                 def run(self):
                     try:
                         success = self.db.skcc_members.sync_membership_data()
@@ -771,15 +384,8 @@ class SKCCSpotWidget(QWidget):
                         self.status_label.setText(f"⚠️  Roster has {roster_count} members (expected 1000+). Real roster download may have failed.")
                         logger.warning(f"Roster download returned {roster_count} members - may be test data or partial")
                     else:
-                        self.status_label.setText("❌ Roster sync failed - check network connection. Use Load Test Data to continue.")
+                        self.status_label.setText("❌ Roster sync failed - check network connection.")
                         logger.error("Roster sync failed - 0 members")
-
-                    # Switch to RBN mode when syncing real roster
-                    self.spot_manager.use_test_spots = False
-                    logger.info("Switched to RBN mode (real spots)")
-
-                    # Refresh award cache with new roster
-                    self._refresh_award_cache()
                 except Exception as e:
                     logger.error(f"Error handling roster sync completion: {e}", exc_info=True)
                 finally:
@@ -789,7 +395,7 @@ class SKCCSpotWidget(QWidget):
                         self._roster_sync_thread = None
 
             # Start background thread
-            self._roster_sync_thread = RosterSyncThread(self.spot_manager.db)
+            self._roster_sync_thread = RosterSyncThread(self.db)
             self._roster_sync_thread.finished_signal.connect(on_sync_complete)
             self._roster_sync_thread.start()
 
@@ -799,24 +405,18 @@ class SKCCSpotWidget(QWidget):
             self.sync_btn.setEnabled(True)
 
     def _toggle_monitoring(self) -> None:
-        """Toggle RBN monitoring on/off"""
+        """Toggle SKCC Skimmer monitoring on/off"""
         try:
-            if self.using_skcc_skimmer and self.skcc_skimmer.is_running():
+            if self.skcc_skimmer.is_running():
                 self.skcc_skimmer.stop()
                 self.connect_btn.setText("Start Monitoring")
                 self.status_label.setText("Status: Stopped")
-                self.using_skcc_skimmer = False
-            elif self.spot_manager.is_running():
-                self.spot_manager.stop()
-                self.connect_btn.setText("Start Monitoring")
-                self.status_label.setText("Status: Stopped")
-                self.using_skcc_skimmer = False
             else:
                 self.connect_btn.setEnabled(False)
                 self.status_label.setText("Status: Starting... (check logs if stuck)")
 
                 # Check roster
-                roster_count = len(self.spot_manager.db.skcc_members.get_roster_dict())
+                roster_count = len(self.db.skcc_members.get_roster_dict())
                 if roster_count == 0:
                     self.status_label.setText(
                         "⚠️  SKCC roster empty! Click 'Sync Roster' button first."
@@ -825,12 +425,11 @@ class SKCCSpotWidget(QWidget):
                     logger.warning("Cannot start spotting - SKCC roster is empty")
                     return
 
-                # Use SKCC Skimmer for intelligent spot filtering
+                # Start SKCC Skimmer for intelligent spot filtering
                 logger.info("Starting SKCC Skimmer subprocess for intelligent spot filtering...")
                 success = self.skcc_skimmer.start()
 
                 if success:
-                    self.using_skcc_skimmer = True
                     self.skcc_skimmer.set_callbacks(
                         on_spot=self._on_skimmer_spot_line,
                         on_state_change=self._on_skimmer_state_changed
@@ -839,108 +438,47 @@ class SKCCSpotWidget(QWidget):
                     self.connect_btn.setEnabled(True)
                     self.status_label.setText(f"Status: SKCC Skimmer active (filtering spots)")
                 else:
-                    logger.warning("Failed to start SKCC Skimmer, falling back to internal RBN...")
-                    # Fallback: use internal RBN fetcher
-                    self.using_skcc_skimmer = False
-                    self.spot_manager.start()
-                    self.connect_btn.setText("Stop Monitoring")
+                    logger.error("Failed to start SKCC Skimmer")
+                    self.connect_btn.setText("Start Monitoring")
                     self.connect_btn.setEnabled(True)
-                    mode = "RBN"
-                    self.status_label.setText(f"Status: {mode} mode active (roster: {roster_count} members)")
+                    self.status_label.setText(f"Status: Failed to start SKCC Skimmer (check configuration)")
 
         except Exception as e:
             logger.error(f"Error toggling monitoring: {e}", exc_info=True)
             self.status_label.setText(f"Error: {str(e)}")
             self.connect_btn.setEnabled(True)
 
-    def _on_new_spot(self, spot: SKCCSpot) -> None:
+    def _handle_skimmer_spot(self, spot: SKCCSpot) -> None:
         """
-        Handle new spot received from background thread.
-        This is called from the RBN thread, so we emit a signal to handle it on the main thread.
-        """
-        # Emit signal to handle on main UI thread (thread-safe)
-        self._new_spot_signal.emit(spot)
-    
-    def _handle_new_spot_on_main_thread(self, spot: SKCCSpot) -> None:
-        """
-        Handle new spot on main UI thread (called via signal)
+        Handle new spot from SKCC Skimmer
 
-        Checks for duplicates and queues spot for background processing.
-        This keeps the main thread responsive for UI operations like callsign input.
+        Checks for duplicates and adds spot to display list.
         """
         try:
             now = datetime.now(timezone.utc)
             callsign = spot.callsign.upper()
+            spot_key = f"{callsign}_{spot.frequency:.3f}"
 
-            # FIXED: Include frequency in duplicate detection to avoid filtering out
-            # the same callsign on different frequencies (was only checking callsign before)
-            spot_key = f"{callsign}_{spot.frequency:.3f}"  # e.g., "W4GNS_14.025"
-
-            # Check if this callsign on this frequency was shown recently (lightweight check on main thread)
+            # Check if this callsign on this frequency was shown recently
             if spot_key in self.last_shown_time:
                 time_since_last = (now - self.last_shown_time[spot_key]).total_seconds()
                 if time_since_last < self.duplicate_cooldown_seconds:
-                    # Duplicate within cooldown period - skip it
                     logger.debug(f"Skipping duplicate spot: {callsign} on {spot.frequency:.3f} MHz (shown {time_since_last:.0f}s ago)")
                     return
 
-            # Add to queue for background processing
-            self._spot_processing_worker.add_spot(spot)
-            logger.debug(f"Queued spot {callsign} on {spot.frequency:.3f} MHz for background processing")
-
-        except Exception as e:
-            logger.error(f"Error handling spot {spot.callsign}: {e}", exc_info=True)
-
-    def _on_spot_processed(self, processed_spot: SKCCSpot, worked_callsigns: set, goal_type: str, should_store: bool):
-        """
-        Handle spot processing completion on main thread
-
-        Args:
-            processed_spot: The processed spot
-            worked_callsigns: Set of worked callsigns
-            goal_type: Classified goal type
-            should_store: Whether spot should be stored in display
-        """
-        try:
-            if not should_store:
-                # Spot was filtered out
-                return
-
-            # Set goal type if classified
-            if goal_type and goal_type != "NONE":
-                processed_spot.goal_type = goal_type
-                logger.debug(f"{processed_spot.callsign} classified as {goal_type}")
-
-            # Update tracking and add spot to display
-            now = datetime.now(timezone.utc)
-            spot_key = f"{processed_spot.callsign.upper()}_{processed_spot.frequency:.3f}"
+            # Add to display list and update tracking
             self.last_shown_time[spot_key] = now
-            self.spots.insert(0, processed_spot)
+            self.spots.insert(0, spot)
 
             # Keep only recent spots in memory
             if len(self.spots) > 200:
                 self.spots = self.spots[:200]
 
-            # Debounce filter updates to prevent excessive main thread work
-            # This throttles table redraws from potentially 100+ spots/min to just a few updates/sec
+            # Update the display
             self._on_filter_changed()
 
         except Exception as e:
-            logger.error(f"Error in spot processing callback: {e}", exc_info=True)
-
-    def _on_connection_state_changed(self, state: RBNConnectionState) -> None:
-        """Handle RBN connection state change"""
-        self.status_indicator.update_state(state)
-
-        # Update status label with connection state
-        state_messages = {
-            RBNConnectionState.DISCONNECTED: "Status: Disconnected (click Start Monitoring)",
-            RBNConnectionState.CONNECTING: "Status: Connecting to RBN... (may take 10-30 seconds)",
-            RBNConnectionState.CONNECTED: "Status: Connected to RBN, listening for spots...",
-            RBNConnectionState.ERROR: "Status: Connection error - check logs and try again",
-        }
-        self.status_label.setText(state_messages.get(state, f"Status: {state.value}"))
-        logger.debug(f"RBN state changed: {state.value}")
+            logger.error(f"Error handling spot {spot.callsign}: {e}", exc_info=True)
 
     def _is_valid_skcc_suffix(self, callsign: str, skcc_roster: dict) -> bool:
         """
@@ -1037,7 +575,7 @@ class SKCCSpotWidget(QWidget):
         ):
             try:
                 # Use efficient query - callsigns only, not full Contact objects
-                session = self.spot_manager.db.get_session()
+                session = self.db.get_session()
                 try:
                     from src.database.models import Contact
                     worked_callsigns_result = session.query(Contact.callsign).distinct().all()
@@ -1055,7 +593,7 @@ class SKCCSpotWidget(QWidget):
         Return SKCC roster with a 30-minute TTL to reduce DB queries.
 
         Critical: This prevents thread safety issues from calling get_roster_dict()
-        on every filter operation during high-volume RBN spot processing.
+        on every filter operation during high-volume spot processing.
 
         Returns:
             Dictionary mapping callsigns to SKCC member info
@@ -1067,7 +605,7 @@ class SKCCSpotWidget(QWidget):
         ):
             try:
                 # Cache the entire roster once per 30 minutes
-                self._skcc_roster_cache = self.spot_manager.db.skcc_members.get_roster_dict()
+                self._skcc_roster_cache = self.db.skcc_members.get_roster_dict()
                 if not isinstance(self._skcc_roster_cache, dict):
                     self._skcc_roster_cache = {}
                 self._skcc_roster_cache_timestamp = now
@@ -1095,68 +633,31 @@ class SKCCSpotWidget(QWidget):
         self._apply_filters()
 
     def _cleanup_old_spots(self) -> None:
-        """Clean up old spots from memory and database in background thread"""
-        # Don't start new cleanup if shutting down or if one is already running
+        """Clean up old spots from memory"""
         if self._is_shutting_down:
-            logger.debug("Widget is shutting down, skipping cleanup")
             return
 
-        if hasattr(self, '_cleanup_worker') and self._cleanup_worker and self._cleanup_worker.isRunning():
-            logger.debug("Cleanup worker already running, skipping")
-            return
+        try:
+            # Remove spots older than 10 minutes from memory
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+            old_count = len(self.spots)
+            self.spots = [s for s in self.spots if s.timestamp > cutoff]
+            if old_count > len(self.spots):
+                logger.debug(f"Cleaned up {old_count - len(self.spots)} old spots from memory")
 
-        def on_cleanup_finished():
-            """Handle cleanup completion on main thread"""
-            try:
-                # Check if widget is still valid (not being destroyed)
-                if not self or not hasattr(self, 'spots'):
-                    logger.debug("SKCC spots widget destroyed, skipping cleanup update")
-                    if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
-                        try:
-                            # CleanupWorker has no event loop, so call wait() not quit()
-                            # Thread has already exited (we're in finished signal), so this returns immediately
-                            if not self._cleanup_worker.wait(100):
-                                logger.warning("Cleanup worker wait() timeout")
-                            self._cleanup_worker.deleteLater()
-                        except:
-                            pass
-                    return
+            # Clean up old entries from duplicate tracking - older than 2 minutes
+            cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=2)
+            callsigns_to_remove = [
+                callsign for callsign, timestamp in self.last_shown_time.items()
+                if timestamp < cutoff_tracking
+            ]
+            for callsign in callsigns_to_remove:
+                self.last_shown_time.pop(callsign, None)
+            if callsigns_to_remove:
+                logger.debug(f"Cleaned up {len(callsigns_to_remove)} old entries from duplicate tracking")
 
-                if self._cleanup_worker:
-                    # Update spots list with cleaned spots
-                    # NOTE: We're already in the signal callback, so the thread has finished
-                    self.spots = self._cleanup_worker.new_spots
-
-                    # Remove tracked callsigns
-                    for callsign in self._cleanup_worker.callsigns_to_remove:
-                        self.last_shown_time.pop(callsign, None)
-
-                    # Disconnect signal before deletion to prevent double-calls
-                    try:
-                        self._cleanup_worker.finished.disconnect()
-                    except:
-                        pass
-
-                    # Properly clean up the worker thread
-                    # Since thread has no event loop, use wait() not quit()
-                    # Thread already exited (we're in finished signal), so wait() returns immediately
-                    if not self._cleanup_worker.wait(100):
-                        logger.warning("Cleanup worker wait() timeout")
-                    self._cleanup_worker.deleteLater()
-                    self._cleanup_worker = None
-            except Exception as e:
-                logger.error(f"Error handling cleanup completion: {e}", exc_info=True)
-
-        # Start background cleanup with COPIES of mutable data to avoid race conditions
-        # The worker thread will iterate over these copies, not the live references
-        self._cleanup_worker = CleanupWorker(
-            self.spot_manager,
-            self.spots.copy(),  # COPY to avoid race condition while main thread modifies
-            self.last_shown_time.copy()  # COPY to avoid race condition while main thread modifies
-        )
-        self._cleanup_worker.finished.connect(on_cleanup_finished)
-        self._cleanup_worker.start()
-        logger.debug("Started background cleanup worker")
+        except Exception as e:
+            logger.error(f"Error in cleanup: {e}", exc_info=True)
 
     @staticmethod
     def _get_band_freq_range(band: str) -> Optional[tuple]:
@@ -1176,117 +677,6 @@ class SKCCSpotWidget(QWidget):
         }
         return bands.get(band)
 
-    def _refresh_award_cache(self) -> None:
-        """Refresh cached data for award-critical SKCC members in background thread"""
-        # Don't start new refresh if shutting down or if one is already running
-        if self._is_shutting_down:
-            logger.debug("Widget is shutting down, skipping award cache refresh")
-            return
-
-        if hasattr(self, '_award_cache_worker') and self._award_cache_worker and self._award_cache_worker.isRunning():
-            logger.debug("Award cache worker already running, skipping")
-            return
-
-        def on_cache_refresh_finished(worked_skcc: set, award_critical: set, _: set):
-            """Handle award cache refresh completion on main thread"""
-            try:
-                # Check if widget is still valid (not being destroyed)
-                if not self or not hasattr(self, 'worked_skcc_members'):
-                    logger.debug("SKCC spots widget destroyed, skipping award cache update")
-                    if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
-                        try:
-                            # AwardCacheWorker has no event loop, so call wait() not quit()
-                            # Thread has already exited (we're in finished signal), so this returns immediately
-                            if not self._award_cache_worker.wait(100):
-                                logger.warning("Award cache worker wait() timeout")
-                            self._award_cache_worker.deleteLater()
-                        except:
-                            pass
-                    return
-
-                if self._award_cache_worker:
-                    # Update cache with new data
-                    self.worked_skcc_members = worked_skcc
-                    self.award_critical_skcc_members = award_critical
-
-                    # Disconnect signal before deletion to prevent double-calls
-                    try:
-                        self._award_cache_worker.finished.disconnect()
-                    except:
-                        pass
-
-                    # Properly clean up the worker thread
-                    # Since thread has no event loop, use wait() not quit()
-                    # Thread already exited (we're in finished signal), so wait() returns immediately
-                    if not self._award_cache_worker.wait(100):
-                        logger.warning("Award cache worker wait() timeout")
-                    self._award_cache_worker.deleteLater()
-                    self._award_cache_worker = None
-            except Exception as e:
-                logger.error(f"Error handling award cache completion: {e}", exc_info=True)
-
-        # Start background refresh
-        self._award_cache_worker = AwardCacheWorker(self.spot_manager)
-        self._award_cache_worker.finished.connect(on_cache_refresh_finished)
-        self._award_cache_worker.start()
-        logger.debug("Started background award cache worker")
-
-    @staticmethod
-    def _get_target_skcc_count(progress: Any) -> Optional[int]:
-        """
-        Get the target SKCC member count for current award level
-
-        Args:
-            progress: AwardProgress object
-
-        Returns:
-            Target member count or None
-        """
-        if not progress:
-            return 25  # Default to first level (C = 25 members)
-
-        # SKCC award levels
-        levels = {
-            "C": 25,
-            "T": 50,
-            "S": 100,
-            "O": 200,
-            "X": 500,
-            "K": 1000,
-        }
-
-        # Get current level from progress
-        current_level = getattr(progress, "achievement_level", None)
-        if current_level and current_level in levels:
-            return levels[current_level]
-
-        # Default to next level up
-        current_count = getattr(progress, "contact_count", 0) or 0
-        for level, count in sorted(levels.items()):
-            if current_count < count:
-                return count
-
-        return 1000  # If exceeds all known levels
-
-    def _is_award_critical_spot(self, spot: SKCCSpot) -> bool:
-        """
-        Check if a spot is critical for unachieved awards
-
-        Args:
-            spot: The SKCC spot to check
-
-        Returns:
-            True if this spot would help toward an unachieved award
-        """
-        if not spot.is_skcc or not spot.skcc_number:
-            return False
-
-        # Check if already worked
-        if spot.skcc_number.upper() in self.worked_skcc_members:
-            return False
-
-        # Check if needed for award
-        return spot.skcc_number.upper() in self.award_critical_skcc_members
 
     def _update_table(self) -> None:
         """Update spots table with filtered spots"""
@@ -1385,10 +775,8 @@ class SKCCSpotWidget(QWidget):
                 skcc_number=skcc_number,
             )
 
-            # Add to processing queue
-            if hasattr(self, '_spot_processing_worker'):
-                self._spot_processing_worker.add_spot(spot)
-                logger.debug(f"Queued SKCC Skimmer spot: {callsign} on {freq_mhz} MHz")
+            # Handle the spot
+            self._handle_skimmer_spot(spot)
 
         except Exception as e:
             logger.error(f"Error parsing SKCC Skimmer spot line: {e}")
@@ -1409,12 +797,10 @@ class SKCCSpotWidget(QWidget):
 
     def closeEvent(self, event) -> None:
         """Clean up when widget is closed"""
-        # Set shutdown flag FIRST to prevent new workers from being created
         self._is_shutting_down = True
 
         try:
             self.cleanup_timer.stop()
-            self.award_cache_timer.stop()
             self._filter_debounce_timer.stop()
 
             # Stop SKCC Skimmer subprocess if running
@@ -1423,74 +809,6 @@ class SKCCSpotWidget(QWidget):
                     logger.info("Stopping SKCC Skimmer subprocess...")
                     self.skcc_skimmer.stop()
 
-            # Stop receiving new spots from RBN FIRST (before stopping processing thread)
-            # This prevents new spots from being queued while we're shutting down
-            if hasattr(self, 'spot_manager') and self.spot_manager:
-                # Disconnect the new spot signal callback
-                try:
-                    self._new_spot_signal.disconnect()
-                except:
-                    pass  # Already disconnected
-
-            # Stop the persistent spot processing thread
-            if hasattr(self, '_spot_processing_thread') and self._spot_processing_thread:
-                if hasattr(self, '_spot_processing_worker') and self._spot_processing_worker:
-                    # Signal the worker to stop
-                    self._spot_processing_worker.stop()
-
-                # Quit the thread gracefully
-                self._spot_processing_thread.quit()
-                if not self._spot_processing_thread.wait(500):  # Wait max 500ms
-                    logger.warning("Spot processing thread didn't stop in time, terminating...")
-                    self._spot_processing_thread.terminate()
-                    self._spot_processing_thread.wait(100)
-
-            # Stop any running spot processing workers
-            if hasattr(self, '_spot_processing_workers'):
-                for worker in self._spot_processing_workers[:]:  # Copy list to avoid modification during iteration
-                    if worker.isRunning():
-                        worker.quit()
-                        if not worker.wait(200):  # Quick timeout
-                            worker.terminate()
-                            worker.wait(100)
-                    worker.deleteLater()
-                self._spot_processing_workers.clear()
-
-            # Stop any running worker threads with quick timeout
-            if hasattr(self, '_cleanup_worker') and self._cleanup_worker:
-                # Disconnect signal before stopping thread to prevent callbacks
-                try:
-                    self._cleanup_worker.finished.disconnect()
-                except:
-                    pass
-                # Stop the worker
-                if self._cleanup_worker.isRunning():
-                    self._cleanup_worker.quit()
-                    if not self._cleanup_worker.wait(500):  # Wait max 500ms
-                        logger.warning("Cleanup worker didn't stop in time, terminating...")
-                        self._cleanup_worker.terminate()
-                        self._cleanup_worker.wait(100)
-                self._cleanup_worker.deleteLater()
-                self._cleanup_worker = None
-
-            if hasattr(self, '_award_cache_worker') and self._award_cache_worker:
-                # Disconnect signal before stopping thread to prevent callbacks
-                try:
-                    self._award_cache_worker.finished.disconnect()
-                except:
-                    pass
-                # Stop the worker
-                if self._award_cache_worker.isRunning():
-                    self._award_cache_worker.quit()
-                    if not self._award_cache_worker.wait(500):  # Wait max 500ms
-                        logger.warning("Award cache worker didn't stop in time, terminating...")
-                        self._award_cache_worker.terminate()
-                        self._award_cache_worker.wait(100)
-                self._award_cache_worker.deleteLater()
-                self._award_cache_worker = None
-
-            if self.spot_manager.is_running():
-                self.spot_manager.stop()
         except Exception as e:
             logger.error(f"Error cleaning up spots widget: {e}", exc_info=True)
         super().closeEvent(event)
