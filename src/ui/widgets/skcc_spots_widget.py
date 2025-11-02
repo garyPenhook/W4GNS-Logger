@@ -452,9 +452,9 @@ class SKCCSpotWidget(QWidget):
         # Load caches on startup (non-blocking) instead of deferring
         QTimer.singleShot(100, self._load_startup_caches)
 
-        # Duplicate detection: track last time each callsign was shown (3-minute cooldown)
+        # Duplicate detection: track last time each callsign+frequency was shown (4-hour cooldown)
         self.last_shown_time: Dict[str, datetime] = {}
-        self.duplicate_cooldown_seconds = 180  # 3 minutes
+        self.duplicate_cooldown_seconds = 14400  # 4 hours (prevents same spot reappearing in a session)
 
         # Background worker threads
         self._cleanup_worker: Optional[CleanupWorker] = None
@@ -836,17 +836,21 @@ class SKCCSpotWidget(QWidget):
             now = datetime.now(timezone.utc)
             callsign = spot.callsign.upper()
 
-            # Check if this callsign was shown recently (lightweight check on main thread)
-            if callsign in self.last_shown_time:
-                time_since_last = (now - self.last_shown_time[callsign]).total_seconds()
+            # FIXED: Include frequency in duplicate detection to avoid filtering out
+            # the same callsign on different frequencies (was only checking callsign before)
+            spot_key = f"{callsign}_{spot.frequency:.3f}"  # e.g., "W4GNS_14.025"
+
+            # Check if this callsign on this frequency was shown recently (lightweight check on main thread)
+            if spot_key in self.last_shown_time:
+                time_since_last = (now - self.last_shown_time[spot_key]).total_seconds()
                 if time_since_last < self.duplicate_cooldown_seconds:
                     # Duplicate within cooldown period - skip it
-                    logger.debug(f"Skipping duplicate spot: {callsign} (shown {time_since_last:.0f}s ago)")
+                    logger.debug(f"Skipping duplicate spot: {callsign} on {spot.frequency:.3f} MHz (shown {time_since_last:.0f}s ago)")
                     return
 
             # Add to queue for background processing
             self._spot_processing_worker.add_spot(spot)
-            logger.debug(f"Queued spot {callsign} for background processing")
+            logger.debug(f"Queued spot {callsign} on {spot.frequency:.3f} MHz for background processing")
 
         except Exception as e:
             logger.error(f"Error handling spot {spot.callsign}: {e}", exc_info=True)
@@ -873,7 +877,8 @@ class SKCCSpotWidget(QWidget):
 
             # Update tracking and add spot to display
             now = datetime.now(timezone.utc)
-            self.last_shown_time[processed_spot.callsign.upper()] = now
+            spot_key = f"{processed_spot.callsign.upper()}_{processed_spot.frequency:.3f}"
+            self.last_shown_time[spot_key] = now
             self.spots.insert(0, processed_spot)
 
             # Keep only recent spots in memory
@@ -930,6 +935,7 @@ class SKCCSpotWidget(QWidget):
                 for low, high in band_ranges.values()
             ))
             and (not check_unworked or s.callsign not in worked_callsigns)  # Unworked filter
+            and (s.skcc_number and s.skcc_number[-1] in ('C', 'T', 'S'))  # SKCC suffix filter (C, T, or S only)
         ]
 
         self._update_table()
