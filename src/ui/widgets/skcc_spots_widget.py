@@ -918,22 +918,31 @@ class SKCCSpotWidget(QWidget):
         Returns:
             True if callsign has SKCC number ending with C, T, or S, False otherwise
         """
-        if not skcc_roster:
+        try:
+            if not skcc_roster:
+                return False
+
+            callsign_upper = callsign.upper()
+            member_info = skcc_roster.get(callsign_upper)
+
+            if not member_info:
+                return False
+
+            # member_info is typically a dict with 'skcc_number' key
+            skcc_number = member_info.get('skcc_number') if isinstance(member_info, dict) else member_info
+
+            if not skcc_number:
+                return False
+
+            # Ensure skcc_number is a string before checking suffix
+            skcc_str = str(skcc_number).strip()
+            if len(skcc_str) == 0:
+                return False
+
+            return skcc_str[-1] in ('C', 'T', 'S')
+        except Exception as e:
+            logger.debug(f"Error checking SKCC suffix for {callsign}: {e}")
             return False
-
-        callsign_upper = callsign.upper()
-        member_info = skcc_roster.get(callsign_upper)
-
-        if not member_info:
-            return False
-
-        # member_info is typically a dict with 'skcc_number' key
-        skcc_number = member_info.get('skcc_number') if isinstance(member_info, dict) else member_info
-
-        if not skcc_number:
-            return False
-
-        return skcc_number[-1] in ('C', 'T', 'S')
 
     def _apply_filters(self) -> None:
         """Apply filters to spots list (optimized for performance)"""
@@ -957,7 +966,10 @@ class SKCCSpotWidget(QWidget):
         # Get SKCC roster for suffix filtering (C, T, S only)
         try:
             skcc_roster = self.spot_manager.db.skcc_members.get_roster_dict()
-        except Exception:
+            if not isinstance(skcc_roster, dict):
+                skcc_roster = {}
+        except Exception as e:
+            logger.debug(f"Error getting SKCC roster for filtering: {e}")
             skcc_roster = {}
 
         # Single-pass filtering for better performance
