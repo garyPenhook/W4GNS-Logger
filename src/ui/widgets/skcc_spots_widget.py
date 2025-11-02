@@ -445,6 +445,13 @@ class SKCCSpotWidget(QWidget):
         self._worked_cache_timestamp: Optional[datetime] = None
         self._worked_cache_ttl_seconds: int = 1800  # 30 minutes (was 60 seconds)
 
+        # SKCC roster cache for suffix filtering (C, T, S only)
+        # Critical: This prevents thread safety issues from calling get_roster_dict() on every filter
+        # Caching avoids repeated database calls during high-volume RBN spot processing
+        self._skcc_roster_cache: dict = {}
+        self._skcc_roster_cache_timestamp: Optional[datetime] = None
+        self._skcc_roster_cache_ttl_seconds: int = 1800  # 30 minutes (same as worked callsigns)
+
         # Cache for award-critical spots (legacy, still used as fallback)
         self.award_critical_skcc_members: set = set()
         self.worked_skcc_members: set = set()
@@ -963,14 +970,9 @@ class SKCCSpotWidget(QWidget):
         check_unworked = self.unworked_only_check.isChecked()
         worked_callsigns = self._get_worked_callsigns_cached() if check_unworked else set()
 
-        # Get SKCC roster for suffix filtering (C, T, S only)
-        try:
-            skcc_roster = self.spot_manager.db.skcc_members.get_roster_dict()
-            if not isinstance(skcc_roster, dict):
-                skcc_roster = {}
-        except Exception as e:
-            logger.debug(f"Error getting SKCC roster for filtering: {e}")
-            skcc_roster = {}
+        # Get SKCC roster for suffix filtering (C, T, S only) - using cached version to avoid thread safety issues
+        # Critical: Using cached roster prevents repeated database calls during high-volume RBN spot processing
+        skcc_roster = self._get_skcc_roster_cached()
 
         # Single-pass filtering for better performance
         self.filtered_spots = [
@@ -992,6 +994,7 @@ class SKCCSpotWidget(QWidget):
         try:
             logger.info("Loading startup caches...")
             self._get_worked_callsigns_cached()  # Pre-load worked callsigns
+            self._get_skcc_roster_cached()  # Pre-load SKCC roster for suffix filtering
             logger.info("Startup caches loaded successfully")
         except Exception as e:
             logger.error(f"Error loading startup caches: {e}", exc_info=True)
@@ -1017,6 +1020,34 @@ class SKCCSpotWidget(QWidget):
                 # On error, return existing cache (may be empty)
                 pass
         return self._worked_callsigns_cache
+
+    def _get_skcc_roster_cached(self) -> dict:
+        """
+        Return SKCC roster with a 30-minute TTL to reduce DB queries.
+
+        Critical: This prevents thread safety issues from calling get_roster_dict()
+        on every filter operation during high-volume RBN spot processing.
+
+        Returns:
+            Dictionary mapping callsigns to SKCC member info
+        """
+        now = datetime.now(timezone.utc)
+        if (
+            self._skcc_roster_cache_timestamp is None or
+            (now - self._skcc_roster_cache_timestamp).total_seconds() > self._skcc_roster_cache_ttl_seconds
+        ):
+            try:
+                # Cache the entire roster once per 30 minutes
+                self._skcc_roster_cache = self.spot_manager.db.skcc_members.get_roster_dict()
+                if not isinstance(self._skcc_roster_cache, dict):
+                    self._skcc_roster_cache = {}
+                self._skcc_roster_cache_timestamp = now
+            except Exception as e:
+                logger.debug(f"Error refreshing SKCC roster cache: {e}")
+                # On error, return existing cache (may be empty)
+                if not isinstance(self._skcc_roster_cache, dict):
+                    self._skcc_roster_cache = {}
+        return self._skcc_roster_cache
 
     def _on_spot_selected(self) -> None:
         """Handle spot selection in table"""
