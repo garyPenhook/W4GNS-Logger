@@ -50,9 +50,8 @@ class SpotEligibility:
     worked_count: int          # Number of times worked
     worked_recently: bool      # True if worked in recent_days
     worked_days_ago: Optional[int]
-    
+
     # Display information
-    highlight_color: Optional[Tuple[int, int, int, int]]  # RGBA format
     tooltip_text: str          # Human-readable description
 
 
@@ -137,9 +136,6 @@ class SpotEligibilityAnalyzer:
                 is_worked, worked_recently, worked_count, len(needed_for_awards), eligibility
             )
 
-            # Get highlight color
-            highlight_color = self._get_highlight_color(eligibility_level, is_worked, worked_recently)
-
             # Generate tooltip
             tooltip = self._generate_tooltip(
                 callsign, is_worked, worked_count, worked_days_ago, needed_for_awards, award_progress
@@ -158,7 +154,6 @@ class SpotEligibilityAnalyzer:
                 worked_count=worked_count,
                 worked_recently=worked_recently,
                 worked_days_ago=worked_days_ago,
-                highlight_color=highlight_color,
                 tooltip_text=tooltip
             )
 
@@ -175,7 +170,6 @@ class SpotEligibilityAnalyzer:
                 worked_count=0,
                 worked_recently=False,
                 worked_days_ago=None,
-                highlight_color=None,
                 tooltip_text="Error analyzing spot"
             )
 

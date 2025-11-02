@@ -1287,47 +1287,6 @@ class SKCCSpotWidget(QWidget):
                     QTableWidgetItem(row_data.get_age_string()),
                 ]
 
-                # DISABLED: Award eligibility highlighting on every table update was causing 5-20 second UI freezes
-                # The get_spot_eligibility() call was being executed for EVERY spot on every table update,
-                # triggering expensive database queries on the main thread.
-                # TODO: Move highlighting to background thread if re-enabling this feature
-                highlight_color = None
-                tooltip_text = ""
-
-                # # Use award eligibility analyzer if available
-                # if self.spot_matcher and self.spot_matcher.eligibility_analyzer:
-                #     try:
-                #         eligibility = self.spot_matcher.get_spot_eligibility(spot)
-                #
-                #         # Color based on eligibility level
-                #         color_map = {
-                #             EligibilityLevel.CRITICAL: QColor(255, 0, 0, 120),      # Red
-                #             EligibilityLevel.HIGH: QColor(255, 100, 0, 100),        # Orange
-                #             EligibilityLevel.MEDIUM: QColor(255, 200, 0, 80),       # Yellow
-                #             EligibilityLevel.LOW: QColor(100, 200, 100, 60),        # Green
-                #             EligibilityLevel.NONE: None,                             # No highlight
-                #         }
-                #
-                #         if eligibility and eligibility.eligibility_level in color_map:
-                #             highlight_color = color_map[eligibility.eligibility_level]
-                #             tooltip_text = eligibility.tooltip_text or ""
-                #
-                #     except Exception as e:
-                #         logger.debug(f"Error getting eligibility for {spot.callsign}: {e}")
-                #
-                # # Fallback to legacy award-critical highlighting if no analyzer
-                # if not highlight_color:
-                #     is_award_critical = self._is_award_critical_spot(spot)
-                #     if is_award_critical:
-                #         highlight_color = QColor("#90EE90")  # Light green
-                #         tooltip_text = "Award-critical SKCC member"
-
-                # Apply highlighting and tooltip
-                if highlight_color:
-                    for item in items:
-                        item.setBackground(highlight_color)
-                        if tooltip_text:
-                            item.setData(Qt.ItemDataRole.ToolTipRole, tooltip_text)
 
                 for col, item in enumerate(items):
                     item.setData(Qt.ItemDataRole.UserRole, spot)

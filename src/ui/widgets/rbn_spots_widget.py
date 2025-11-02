@@ -549,10 +549,6 @@ class RBNSpotsWidget(QWidget):
                     # Callsign
                     callsign = getattr(spot, 'callsign', '')
                     call_item = QTableWidgetItem(str(callsign))
-                    if goal_type == "GOAL":
-                        call_item.setBackground(QColor(0, 128, 0, 80))  # Green
-                    elif goal_type == "TARGET":
-                        call_item.setBackground(QColor(0, 0, 255, 80))  # Blue
                     self.spots_table.setItem(row, 0, call_item)
 
                     # Frequency
@@ -591,17 +587,8 @@ class RBNSpotsWidget(QWidget):
                     snr_wpm_item = QTableWidgetItem(" ".join(snr_wpm) if snr_wpm else "")
                     self.spots_table.setItem(row, 5, snr_wpm_item)
 
-                    # Source (RBN or Sked) - with visual differentiation using text color only
+                    # Source (RBN or Sked)
                     source_item = QTableWidgetItem(str(source_type))
-                    if source_type == "RBN":
-                        # RBN color: bright yellow/orange text (automated skimmers)
-                        source_item.setForeground(QColor(255, 180, 0))  # Bright orange text
-                    elif source_type == "SKED":
-                        # Sked color: bright magenta/purple text (manual SKCC Sked posts)
-                        source_item.setForeground(QColor(200, 120, 255))  # Bright magenta text
-                    else:
-                        # Unknown: lighter gray text
-                        source_item.setForeground(QColor(150, 150, 150))
                     self.spots_table.setItem(row, 6, source_item)
 
                     # Spotter
