@@ -668,7 +668,6 @@ class LoggingForm(QWidget):
 
         # Save button
         save_btn = QPushButton("Save Contact")
-        save_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         save_btn.clicked.connect(self.save_contact)
         layout.addWidget(save_btn)
 

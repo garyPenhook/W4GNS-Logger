@@ -48,14 +48,6 @@ class FieldManager:
             ("antenna_make", "Antenna Make"),
             ("antenna_model", "Antenna Model"),
         ],
-        "Awards": [
-            ("dxcc", "DXCC"),
-            ("arrl_sect", "ARRL Section"),
-            ("iota", "IOTA"),
-            ("sota_ref", "SOTA"),
-            ("pota_ref", "POTA"),
-            ("vucc_grids", "VUCC Grids"),
-        ],
         "QSL": [
             ("qsl_rcvd", "QSL Received"),
             ("qsl_sent", "QSL Sent"),
