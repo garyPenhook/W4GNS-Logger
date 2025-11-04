@@ -119,7 +119,7 @@ class RBNFetcher:
                 self._set_state(RBNConnectionState.RUNNING)
                 retries = 0
 
-                # Read initial server banner/greeting asking for callsign
+                # Step 1: Read server banner asking for callsign
                 try:
                     banner = self._socket.recv(4096).decode("utf-8", errors="ignore")
                     logger.debug(f"Server banner: {repr(banner)}")
@@ -128,37 +128,37 @@ class RBNFetcher:
                 except Exception as e:
                     logger.debug(f"Error reading banner: {e}")
 
-                # Send callsign to authenticate
-                callsign = self.my_callsign or "ANONYMOUS"
+                # Step 2: Send callsign to authenticate
+                callsign = self.my_callsign or "W4GNS"  # Use real callsign, not ANONYMOUS
                 logger.debug(f"Sending callsign: {callsign}")
                 self._socket.send(f"{callsign}\n".encode("utf-8"))
 
-                # Read response after callsign
+                # Step 3: Read welcome message after callsign
                 try:
                     response = self._socket.recv(4096).decode("utf-8", errors="ignore")
-                    logger.debug(f"Callsign response: {repr(response)}")
+                    logger.debug(f"After callsign: {repr(response)}")
                 except socket.timeout:
                     logger.debug("No response after callsign (timeout)")
 
-                # Send set/raw to receive all spots (not just club-filtered)
-                logger.debug("Sending 'set/raw' command to receive all spots")
+                # Step 4: Send set/raw to receive all spots (not just club-filtered)
+                logger.debug("Sending 'set/raw' command")
                 self._socket.send(b"set/raw\n")
 
-                # Read response after set/raw
+                # Step 5: Read confirmation of set/raw
                 try:
                     response = self._socket.recv(4096).decode("utf-8", errors="ignore")
-                    logger.debug(f"set/raw response: {repr(response)}")
+                    logger.debug(f"After set/raw: {repr(response)}")
                 except socket.timeout:
                     logger.debug("No response after set/raw (timeout)")
 
-                # Send no-dupes command to reduce traffic
+                # Step 6: Send set/nodupes to reduce traffic
                 logger.debug("Sending 'set/nodupes' command")
                 self._socket.send(b"set/nodupes\n")
 
-                # Read response after set/nodupes
+                # Step 7: Read confirmation of set/nodupes
                 try:
                     response = self._socket.recv(4096).decode("utf-8", errors="ignore")
-                    logger.debug(f"set/nodupes response: {repr(response)}")
+                    logger.debug(f"After set/nodupes: {repr(response)}")
                 except socket.timeout:
                     logger.debug("No response after set/nodupes (timeout)")
 
