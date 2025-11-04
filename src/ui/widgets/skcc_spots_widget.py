@@ -218,6 +218,25 @@ class SKCCSpotWidget(QWidget):
         self.unworked_only_check.stateChanged.connect(self._on_filter_changed)  # Debounced
         filter_layout.addWidget(self.unworked_only_check)
 
+        # Continent filter
+        filter_layout.addWidget(QLabel("Continent:"))
+        self.continent_combo = QComboBox()
+        self.continent_combo.addItems(
+            [
+                "All Continents",
+                "North America",
+                "South America",
+                "Europe",
+                "Asia",
+                "Africa",
+                "Oceania",
+                "Antarctica",
+            ]
+        )
+        self.continent_combo.setCurrentText("North America")  # Default to North America
+        self.continent_combo.currentTextChanged.connect(self._on_filter_changed)
+        filter_layout.addWidget(self.continent_combo)
+
         filter_layout.addStretch()
 
         # Refresh button
@@ -704,6 +723,397 @@ class SKCCSpotWidget(QWidget):
                     self._skcc_roster_cache = {}
         return self._skcc_roster_cache
 
+    @staticmethod
+    def _get_continent_from_callsign(callsign: str) -> str:
+        """Determine continent from amateur radio callsign prefix.
+
+        Returns: One of 'North America', 'South America', 'Europe', 'Asia', 'Africa', 'Oceania', 'Antarctica', or 'Unknown'
+        """
+        if not callsign:
+            return "Unknown"
+
+        # Extract prefix (everything before first digit)
+        prefix = ""
+        for char in callsign.upper():
+            if char.isdigit():
+                break
+            if char.isalpha():
+                prefix += char
+
+        if not prefix:
+            return "Unknown"
+
+        # North America (W, K, N, VE, VA, VO, XE, etc.)
+        if (
+            prefix in ["W", "K", "N", "A"]
+            or prefix.startswith("V")
+            and len(callsign) > 2
+            and callsign[1] in ["E", "A", "O", "Y"]
+        ):
+            return "North America"
+        if prefix in ["XE", "XF"]:  # Mexico
+            return "North America"
+        if (
+            prefix.startswith("C") and len(callsign) > 2 and callsign[1] in ["M", "O"]
+        ):  # Cuba, various Caribbean
+            return "North America"
+        if prefix in ["KP", "KL", "WP", "NH", "NP"]:  # US territories
+            return "North America"
+        if prefix in ["TI", "YN", "HP", "HI", "YV", "HH"]:  # Central America/Caribbean
+            return "North America"
+
+        # South America
+        if prefix in ["PY", "PT", "PP", "PR", "PS", "PU", "PV", "PW", "PX"]:  # Brazil
+            return "South America"
+        if prefix in ["LU", "AY", "AZ", "L"]:  # Argentina
+            return "South America"
+        if prefix in ["CE", "CA", "CB", "CC", "CD", "XQ", "XR"]:  # Chile
+            return "South America"
+        if prefix in ["CP", "CX", "CV", "HC", "HK", "OA", "YV", "ZP"]:  # Various SA countries
+            return "South America"
+
+        # Europe
+        if prefix in ["G", "M", "GW", "GI", "GD", "GJ", "GM", "GU", "GB"]:  # UK
+            return "Europe"
+        if prefix in ["F", "TM", "TO", "TP", "TQ", "TV"]:  # France
+            return "Europe"
+        if prefix in [
+            "D",
+            "DA",
+            "DB",
+            "DC",
+            "DD",
+            "DE",
+            "DF",
+            "DG",
+            "DH",
+            "DI",
+            "DJ",
+            "DK",
+            "DL",
+            "DM",
+            "DN",
+            "DO",
+        ]:  # Germany
+            return "Europe"
+        if prefix in ["I", "IK", "IW", "IZ", "IT"]:  # Italy
+            return "Europe"
+        if prefix in ["EA", "EB", "EC", "ED", "EE", "EF", "EG", "EH", "AM"]:  # Spain
+            return "Europe"
+        if prefix in ["PA", "PB", "PC", "PD", "PE", "PF", "PG", "PH", "PI"]:  # Netherlands
+            return "Europe"
+        if prefix in ["OH", "OF", "OG", "OI", "OJ"]:  # Finland
+            return "Europe"
+        if prefix in [
+            "SM",
+            "SA",
+            "SB",
+            "SC",
+            "SD",
+            "SE",
+            "SF",
+            "SG",
+            "SH",
+            "SI",
+            "SJ",
+            "SK",
+            "SL",
+        ]:  # Sweden
+            return "Europe"
+        if prefix in [
+            "LA",
+            "LB",
+            "LC",
+            "LD",
+            "LE",
+            "LF",
+            "LG",
+            "LH",
+            "LI",
+            "LJ",
+            "LK",
+            "LL",
+            "LM",
+            "LN",
+        ]:  # Norway
+            return "Europe"
+        if prefix in ["ON", "OO", "OP", "OQ", "OR", "OS", "OT"]:  # Belgium
+            return "Europe"
+        if prefix in ["OZ", "OU", "OV", "OW"]:  # Denmark
+            return "Europe"
+        if prefix in ["SP", "SN", "SO", "SQ", "SR"]:  # Poland
+            return "Europe"
+        if prefix in ["OK", "OL"]:  # Czech Republic
+            return "Europe"
+        if prefix in ["HA", "HG"]:  # Hungary
+            return "Europe"
+        if prefix in ["YO", "YP", "YQ", "YR"]:  # Romania
+            return "Europe"
+        if prefix in ["YU", "YT", "YZ"]:  # Serbia/Yugoslavia
+            return "Europe"
+        if prefix in [
+            "LY",
+            "LZ",
+            "SV",
+            "SW",
+            "SX",
+            "SY",
+            "SZ",
+            "OM",
+            "S5",
+            "S50",
+            "S51",
+            "S52",
+            "S53",
+            "S54",
+            "S55",
+            "S56",
+            "S57",
+            "S58",
+            "S59",
+        ]:
+            return "Europe"
+        if prefix in ["EI", "EJ"]:  # Ireland
+            return "Europe"
+        if prefix in ["CT", "CR", "CS", "CU"]:  # Portugal
+            return "Europe"
+        if prefix in ["HB", "HE"]:  # Switzerland
+            return "Europe"
+        if prefix in ["OE"]:  # Austria
+            return "Europe"
+        if prefix in ["LX"]:  # Luxembourg
+            return "Europe"
+        if prefix.startswith("R") or prefix.startswith("U"):  # Russia/Ukraine
+            return "Europe"  # Western Russia/Ukraine considered Europe for amateur radio
+        if prefix in ["ER", "ES", "LY"]:  # Moldova, Estonia, Lithuania
+            return "Europe"
+        if prefix in ["YL"]:  # Latvia
+            return "Europe"
+        if prefix in ["9A"]:  # Croatia
+            return "Europe"
+        if prefix in ["9H"]:  # Malta
+            return "Europe"
+        if prefix in ["T9"]:  # Bosnia
+            return "Europe"
+
+        # Asia
+        if prefix in [
+            "JA",
+            "JE",
+            "JF",
+            "JG",
+            "JH",
+            "JI",
+            "JJ",
+            "JK",
+            "JL",
+            "JM",
+            "JN",
+            "JO",
+            "JP",
+            "JQ",
+            "JR",
+        ]:  # Japan
+            return "Asia"
+        if prefix in [
+            "B",
+            "BA",
+            "BD",
+            "BG",
+            "BH",
+            "BI",
+            "BJ",
+            "BL",
+            "BM",
+            "BT",
+            "BY",
+            "BZ",
+        ]:  # China
+            return "Asia"
+        if prefix in ["HL", "HM", "DS", "DT", "D7", "D8", "D9"]:  # South Korea
+            return "Asia"
+        if prefix in ["VU", "AT", "AU", "AV", "AW", "8T", "8U", "8V", "8W", "8X", "8Y"]:  # India
+            return "Asia"
+        if prefix in ["HS", "E2"]:  # Thailand
+            return "Asia"
+        if prefix in [
+            "YB",
+            "YC",
+            "YD",
+            "YE",
+            "YF",
+            "YG",
+            "YH",
+            "7A",
+            "7B",
+            "7C",
+            "7D",
+            "7E",
+            "7F",
+            "7G",
+            "7H",
+            "7I",
+        ]:  # Indonesia
+            return "Asia"
+        if prefix in ["9M", "9W"]:  # Malaysia
+            return "Asia"
+        if prefix in ["9V"]:  # Singapore
+            return "Asia"
+        if prefix in [
+            "DU",
+            "DV",
+            "DW",
+            "DX",
+            "DY",
+            "DZ",
+            "4D",
+            "4E",
+            "4F",
+            "4G",
+            "4H",
+            "4I",
+        ]:  # Philippines
+            return "Asia"
+        if prefix in ["XU"]:  # Cambodia
+            return "Asia"
+        if prefix in ["E5"]:  # Cook Islands (Oceania, but sometimes grouped with Asia)
+            return "Oceania"
+        if prefix in ["BV", "BW", "BX", "BU"]:  # Taiwan
+            return "Asia"
+        if prefix in ["VR", "VS", "XX"]:  # Hong Kong
+            return "Asia"
+        if prefix in ["A4"]:  # Oman
+            return "Asia"
+        if prefix in ["A6", "A7", "A9"]:  # UAE, Qatar, Bahrain
+            return "Asia"
+
+        # Africa
+        if prefix in ["5Z", "5Y"]:  # Kenya
+            return "Africa"
+        if prefix in ["CN", "5C", "5D", "5E", "5F", "5G"]:  # Morocco
+            return "Africa"
+        if prefix in ["5H", "5I"]:  # Tanzania
+            return "Africa"
+        if prefix in ["5N", "5O"]:  # Nigeria
+            return "Africa"
+        if prefix in ["5R", "5S"]:  # Madagascar
+            return "Africa"
+        if prefix in ["5T"]:  # Mauritania
+            return "Africa"
+        if prefix in ["5U"]:  # Niger
+            return "Africa"
+        if prefix in ["5V"]:  # Togo
+            return "Africa"
+        if prefix in ["5W"]:  # Western Samoa (actually Oceania)
+            return "Oceania"
+        if prefix in ["5X"]:  # Uganda
+            return "Africa"
+        if prefix in ["6V", "6W"]:  # Senegal
+            return "Africa"
+        if prefix in ["7Q", "7P"]:  # Malawi
+            return "Africa"
+        if prefix in ["9G"]:  # Ghana
+            return "Africa"
+        if prefix in ["9J"]:  # Zambia
+            return "Africa"
+        if prefix in ["9L"]:  # Sierra Leone
+            return "Africa"
+        if prefix in ["9Q"]:  # DR Congo
+            return "Africa"
+        if prefix in ["9U"]:  # Burundi
+            return "Africa"
+        if prefix in ["9X"]:  # Rwanda
+            return "Africa"
+        if prefix in ["ZS", "ZR", "ZT", "ZU"]:  # South Africa
+            return "Africa"
+        if prefix in ["D2", "D3", "D4"]:  # Angola
+            return "Africa"
+        if prefix in ["ET", "E3"]:  # Ethiopia
+            return "Africa"
+        if prefix in ["ST", "SU", "SS", "6A", "6B"]:  # Sudan
+            return "Africa"
+        if prefix in ["EL"]:  # Liberia
+            return "Africa"
+        if prefix in ["C5"]:  # The Gambia
+            return "Africa"
+        if prefix in ["C9", "CR", "D2"]:  # Mozambique
+            return "Africa"
+        if prefix in ["TU"]:  # Ivory Coast
+            return "Africa"
+        if prefix in ["TY", "TZ"]:  # Benin
+            return "Africa"
+        if prefix in ["XT"]:  # Burkina Faso
+            return "Africa"
+        if prefix in ["TT"]:  # Chad
+            return "Africa"
+        if prefix in ["TR"]:  # Gabon
+            return "Africa"
+        if prefix in ["TJ"]:  # Cameroon
+            return "Africa"
+        if prefix in ["TL"]:  # Central African Republic
+            return "Africa"
+        if prefix in ["TN"]:  # Congo
+            return "Africa"
+        if prefix in ["A2"]:  # Botswana
+            return "Africa"
+        if prefix in ["V5"]:  # Namibia
+            return "Africa"
+        if prefix in ["Z2", "Z8"]:  # Zimbabwe
+            return "Africa"
+        if prefix in ["3V", "3X"]:  # Tunisia
+            return "Africa"
+        if prefix in ["3C", "7O", "7P"]:  # Equatorial Guinea
+            return "Africa"
+        if prefix in ["3DA"]:  # Swaziland
+            return "Africa"
+
+        # Oceania
+        if prefix in [
+            "VK",
+            "VI",
+            "VJ",
+            "VL",
+            "VM",
+            "VN",
+            "VO",
+            "VP",
+            "VQ",
+            "VR",
+            "VZ",
+            "AX",
+        ]:  # Australia
+            return "Oceania"
+        if prefix in ["ZL", "ZK", "ZM"]:  # New Zealand
+            return "Oceania"
+        if prefix in ["DU", "KH"]:  # Some Pacific islands
+            return "Oceania"
+        if prefix in ["T2", "T3"]:  # Tuvalu, Kiribati
+            return "Oceania"
+        if prefix in ["YJ"]:  # Vanuatu
+            return "Oceania"
+        if prefix in ["3D2"]:  # Fiji
+            return "Oceania"
+        if prefix in ["FO", "FW"]:  # French Polynesia
+            return "Oceania"
+        if prefix in ["H4"]:  # Solomon Islands
+            return "Oceania"
+        if prefix in ["P2"]:  # Papua New Guinea
+            return "Oceania"
+        if prefix in ["T8"]:  # Palau
+            return "Oceania"
+        if prefix in ["V6"]:  # Micronesia
+            return "Oceania"
+        if prefix in ["V7"]:  # Marshall Islands
+            return "Oceania"
+        if prefix in ["V8"]:  # Brunei (Asia, but sometimes grouped)
+            return "Asia"
+
+        # Antarctica
+        if prefix in ["KC4", "CE9", "VP8", "R1AN", "DP0", "DP1", "3Y"]:  # Antarctic stations
+            return "Antarctica"
+
+        return "Unknown"
+
     def _apply_filters(self) -> None:
         """Apply filters to spots list (optimized for performance)"""
         # Start with all spots
@@ -725,6 +1135,9 @@ class SKCCSpotWidget(QWidget):
 
         # Get SKCC roster for suffix filtering
         skcc_roster = self._get_skcc_roster_cached()
+
+        # Continent filtering
+        selected_continent = self.continent_combo.currentText()
 
         # Single-pass filtering
         self.filtered_spots = []
@@ -750,12 +1163,21 @@ class SKCCSpotWidget(QWidget):
                     )
                     continue
 
+            # Skip if continent filter is active and continent doesn't match
+            if selected_continent != "All Continents":
+                continent = self._get_continent_from_callsign(s.callsign)
+                if continent != selected_continent:
+                    logger.debug(
+                        f"[FILTER] Skipping {s.callsign} {s.frequency}M - continent {continent} != {selected_continent}"
+                    )
+                    continue
+
             # Accept the spot
             logger.debug(f"[FILTER] Accepting {s.callsign} {s.frequency}M dB={s.strength}")
             self.filtered_spots.append(s)
 
         logger.info(
-            f"[FILTER] Filtered {len(self.filtered_spots)} spots from {len(filtered_spots)} total (bands: {selected_bands}, min_dB={min_strength}, unworked_only={check_unworked})"
+            f"[FILTER] Filtered {len(self.filtered_spots)} spots from {len(filtered_spots)} total (bands: {selected_bands}, min_dB={min_strength}, unworked_only={check_unworked}, continent={selected_continent})"
         )
         self._update_table()
 
