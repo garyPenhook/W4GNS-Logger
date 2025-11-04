@@ -58,6 +58,7 @@ class CallsignInfo:
     eqsl_member: bool = False
     iota: str = ""
     sig_info: str = ""
+    dxcc: int = 0  # DXCC entity number
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -89,6 +90,7 @@ class CallsignInfo:
             'eqsl_member': self.eqsl_member,
             'iota': self.iota,
             'sig_info': self.sig_info,
+            'dxcc': self.dxcc,
         }
 
 
@@ -244,6 +246,16 @@ class QRZAPIClient:
 
     def _parse_callsign_element(self, elem: ET.Element) -> CallsignInfo:
         """Parse a Callsign XML element into CallsignInfo"""
+        # Extract DXCC as integer
+        dxcc_str = self._get_text(elem, 'dxcc', '')
+        dxcc = 0
+        if dxcc_str:
+            try:
+                dxcc = int(dxcc_str)
+            except ValueError:
+                logger.debug(f"Could not parse DXCC value: {dxcc_str}")
+                dxcc = 0
+
         info = CallsignInfo(
             callsign=self._get_text(elem, 'call', ''),
             fname=self._get_text(elem, 'fname', ''),  # First name
@@ -272,6 +284,7 @@ class QRZAPIClient:
             eqsl_member=self._get_bool(elem, 'eqsl'),
             iota=self._get_text(elem, 'iota', ''),
             sig_info=self._get_text(elem, 'sig_info', ''),
+            dxcc=dxcc,
         )
         return info
 

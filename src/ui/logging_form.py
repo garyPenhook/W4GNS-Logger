@@ -84,6 +84,9 @@ class LoggingForm(QWidget):
             self.qso_end_time: Optional[datetime] = None
             self.last_callsign = ""  # Track last callsign for 5-second stable detection
 
+            # Store DXCC from QRZ lookup
+            self.qrz_dxcc: int = 0  # DXCC number from QRZ
+
             # Always-running clock timer (updates every 1000ms for better performance)
             self.clock_timer = QTimer()
             self.clock_timer.timeout.connect(self._update_clock)
@@ -112,6 +115,7 @@ class LoggingForm(QWidget):
             # Store minimum widths for resizing
             self.min_widths = {
                 'callsign': 80,
+                'name': 150,  # Operator name field width
                 'datetime': 120,  # Wider for better time field visibility
                 'band': 56,  # 30% narrower (was 80, now 56)
                 'mode': 70,  # 30% narrower (was 100, now 70)
@@ -242,6 +246,18 @@ class LoggingForm(QWidget):
 
         row1.addWidget(create_label("Call:"))
         row1.addLayout(callsign_row, 0)
+
+        # Name (Remote operator name from QRZ)
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Name")
+        font = self.name_input.font()
+        font.setPointSize(int(font.pointSize() * 1.15))
+        self.name_input.setFont(font)
+        self.name_input.setMinimumHeight(35)
+        self.name_input.setMaximumWidth(150)
+        self.name_input.setToolTip("Remote operator name")
+        row1.addWidget(create_label("Name:"))
+        row1.addWidget(self.name_input, 0)
 
         # RST Sent (3-digit RST code: 111-599)
         self.rst_sent_input = QSpinBox()
@@ -765,6 +781,9 @@ class LoggingForm(QWidget):
                 else:
                     comment = None
 
+                # Get name if available (from QRZ or manual entry)
+                name = self.name_input.text().strip() if self.name_input.text().strip() else None
+
                 contact = Contact(
                     callsign=callsign,
                     qso_date=qso_date,
@@ -775,8 +794,10 @@ class LoggingForm(QWidget):
                     frequency=self.frequency_input.value(),
                     country=contact_country if contact_country else None,
                     state=contact_state if contact_state else None,
+                    dxcc=self.qrz_dxcc if self.qrz_dxcc else None,  # Use DXCC from QRZ if available
                     gridsquare=self.grid_input.text().strip() if self.grid_input.text().strip() else None,
                     qth=self.qth_input.text().strip() if self.qth_input.text().strip() else None,
+                    name=name,
                     rst_sent=str(self.rst_sent_input.value()),
                     rst_rcvd=str(self.rst_rcvd_input.value()),
                     skcc_number=skcc_num,
@@ -971,9 +992,13 @@ class LoggingForm(QWidget):
             self.state_combo.setCurrentIndex(0)
             self.grid_input.clear()
             self.qth_input.clear()
+            self.name_input.clear()
             self.rst_sent_input.setValue(599)  # Reset to 599 (5,9,9)
             self.rst_rcvd_input.setValue(599)  # Reset to 599 (5,9,9)
             self.skcc_number_input.clear()
+
+            # Reset DXCC from QRZ
+            self.qrz_dxcc = 0
 
             self.qrp_checkbox.setChecked(False)
 
@@ -1368,6 +1393,16 @@ class LoggingForm(QWidget):
             info: CallsignInfo object from QRZ
         """
         try:
+            # Fill in name if available
+            if info.name and not self.name_input.text().strip():
+                self.name_input.setText(info.name)
+                logger.debug(f"Filled name from QRZ: {info.name}")
+
+            # Store DXCC number from QRZ
+            if info.dxcc:
+                self.qrz_dxcc = info.dxcc
+                logger.debug(f"Stored DXCC from QRZ: {info.dxcc}")
+
             # Fill in state if available
             if info.state:
                 # Try to set state combo if it exists

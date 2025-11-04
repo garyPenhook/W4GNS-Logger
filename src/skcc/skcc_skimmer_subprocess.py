@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SKCCSpot:
     """Represents a SKCC spot from SKCC Skimmer"""
+
     callsign: str
     frequency: float
     mode: str
@@ -36,6 +37,7 @@ class SKCCSpot:
 
 class SkimmerConnectionState(Enum):
     """SKCC Skimmer process states"""
+
     DISCONNECTED = "disconnected"
     STARTING = "starting"
     RUNNING = "running"
@@ -79,15 +81,29 @@ class SkccSkimmerSubprocess:
         Common locations:
         - ~/skcc_skimmer/
         - ~/SKCC_Skimmer/
+        - ~/apps/skcc_skimmer-master/ (GitHub clone)
+        - ~/apps/skcc_skimmer/ (Generic app folder)
+        - ~/Downloads/skcc_skimmer/
         - /opt/skcc_skimmer/
         - Current directory
         """
         candidates = [
+            # Apps directory first (GitHub clones) - PRIORITY
+            Path.home() / "apps" / "skcc_skimmer-master",
+            Path.home() / "apps" / "skcc_skimmer",
+            Path.home() / "apps" / "SKCC_Skimmer",
+            # Standard locations
             Path.home() / "skcc_skimmer",
             Path.home() / "SKCC_Skimmer",
+            # Downloads and other common locations
             Path.home() / "Downloads" / "skcc_skimmer",
+            Path.home() / "Downloads" / "skcc_skimmer-master",
+            # System-wide locations
             Path("/opt/skcc_skimmer"),
+            Path("/usr/local/skcc_skimmer"),
+            # Current directory
             Path.cwd() / "skcc_skimmer",
+            Path.cwd() / "skcc_skimmer-master",
         ]
 
         for path in candidates:
@@ -95,8 +111,9 @@ class SkccSkimmerSubprocess:
                 logger.info(f"Found SKCC Skimmer at: {path}")
                 return path
 
-        # If not found, return home directory (will fail gracefully on start)
+        # If not found, return default location (will fail gracefully on start)
         logger.warning("SKCC Skimmer not found in common locations")
+        logger.warning(f"Searched: {', '.join(str(p) for p in candidates)}")
         return Path.home() / "skcc_skimmer"
 
     def set_callbacks(
@@ -107,6 +124,91 @@ class SkccSkimmerSubprocess:
         """Set callbacks for events"""
         self.on_spot = on_spot
         self.on_state_change = on_state_change
+
+    def update_config(
+        self,
+        callsign: str = "",
+        grid: str = "",
+        adif_file: str = "",
+        goals: str = "ALL,-BRAG,-K3Y",
+        targets: str = "C,T,S",
+    ) -> bool:
+        """
+        Update SKCC Skimmer configuration file before starting
+
+        Args:
+            callsign: Your ham radio callsign
+            grid: Your grid square (e.g., EM87ui)
+            adif_file: Path to your ADIF file
+            goals: Comma-separated award goals (e.g., "ALL,-BRAG,-K3Y")
+            targets: Award targets (e.g., "C,T,S" for Centurion/Tribune/Senator)
+
+        Returns:
+            True if config updated successfully
+        """
+        try:
+            config_path = self.skimmer_path / "skcc_skimmer.cfg"
+            if not config_path.exists():
+                logger.warning(f"SKCC Skimmer config not found at: {config_path}")
+                return False
+
+            # Read current config
+            with open(config_path, "r") as f:
+                config_content = f.read()
+
+            # Update configuration values
+            import re
+
+            # Update MY_CALLSIGN
+            if callsign:
+                config_content = re.sub(
+                    r"MY_CALLSIGN\s*=\s*['\"].*?['\"]",
+                    f"MY_CALLSIGN    = '{callsign.upper()}'",
+                    config_content,
+                )
+
+            # Update MY_GRIDSQUARE
+            if grid:
+                config_content = re.sub(
+                    r"MY_GRIDSQUARE\s*=\s*['\"].*?['\"]",
+                    f"MY_GRIDSQUARE  = '{grid.upper()}'",
+                    config_content,
+                )
+
+            # Update ADI_FILE
+            if adif_file:
+                # Escape backslashes for Windows paths
+                adif_file_escaped = adif_file.replace("\\", "\\\\")
+                config_content = re.sub(
+                    r"ADI_FILE\s*=\s*r?['\"].*?['\"]",
+                    f"ADI_FILE       = r'{adif_file_escaped}'",
+                    config_content,
+                )
+
+            # Update GOALS
+            if goals:
+                config_content = re.sub(
+                    r"GOALS\s*=\s*['\"].*?['\"]", f"GOALS          = '{goals}'", config_content
+                )
+
+            # Update TARGETS
+            if targets:
+                config_content = re.sub(
+                    r"TARGETS\s*=\s*['\"].*?['\"]", f"TARGETS        = '{targets}'", config_content
+                )
+
+            # Write updated config
+            with open(config_path, "w") as f:
+                f.write(config_content)
+
+            logger.info(
+                f"Updated SKCC Skimmer config: callsign={callsign}, grid={grid}, goals={goals}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update SKCC Skimmer config: {e}", exc_info=True)
+            return False
 
     def start(self) -> bool:
         """
@@ -131,15 +233,37 @@ class SkccSkimmerSubprocess:
 
             logger.info(f"Starting SKCC Skimmer from: {self.skimmer_path}")
 
-            # Start SKCC Skimmer as subprocess
-            self.process = subprocess.Popen(
-                ["python3", str(skimmer_script)],
-                cwd=str(self.skimmer_path),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1,  # Line buffered
-            )
+            # Try to use the ./run script first (handles venv and dependencies)
+            run_script = self.skimmer_path / "run"
+            if run_script.exists() and run_script.is_file():
+                logger.info("Using SKCC Skimmer's run script (recommended method)")
+                # Use the run script which handles virtual environment
+                # Merge stderr into stdout so we capture all output
+                self.process = subprocess.Popen(
+                    ["bash", str(run_script)],
+                    cwd=str(self.skimmer_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    bufsize=1,
+                )
+                # Start a separate thread to read stderr
+                self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
+                self._stderr_thread.start()
+            else:
+                logger.warning("./run script not found, attempting direct python3 execution")
+                # Fallback to direct python3 (may fail if dependencies missing)
+                self.process = subprocess.Popen(
+                    ["python3", str(skimmer_script)],
+                    cwd=str(self.skimmer_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True,
+                    bufsize=1,
+                )
+                # Start a separate thread to read stderr
+                self._stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
+                self._stderr_thread.start()
 
             self._set_state(SkimmerConnectionState.RUNNING)
 
@@ -188,6 +312,9 @@ class SkccSkimmerSubprocess:
             return
 
         try:
+            line_count = 0
+            spot_count = 0
+            all_lines = []
             for line in iter(self.process.stdout.readline, ""):
                 if self._stop_event.is_set():
                     break
@@ -195,11 +322,14 @@ class SkccSkimmerSubprocess:
                 if not line.strip():
                     continue
 
-                logger.debug(f"SKCC Skimmer: {line.strip()}")
+                line_count += 1
+                all_lines.append(line.strip())
+                logger.info(f"[SKCC LINE {line_count}] {line.strip()}")
 
                 # Check if this is a spot line
-                # SKCC Skimmer formats: "HH:MM:SS ± CALLSIGN MEMBER_INFO FREQUENCY MODE DETAILS"
                 if self._is_spot_line(line):
+                    spot_count += 1
+                    logger.info(f"[SPOT #{spot_count}] {line.strip()}")
                     if self.on_spot:
                         self.on_spot(line.strip())
 
@@ -207,8 +337,12 @@ class SkccSkimmerSubprocess:
             logger.error(f"Error reading SKCC Skimmer output: {e}")
             self._set_state(SkimmerConnectionState.ERROR)
         finally:
+            logger.info(f"[SKCC SUMMARY] Received {line_count} lines, {spot_count} spots detected")
+            if line_count > 0 and spot_count == 0:
+                logger.warning(f"[DEBUG] Sample lines (first 3):")
+                for i, line in enumerate(all_lines[:3], 1):
+                    logger.warning(f"  Line {i}: {line}")
             if self.process and self.process.poll() is None:
-                # Process still running but stream closed
                 try:
                     self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
@@ -219,21 +353,54 @@ class SkccSkimmerSubprocess:
         """
         Detect if line is a spot output from SKCC Skimmer
 
-        SKCC Skimmer spot format: "HH:MM:SS ± CALLSIGN MEMBER_INFO FREQUENCY MODE DETAILS"
-        Example: "14:23:45 + K4ABC (12345T) on 14025.0 kHz CW 23 dB 15 WPM"
+        Formats:
+        - RBN: "HH:MM:SS ± CALLSIGN (SKCC#) on FREQUENCY MHz MODE"
+        - Sked: "HHMM[Z] CALLSIGN (SKCC#) TEXT"
         """
-        # Look for time pattern at start: HH:MM:SS
-        time_pattern = r"^\d{2}:\d{2}:\d{2}"
-        # Look for signal/member indicators: +, -, space, or flag
-        indicator_pattern = r"[\s+\-◆]"
-        # Look for frequency pattern (khz or MHz)
-        freq_pattern = r"\d+[,.]?\d*\s*(kHz|MHz)"
+        if not line or len(line) < 6:
+            return False
 
-        has_time = bool(re.match(time_pattern, line))
-        has_indicator = bool(re.search(indicator_pattern, line))
-        has_freq = bool(re.search(freq_pattern, line))
+        # Time can be HH:MM:SS or HHMM format
+        time_pattern = r"^\d{1,2}:\d{2}:\d{2}|^\d{3,4}Z?"
+        if not re.match(time_pattern, line):
+            return False
 
-        return has_time and has_indicator and has_freq
+        # Must have a callsign (2+ alphanumeric)
+        if not re.search(r"\s([A-Z0-9]{2,})\s", line):
+            return False
+
+        # Skip non-spot lines (status/info messages)
+        non_spot_keywords = [
+            "connected",
+            "running",
+            "retrieving",
+            "reading",
+            "processing",
+            "found",
+            "finding",
+            "goals",
+            "targets",
+            "bands",
+            "progress",
+            "qualifies",
+            "requires",
+            "award",
+            "rosters",
+            "centurion",
+            "tribune",
+            "senator",
+            "page",
+            "sked",
+            "rrn",
+            "version",
+            "cfg",
+        ]
+        line_lower = line.lower()
+        for keyword in non_spot_keywords:
+            if keyword in line_lower:
+                return False
+
+        return True
 
     def _set_state(self, state: SkimmerConnectionState) -> None:
         """Update connection state and call callback"""
@@ -248,3 +415,21 @@ class SkccSkimmerSubprocess:
         if not self.process:
             return False
         return self.process.poll() is None
+
+    def _read_stderr(self) -> None:
+        """Read SKCC Skimmer's stderr in background thread"""
+        if not self.process or not self.process.stderr:
+            return
+
+        try:
+            for line in iter(self.process.stderr.readline, ""):
+                if self._stop_event.is_set():
+                    break
+
+                if not line.strip():
+                    continue
+
+                logger.error(f"[SKCC STDERR] {line.strip()}")
+
+        except Exception as e:
+            logger.error(f"Error reading SKCC Skimmer stderr: {e}")

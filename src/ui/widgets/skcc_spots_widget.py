@@ -10,9 +10,20 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QComboBox, QCheckBox, QSpinBox, QHeaderView,
-    QGroupBox, QGridLayout, QScrollArea
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QCheckBox,
+    QSpinBox,
+    QHeaderView,
+    QGroupBox,
+    QGridLayout,
+    QScrollArea,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QColor, QFont
@@ -52,7 +63,8 @@ class SKCCSpotRow:
     def __init__(self, spot: SKCCSpot):
         self.spot = spot
         self.callsign = spot.callsign
-        self.frequency = f"{spot.frequency:.3f}"  # 3 decimal places for accurate frequency display
+        # Format frequency - if 0.0 (Sked entry), mark it
+        self.frequency = "Sked" if spot.frequency == 0.0 else f"{spot.frequency:.3f}"
         self.mode = spot.mode
         self.speed = f"{spot.speed} WPM" if spot.speed else ""
         self.reporter = spot.reporter
@@ -69,15 +81,14 @@ class SKCCSpotRow:
             return f"{int(self.age_seconds / 3600)}h"
 
 
-
-
-
-
 class SKCCSpotWidget(QWidget):
     """Widget for displaying and managing SKCC spots from SKCC Skimmer"""
 
     # Signal when user clicks on a spot (to populate logging form)
     spot_selected = pyqtSignal(str, float)  # callsign, frequency
+
+    # Signal for thread-safe RBN spot handling (emitted from background thread, handled in main thread)
+    rbn_spot_received = pyqtSignal(object)  # RBNSpot object
 
     def __init__(self, db, parent: Optional[QWidget] = None):
         """
@@ -92,10 +103,10 @@ class SKCCSpotWidget(QWidget):
         self.spots: List[SKCCSpot] = []
         self.filtered_spots: List[SKCCSpot] = []
 
-        # SKCC Skimmer subprocess for intelligent filtering
-        config_manager = get_config_manager()
-        adif_file = config_manager.get("skcc.adif_master_file", "")
-        self.skcc_skimmer = SkccSkimmerSubprocess(adif_file=adif_file if adif_file else None)
+        # RBN Fetcher for real-time CW spots from Telegraphy.de
+        from src.rbn.rbn_fetcher import RBNFetcher
+
+        self.rbn_fetcher = RBNFetcher()
 
         # Worked callsigns cache for "Unworked only" filter
         self._worked_callsigns_cache: set[str] = set()
@@ -133,6 +144,12 @@ class SKCCSpotWidget(QWidget):
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self._cleanup_old_spots)
         self.cleanup_timer.start(30000)  # Cleanup every 30 seconds
+
+        # Connect RBN spot signal for thread-safe UI updates (moved here for clarity)
+        self.rbn_spot_received.connect(self._on_rbn_spot, Qt.ConnectionType.QueuedConnection)
+
+        # Auto-start RBN monitoring after short delay (UI needs to be ready first)
+        QTimer.singleShot(2000, self._auto_start_rbn_if_enabled)
 
     def _init_ui(self) -> None:
         """Initialize UI components"""
@@ -180,7 +197,9 @@ class SKCCSpotWidget(QWidget):
         for i, band in enumerate(bands):
             check = QCheckBox(band)
             check.setChecked(True)  # All bands selected by default
-            check.stateChanged.connect(self._on_band_selection_changed)  # Save selections when changed
+            check.stateChanged.connect(
+                self._on_band_selection_changed
+            )  # Save selections when changed
             self.band_checks[band] = check
             band_layout.addWidget(check, i // 3, i % 3)  # 3 columns
         band_group.setLayout(band_layout)
@@ -220,41 +239,49 @@ class SKCCSpotWidget(QWidget):
         # Color-coded legend for spot highlighting
         legend_layout = QHBoxLayout()
         legend_layout.addWidget(QLabel("Highlight Colors:"))
-        
+
         # Red - CRITICAL
         red_label = QLabel(" CRITICAL (1-5 needed for award) ")
-        red_label.setStyleSheet("background-color: rgba(255, 0, 0, 120); padding: 2px 5px; border-radius: 3px;")
+        red_label.setStyleSheet(
+            "background-color: rgba(255, 0, 0, 120); padding: 2px 5px; border-radius: 3px;"
+        )
         legend_layout.addWidget(red_label)
-        
+
         # Orange - HIGH
         orange_label = QLabel(" HIGH (6-20 needed) ")
-        orange_label.setStyleSheet("background-color: rgba(255, 100, 0, 100); padding: 2px 5px; border-radius: 3px;")
+        orange_label.setStyleSheet(
+            "background-color: rgba(255, 100, 0, 100); padding: 2px 5px; border-radius: 3px;"
+        )
         legend_layout.addWidget(orange_label)
-        
+
         # Yellow - MEDIUM
         yellow_label = QLabel(" MEDIUM (21-50 needed) ")
-        yellow_label.setStyleSheet("background-color: rgba(255, 200, 0, 80); padding: 2px 5px; border-radius: 3px;")
+        yellow_label.setStyleSheet(
+            "background-color: rgba(255, 200, 0, 80); padding: 2px 5px; border-radius: 3px;"
+        )
         legend_layout.addWidget(yellow_label)
-        
+
         # Green - LOW
         green_label = QLabel(" LOW (already worked) ")
-        green_label.setStyleSheet("background-color: rgba(100, 200, 100, 60); padding: 2px 5px; border-radius: 3px;")
+        green_label.setStyleSheet(
+            "background-color: rgba(100, 200, 100, 60); padding: 2px 5px; border-radius: 3px;"
+        )
         legend_layout.addWidget(green_label)
-        
+
         # Info label
         info_label = QLabel(" Hover over highlighted spots for award details")
         info_label.setStyleSheet("font-style: italic; color: gray;")
         legend_layout.addWidget(info_label)
-        
+
         legend_layout.addStretch()
         layout.addLayout(legend_layout)
 
         # Spots table
         self.spots_table = QTableWidget()
         self.spots_table.setColumnCount(8)
-        self.spots_table.setHorizontalHeaderLabels([
-            "Callsign", "Frequency", "Mode", "Speed", "SKCC#", "Reporter", "Time", "Age"
-        ])
+        self.spots_table.setHorizontalHeaderLabels(
+            ["Callsign", "Frequency", "Mode", "Speed", "SKCC#", "Reporter", "Time", "Age"]
+        )
         self.spots_table.itemSelectionChanged.connect(self._on_spot_selected)
 
         # Set column resize modes with optimized widths
@@ -310,18 +337,34 @@ class SKCCSpotWidget(QWidget):
 
         self.setLayout(layout)
 
+    def _load_startup_caches(self) -> None:
+        """Load caches on startup to avoid queries during normal operation"""
+        try:
+            logger.info("Loading startup caches...")
+            if self.db:
+                # Pre-load worked callsigns and SKCC roster (with internal null checks)
+                _ = self._get_worked_callsigns_cached()
+                _ = self._get_skcc_roster_cached()
+            else:
+                logger.debug("No database instance provided; skipping startup cache preload")
+            logger.info("Startup caches loaded successfully")
+        except Exception as e:
+            logger.error(f"Error loading startup caches: {e}", exc_info=True)
 
     def _load_band_selections(self) -> None:
         """Load saved band selections from config and apply them"""
         try:
             # Get saved band selections from config
             saved_bands_str = self.config_manager.get("dx_cluster.band_selections", "")
-            if saved_bands_str:
+            if saved_bands_str and saved_bands_str.strip():  # Only if non-empty
                 saved_bands = set(saved_bands_str.split(","))
                 # Apply saved selections to checkboxes
                 for band, check in self.band_checks.items():
                     check.setChecked(band in saved_bands)
-            logger.debug(f"Loaded band selections from config: {saved_bands_str}")
+                logger.debug(f"Loaded band selections from config: {saved_bands_str}")
+            else:
+                # Default: keep all bands checked (already set in _init_ui)
+                logger.debug("No saved band selections - using all bands")
         except Exception as e:
             logger.warning(f"Error loading band selections: {e}")
 
@@ -342,7 +385,9 @@ class SKCCSpotWidget(QWidget):
         """Debounce filter changes to prevent excessive table updates on main thread"""
         # Restart the debounce timer
         self._filter_debounce_timer.stop()
-        self._filter_debounce_timer.start(self._filter_debounce_ms)
+        self._filter_debounce_timer.start(self._filter_debounce_ms)  # Start with interval
+        # Also call immediately as fallback (in case timer doesn't work)
+        QTimer.singleShot(0, self._apply_filters)
 
     def _apply_filters_debounced(self) -> None:
         """Apply filters after debounce period (called from timer)"""
@@ -352,7 +397,9 @@ class SKCCSpotWidget(QWidget):
         """Sync SKCC membership roster - force fresh download in background thread"""
         try:
             self.sync_btn.setEnabled(False)
-            self.status_label.setText("Status: Clearing cache and downloading fresh roster... (may take 30 seconds)")
+            self.status_label.setText(
+                "Status: Clearing cache and downloading fresh roster... (may take 30 seconds)"
+            )
 
             # Force fresh download by clearing cache first
             logger.info("Force-clearing SKCC roster cache for fresh download...")
@@ -378,19 +425,29 @@ class SKCCSpotWidget(QWidget):
             def on_sync_complete(success: bool, roster_count: int):
                 try:
                     if success and roster_count > 100:  # Real roster should have thousands
-                        self.status_label.setText(f"✓ SUCCESS: {roster_count} real SKCC members loaded! Click Start Monitoring for real spots.")
-                        logger.info(f"Successfully downloaded real SKCC roster: {roster_count} members")
+                        self.status_label.setText(
+                            f"✓ SUCCESS: {roster_count} real SKCC members loaded! Click Start Monitoring for real spots."
+                        )
+                        logger.info(
+                            f"Successfully downloaded real SKCC roster: {roster_count} members"
+                        )
                     elif roster_count > 0:
-                        self.status_label.setText(f"⚠️  Roster has {roster_count} members (expected 1000+). Real roster download may have failed.")
-                        logger.warning(f"Roster download returned {roster_count} members - may be test data or partial")
+                        self.status_label.setText(
+                            f"⚠️  Roster has {roster_count} members (expected 1000+). Real roster download may have failed."
+                        )
+                        logger.warning(
+                            f"Roster download returned {roster_count} members - may be test data or partial"
+                        )
                     else:
-                        self.status_label.setText("❌ Roster sync failed - check network connection.")
+                        self.status_label.setText(
+                            "❌ Roster sync failed - check network connection."
+                        )
                         logger.error("Roster sync failed - 0 members")
                 except Exception as e:
                     logger.error(f"Error handling roster sync completion: {e}", exc_info=True)
                 finally:
                     self.sync_btn.setEnabled(True)
-                    if hasattr(self, '_roster_sync_thread'):
+                    if hasattr(self, "_roster_sync_thread"):
                         self._roster_sync_thread.deleteLater()
                         self._roster_sync_thread = None
 
@@ -405,81 +462,55 @@ class SKCCSpotWidget(QWidget):
             self.sync_btn.setEnabled(True)
 
     def _toggle_monitoring(self) -> None:
-        """Toggle SKCC Skimmer monitoring on/off"""
+        """Toggle RBN spot monitoring on/off"""
         try:
-            if self.skcc_skimmer.is_running():
-                self.skcc_skimmer.stop()
+            if self.rbn_fetcher.is_running():
+                self.rbn_fetcher.stop()
                 self.connect_btn.setText("Start Monitoring")
                 self.status_label.setText("Status: Stopped")
             else:
                 self.connect_btn.setEnabled(False)
-                self.status_label.setText("Status: Starting... (check logs if stuck)")
+                self.status_label.setText("Status: Starting RBN...")
 
-                # Check roster
-                roster_count = len(self.db.skcc_members.get_roster_dict())
-                if roster_count == 0:
-                    self.status_label.setText(
-                        "⚠️  SKCC roster empty! Click 'Sync Roster' button first."
-                    )
-                    self.connect_btn.setEnabled(True)
-                    logger.warning("Cannot start spotting - SKCC roster is empty")
-                    return
+                # Get callsign from settings for callsign filtering
+                my_callsign = self.config_manager.get("general.operator_callsign", "").upper()
+                self.rbn_fetcher.my_callsign = (
+                    my_callsign if my_callsign and my_callsign != "MYCALL" else None
+                )
 
-                # Export ADIF file for SKCC Skimmer (it needs an ADIF file to know what you've already worked)
-                logger.info("Exporting ADIF file for SKCC Skimmer...")
-                self.status_label.setText("Status: Exporting contacts to ADIF...")
-                try:
-                    from src.backup.backup_manager import BackupManager
-                    from pathlib import Path as PathlibPath
+                # Set callbacks - use signal for thread-safe spot handling to main thread
+                self.rbn_fetcher.set_callbacks(
+                    on_spot=self.rbn_spot_received.emit,
+                    on_state_change=self._on_rbn_state_changed,
+                )
 
-                    all_contacts = self.db.get_all_contacts()
-                    if all_contacts and len(all_contacts) > 0:
-                        backup_manager = BackupManager()
-                        my_skcc = self.config_manager.get("adif.my_skcc_number", "")
-                        my_callsign = self.config_manager.get("general.operator_callsign", "")
-
-                        project_root = PathlibPath(__file__).parent.parent.parent.parent
-                        adif_path = project_root / "logs" / "contacts.adi"
-
-                        result = backup_manager.export_single_adif(
-                            contacts=all_contacts,
-                            output_path=adif_path,
-                            my_skcc=my_skcc if my_skcc else None,
-                            my_callsign=my_callsign if my_callsign and my_callsign != 'MYCALL' else None
-                        )
-
-                        if result["success"]:
-                            logger.info(f"ADIF exported: {result['message']}")
-                        else:
-                            logger.warning(f"ADIF export failed: {result['message']}")
-                    else:
-                        logger.warning("No contacts to export for SKCC Skimmer")
-                except Exception as export_error:
-                    logger.error(f"Error exporting ADIF: {export_error}", exc_info=True)
-
-                # Start SKCC Skimmer for intelligent spot filtering
-                logger.info("Starting SKCC Skimmer subprocess for intelligent spot filtering...")
-                self.status_label.setText("Status: Starting SKCC Skimmer...")
-                success = self.skcc_skimmer.start()
+                # Start fetching
+                success = self.rbn_fetcher.start()
 
                 if success:
-                    self.skcc_skimmer.set_callbacks(
-                        on_spot=self._on_skimmer_spot_line,
-                        on_state_change=self._on_skimmer_state_changed
-                    )
                     self.connect_btn.setText("Stop Monitoring")
                     self.connect_btn.setEnabled(True)
-                    self.status_label.setText(f"Status: SKCC Skimmer active (filtering spots)")
+                    self.status_label.setText("Status: RBN active (fetching CW spots)")
                 else:
-                    logger.error("Failed to start SKCC Skimmer")
+                    logger.error("Failed to start RBN fetcher")
                     self.connect_btn.setText("Start Monitoring")
                     self.connect_btn.setEnabled(True)
-                    self.status_label.setText(f"Status: Failed to start SKCC Skimmer (check configuration)")
+                    self.status_label.setText("Status: Failed to start RBN fetcher")
 
         except Exception as e:
             logger.error(f"Error toggling monitoring: {e}", exc_info=True)
             self.status_label.setText(f"Error: {str(e)}")
             self.connect_btn.setEnabled(True)
+
+    def _auto_start_rbn_if_enabled(self) -> None:
+        """Auto-start RBN monitoring if configured to do so"""
+        try:
+            auto_start = self.config_manager.get("skcc.auto_start_spots", True)
+            if auto_start and not self.rbn_fetcher.is_running():
+                logger.info("Auto-starting RBN monitoring...")
+                self._toggle_monitoring()
+        except Exception as e:
+            logger.warning(f"Error in auto-start RBN: {e}")
 
     def _handle_skimmer_spot(self, spot: SKCCSpot) -> None:
         """
@@ -496,22 +527,84 @@ class SKCCSpotWidget(QWidget):
             if spot_key in self.last_shown_time:
                 time_since_last = (now - self.last_shown_time[spot_key]).total_seconds()
                 if time_since_last < self.duplicate_cooldown_seconds:
-                    logger.debug(f"Skipping duplicate spot: {callsign} on {spot.frequency:.3f} MHz (shown {time_since_last:.0f}s ago)")
+                    logger.debug(
+                        f"Skipping duplicate spot: {callsign} on {spot.frequency:.3f} MHz (shown {time_since_last:.0f}s ago)"
+                    )
                     return
 
             # Add to display list and update tracking
             self.last_shown_time[spot_key] = now
             self.spots.insert(0, spot)
+            logger.debug(f"[UI] Added spot: {spot.callsign} - Total spots: {len(self.spots)}")
 
             # Keep only recent spots in memory
             if len(self.spots) > 200:
                 self.spots = self.spots[:200]
 
             # Update the display
+            logger.debug(f"[UI] Calling _on_filter_changed")
             self._on_filter_changed()
 
         except Exception as e:
             logger.error(f"Error handling spot {spot.callsign}: {e}", exc_info=True)
+
+    def _on_rbn_spot_from_thread(self, rbn_spot) -> None:
+        """Handle RBN spot from background thread - marshals to main thread"""
+        if not rbn_spot:
+            return
+
+        # Use QTimer to marshal this call to the main thread
+        # This ensures thread safety without needing signals
+        QTimer.singleShot(0, lambda s=rbn_spot: self._on_rbn_spot(s))
+
+    def _on_rbn_spot(self, rbn_spot) -> None:
+        """Handle RBN spot from Telegraphy.de API (called in main thread via signal)"""
+        if not rbn_spot:
+            return
+
+        print(f"*** SIGNAL RECEIVED: {rbn_spot.callsign} ***")  # Immediate stdout
+        logger.info(f"*** SIGNAL RECEIVED: {rbn_spot.callsign} ***")  # Also log
+
+        try:
+            # Convert RBN spot to SKCCSpot format
+            from src.skcc.skcc_skimmer_subprocess import SKCCSpot
+
+            # Normalize frequency to MHz (RBN telegraphy sends kHz like 14042.0)
+            freq_mhz = rbn_spot.frequency or 0.0
+            if freq_mhz and freq_mhz > 1000:
+                freq_mhz = round(freq_mhz / 1000.0, 3)
+
+            spot = SKCCSpot(
+                callsign=rbn_spot.callsign,
+                frequency=freq_mhz,
+                mode=rbn_spot.mode,
+                grid=rbn_spot.grid,
+                reporter=rbn_spot.reporter,
+                strength=rbn_spot.strength,
+                speed=rbn_spot.speed,
+                timestamp=rbn_spot.timestamp,
+                is_skcc=True,
+                skcc_number=rbn_spot.skcc_number,
+            )
+
+            logger.debug(f"[UI] Processing RBN spot: {spot.callsign} {spot.frequency}M")
+            self._handle_skimmer_spot(spot)
+
+        except Exception as e:
+            logger.error(f"Error handling RBN spot: {e}", exc_info=True)
+
+    def _on_rbn_state_changed(self, state) -> None:
+        """Handle RBN connection state changes"""
+        logger.info(f"RBN state: {state.value}")
+
+        if "running" in state.value:
+            self.status_label.setText("Status: RBN active (fetching CW spots)")
+        elif "connecting" in state.value:
+            self.status_label.setText("Status: Connecting to RBN...")
+        elif "error" in state.value:
+            self.status_label.setText("Status: RBN error")
+        elif "stopped" in state.value:
+            self.status_label.setText("Status: Stopped")
 
     def _is_valid_skcc_suffix(self, callsign: str, skcc_roster: dict) -> bool:
         """
@@ -536,7 +629,9 @@ class SKCCSpotWidget(QWidget):
                 return False
 
             # member_info is typically a dict with 'skcc_number' key
-            skcc_number = member_info.get('skcc_number') if isinstance(member_info, dict) else member_info
+            skcc_number = (
+                member_info.get("skcc_number") if isinstance(member_info, dict) else member_info
+            )
 
             if not skcc_number:
                 return False
@@ -546,79 +641,35 @@ class SKCCSpotWidget(QWidget):
             if len(skcc_str) == 0:
                 return False
 
-            return skcc_str[-1] in ('C', 'T', 'S')
+            return skcc_str[-1] in ("C", "T", "S")
         except Exception as e:
             logger.debug(f"Error checking SKCC suffix for {callsign}: {e}")
             return False
 
-    def _apply_filters(self) -> None:
-        """Apply filters to spots list (optimized for performance)"""
-        # Start with all spots
-        filtered_spots = self.spots
-
-        # Build band frequency ranges once (optimization: avoid repeated calls to _get_band_freq_range)
-        selected_bands = [band for band, check in self.band_checks.items() if check.isChecked()]
-        band_ranges = {}
-        if selected_bands:
-            for band in selected_bands:
-                freq_range = self._get_band_freq_range(band)
-                if freq_range:
-                    band_ranges[band] = freq_range
-
-        # Apply all filters in a single pass (optimization: avoid multiple list copies)
-        min_strength = self.strength_spin.value()
-        check_unworked = self.unworked_only_check.isChecked()
-        worked_callsigns = self._get_worked_callsigns_cached() if check_unworked else set()
-
-        # Get SKCC roster for suffix filtering (C, T, S only) - using cached version to avoid thread safety issues
-        # Critical: Using cached roster prevents repeated database calls during high-volume RBN spot processing
-        skcc_roster = self._get_skcc_roster_cached()
-
-        # Single-pass filtering for better performance
-        self.filtered_spots = [
-            s for s in filtered_spots
-            if s.mode == "CW"  # Mode filter
-            and s.strength >= min_strength  # Strength filter
-            and (not selected_bands or any(  # Band filter
-                low <= s.frequency <= high
-                for low, high in band_ranges.values()
-            ))
-            and (not check_unworked or s.callsign not in worked_callsigns)  # Unworked filter
-            and self._is_valid_skcc_suffix(s.callsign, skcc_roster)  # SKCC suffix filter (C, T, or S only)
-        ]
-
-        self._update_table()
-
-    def _load_startup_caches(self) -> None:
-        """Load caches on startup to avoid queries during normal operation"""
-        try:
-            logger.info("Loading startup caches...")
-            self._get_worked_callsigns_cached()  # Pre-load worked callsigns
-            self._get_skcc_roster_cached()  # Pre-load SKCC roster for suffix filtering
-            logger.info("Startup caches loaded successfully")
-        except Exception as e:
-            logger.error(f"Error loading startup caches: {e}", exc_info=True)
-
     def _get_worked_callsigns_cached(self) -> set[str]:
         """Return worked callsigns with a 30-minute TTL to reduce DB queries."""
+        if not self.db:
+            return set()  # No database, return empty set
+
         now = datetime.now(timezone.utc)
         if (
-            self._worked_cache_timestamp is None or
-            (now - self._worked_cache_timestamp).total_seconds() > self._worked_cache_ttl_seconds
+            self._worked_cache_timestamp is None
+            or (now - self._worked_cache_timestamp).total_seconds() > self._worked_cache_ttl_seconds
         ):
             try:
                 # Use efficient query - callsigns only, not full Contact objects
                 session = self.db.get_session()
                 try:
-                    from src.database.models import Contact
                     worked_callsigns_result = session.query(Contact.callsign).distinct().all()
-                    self._worked_callsigns_cache = {c[0].upper() for c in worked_callsigns_result if c[0]}
+                    self._worked_callsigns_cache = {
+                        c[0].upper() for c in worked_callsigns_result if c[0]
+                    }
                     self._worked_cache_timestamp = now
                 finally:
                     session.close()
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Error refreshing worked callsigns cache: {e}")
                 # On error, return existing cache (may be empty)
-                pass
         return self._worked_callsigns_cache
 
     def _get_skcc_roster_cached(self) -> dict:
@@ -631,10 +682,14 @@ class SKCCSpotWidget(QWidget):
         Returns:
             Dictionary mapping callsigns to SKCC member info
         """
+        if not self.db:
+            return {}  # No database, return empty dict
+
         now = datetime.now(timezone.utc)
         if (
-            self._skcc_roster_cache_timestamp is None or
-            (now - self._skcc_roster_cache_timestamp).total_seconds() > self._skcc_roster_cache_ttl_seconds
+            self._skcc_roster_cache_timestamp is None
+            or (now - self._skcc_roster_cache_timestamp).total_seconds()
+            > self._skcc_roster_cache_ttl_seconds
         ):
             try:
                 # Cache the entire roster once per 30 minutes
@@ -649,150 +704,151 @@ class SKCCSpotWidget(QWidget):
                     self._skcc_roster_cache = {}
         return self._skcc_roster_cache
 
-    def _on_spot_selected(self) -> None:
-        """Handle spot selection in table"""
-        if self.spots_table.selectedIndexes():
-            row = self.spots_table.selectedIndexes()[0].row()
-            item = self.spots_table.item(row, 0)
-            if item:
-                spot = item.data(Qt.ItemDataRole.UserRole)
-                if spot:
-                    self.spot_selected.emit(spot.callsign, spot.frequency)
+    def _apply_filters(self) -> None:
+        """Apply filters to spots list (optimized for performance)"""
+        # Start with all spots
+        filtered_spots = self.spots
 
-    def _refresh_spots(self) -> None:
-        """Refresh spots display"""
-        # Spots are auto-updated via callback, just update the table
-        # This ensures age column is updated even without new spots
-        self._apply_filters()
+        # Build band frequency ranges once
+        selected_bands = [band for band, check in self.band_checks.items() if check.isChecked()]
+        band_ranges = {}
+        if selected_bands:
+            for band in selected_bands:
+                freq_range = self._get_band_freq_range(band)
+                if freq_range:
+                    band_ranges[band] = freq_range
 
-    def _cleanup_old_spots(self) -> None:
-        """Clean up old spots from memory"""
-        if self._is_shutting_down:
-            return
+        # Apply filters
+        min_strength = self.strength_spin.value()
+        check_unworked = self.unworked_only_check.isChecked()
+        worked_callsigns = self._get_worked_callsigns_cached() if check_unworked else set()
 
-        try:
-            # Remove spots older than 10 minutes from memory
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
-            old_count = len(self.spots)
-            self.spots = [s for s in self.spots if s.timestamp > cutoff]
-            if old_count > len(self.spots):
-                logger.debug(f"Cleaned up {old_count - len(self.spots)} old spots from memory")
+        # Get SKCC roster for suffix filtering
+        skcc_roster = self._get_skcc_roster_cached()
 
-            # Clean up old entries from duplicate tracking - older than 2 minutes
-            cutoff_tracking = datetime.now(timezone.utc) - timedelta(minutes=2)
-            callsigns_to_remove = [
-                callsign for callsign, timestamp in self.last_shown_time.items()
-                if timestamp < cutoff_tracking
-            ]
-            for callsign in callsigns_to_remove:
-                self.last_shown_time.pop(callsign, None)
-            if callsigns_to_remove:
-                logger.debug(f"Cleaned up {len(callsigns_to_remove)} old entries from duplicate tracking")
+        # Single-pass filtering
+        self.filtered_spots = []
+        for s in filtered_spots:
+            # Skip if unworked-only is checked and this is already worked
+            if check_unworked and s.callsign in worked_callsigns:
+                logger.debug(f"[FILTER] Skipping {s.callsign} - already worked")
+                continue
 
-        except Exception as e:
-            logger.error(f"Error in cleanup: {e}", exc_info=True)
+            # Skip if below minimum signal strength
+            if s.strength > 0 and s.strength < min_strength:
+                logger.debug(
+                    f"[FILTER] Skipping {s.callsign} - strength {s.strength} < {min_strength}"
+                )
+                continue
 
-    @staticmethod
-    def _get_band_freq_range(band: str) -> Optional[tuple]:
-        """Get frequency range for band (HF bands only)"""
-        bands = {
-            "160M": (1.8, 2.0),
-            "80M": (3.5, 4.0),
-            "60M": (5.1, 5.4),
-            "40M": (7.0, 7.3),
-            "30M": (10.1, 10.15),
-            "20M": (14.0, 14.35),
-            "17M": (18.068, 18.168),
-            "15M": (21.0, 21.45),
-            "12M": (24.89, 24.99),
-            "10M": (28.0, 29.7),
-            "6M": (50.0, 54.0),
-        }
-        return bands.get(band)
+            # Skip if band filter is active and frequency is outside selected bands
+            # (only apply band filter if frequency is valid, i.e., not 0.0)
+            if selected_bands and s.frequency > 0:
+                if not any(low <= s.frequency <= high for low, high in band_ranges.values()):
+                    logger.debug(
+                        f"[FILTER] Skipping {s.callsign} {s.frequency}M - not in selected bands {selected_bands}"
+                    )
+                    continue
 
+            # Accept the spot
+            logger.debug(f"[FILTER] Accepting {s.callsign} {s.frequency}M dB={s.strength}")
+            self.filtered_spots.append(s)
+
+        logger.info(
+            f"[FILTER] Filtered {len(self.filtered_spots)} spots from {len(filtered_spots)} total (bands: {selected_bands}, min_dB={min_strength}, unworked_only={check_unworked})"
+        )
+        self._update_table()
 
     def _update_table(self) -> None:
         """Update spots table with filtered spots"""
-        # NOTE: Spot highlighting disabled - it was causing 5-20 second UI freezes on every table update
-        # See commit message for details. Can be re-enabled with background thread processing.
-
-        # Disable updates during table rebuild to prevent flickering and improve scrolling performance
         self.spots_table.setUpdatesEnabled(False)
         try:
             self.spots_table.setRowCount(len(self.filtered_spots))
             self.spot_count_label.setText(f"Spots: {len(self.filtered_spots)}")
+            logger.info(f"[TABLE] Row count set to {len(self.filtered_spots)}")
 
             for row, spot in enumerate(self.filtered_spots):
                 row_data = SKCCSpotRow(spot)
 
-                # Build SKCC number string - show if available, empty otherwise
+                # Build SKCC number string
                 skcc_str = spot.skcc_number if spot.skcc_number else ""
+
+                # Format frequency - if 0.0 (Sked entry), show "Sked" instead
+                freq_str = "Sked" if spot.frequency == 0.0 else row_data.frequency
 
                 items = [
                     QTableWidgetItem(row_data.callsign),
-                    QTableWidgetItem(row_data.frequency),
+                    QTableWidgetItem(freq_str),
                     QTableWidgetItem(row_data.mode),
                     QTableWidgetItem(row_data.speed),
-                    QTableWidgetItem(skcc_str),  # SKCC Number
+                    QTableWidgetItem(skcc_str),
                     QTableWidgetItem(row_data.reporter),
                     QTableWidgetItem(row_data.time),
                     QTableWidgetItem(row_data.get_age_string()),
                 ]
 
-
                 for col, item in enumerate(items):
                     item.setData(Qt.ItemDataRole.UserRole, spot)
                     self.spots_table.setItem(row, col, item)
+            if self.filtered_spots:
+                top = self.filtered_spots[0]
+                logger.info(
+                    f"[TABLE] Top row: {top.callsign} {top.frequency:.3f}M dB={top.strength} reporter={top.reporter}"
+                )
         finally:
-            # Re-enable updates to refresh the display
             self.spots_table.setUpdatesEnabled(True)
 
     def _on_skimmer_spot_line(self, line: str) -> None:
-        """
-        Handle SKCC Skimmer console output line (called from subprocess thread)
-
-        Parse SKCC Skimmer's spot format and convert to SKCCSpot
-        Format: "HH:MM:SS ± CALLSIGN (SKCC#) on FREQUENCY MHz MODE DETAILS"
-        """
+        """Handle SKCC Skimmer console output line"""
         try:
-            logger.debug(f"SKCC Skimmer output: {line}")
+            logger.info(f"[PARSING SPOT] {line}")
 
-            # Parse SKCC Skimmer spot line format
-            # Example: "14:23:45 + K4ABC (12345T) on 14025.0 MHz CW 23 dB 15 WPM"
-
-            # Basic parsing - extract key elements from the line
             import re
 
-            # Extract callsign (word after + or - or space indicator)
-            callsign_match = re.search(r'[\s+\-◆]\s+(\w{2,})\s', line)
+            # Extract callsign
+            callsign_match = re.search(r"\s([A-Z0-9]{2,})\s", line)
             if not callsign_match:
+                logger.debug(f"  ✗ No callsign found in: {line}")
                 return
             callsign = callsign_match.group(1).upper()
+            logger.debug(f"  ✓ Callsign: {callsign}")
 
             # Extract SKCC number if present
-            skcc_match = re.search(r'\((\d+[A-Z]*)\)', line)
+            skcc_match = re.search(r"\((\d+[A-Z]*)\)", line)
             skcc_number = skcc_match.group(1) if skcc_match else None
+            logger.debug(f"  ✓ SKCC#: {skcc_number if skcc_number else 'None'}")
 
-            # Extract frequency
-            freq_match = re.search(r'(\d+[.,]?\d*)\s*(kHz|MHz)', line)
-            if not freq_match:
-                return
-            freq_str = freq_match.group(1).replace(',', '.')
-            freq_mhz = float(freq_str)
-            if 'kHz' in freq_match.group(2):
-                freq_mhz = freq_mhz / 1000  # Convert kHz to MHz
+            # Extract frequency (may not exist in Sked format)
+            freq_match = re.search(r"(\d+[.,]?\d*)\s*(kHz|MHz)", line)
+            if freq_match:
+                freq_str = freq_match.group(1).replace(",", ".")
+                freq_mhz = float(freq_str)
+                if "kHz" in freq_match.group(2):
+                    freq_mhz = freq_mhz / 1000
+            else:
+                # Sked format entries don't have frequency - use placeholder
+                freq_mhz = 0.0
+            logger.debug(f"  ✓ Frequency: {freq_mhz if freq_mhz else 'N/A'} MHz")
 
-            # Extract mode (CW, SSB, etc.)
-            mode_match = re.search(r'\b(CW|SSB|LSB|USB|FM|RTTY|FT8|FT4)\b', line, re.IGNORECASE)
+            # Extract mode (RBN spots have this, Sked entries don't)
+            mode_match = re.search(r"\b(CW|SSB|LSB|USB|FM|RTTY|FT8|FT4)\b", line, re.IGNORECASE)
             mode = mode_match.group(1).upper() if mode_match else "CW"
+            logger.debug(f"  ✓ Mode: {mode}")
 
-            # Extract signal strength
-            signal_match = re.search(r'(\d+)\s*dB', line)
+            # Extract signal strength (RBN spots have this)
+            signal_match = re.search(r"(\d+)\s*dB", line)
             strength = int(signal_match.group(1)) if signal_match else 0
+            logger.debug(f"  ✓ Signal: {strength if strength else 'N/A'} dB")
 
             # Extract speed (WPM) for CW
-            speed_match = re.search(r'(\d+)\s*WPM', line)
+            speed_match = re.search(r"(\d+)\s*WPM", line)
             speed = int(speed_match.group(1)) if speed_match else None
+            logger.debug(f"  ✓ Speed: {speed if speed else 'None'} WPM")
+
+            # Skip if no frequency AND no SKCC number (not a valid spot)
+            if freq_mhz == 0.0 and not skcc_number:
+                logger.debug(f"  ✗ Skipping: no frequency and no SKCC number")
+                return
 
             # Create SKCCSpot object
             spot = SKCCSpot(
@@ -804,15 +860,15 @@ class SKCCSpotWidget(QWidget):
                 strength=strength,
                 speed=speed if mode == "CW" else None,
                 timestamp=datetime.now(timezone.utc),
-                is_skcc=True,  # SKCC Skimmer only shows SKCC spots
+                is_skcc=True,
                 skcc_number=skcc_number,
             )
 
-            # Handle the spot
+            logger.info(f"  ✅ SPOT CREATED: {callsign} on {freq_mhz if freq_mhz else 'Sked'}")
             self._handle_skimmer_spot(spot)
 
         except Exception as e:
-            logger.error(f"Error parsing SKCC Skimmer spot line: {e}")
+            logger.error(f"Error parsing SKCC Skimmer spot line '{line}': {e}", exc_info=True)
 
     def _on_skimmer_state_changed(self, state: SkimmerConnectionState) -> None:
         """Handle SKCC Skimmer state changes"""
@@ -839,7 +895,7 @@ class SKCCSpotWidget(QWidget):
             self._filter_debounce_timer.stop()
 
             # Stop SKCC Skimmer subprocess if running
-            if hasattr(self, 'skcc_skimmer') and self.skcc_skimmer:
+            if hasattr(self, "skcc_skimmer") and self.skcc_skimmer:
                 if self.skcc_skimmer.is_running():
                     logger.info("Stopping SKCC Skimmer subprocess...")
                     self.skcc_skimmer.stop()
@@ -847,3 +903,67 @@ class SKCCSpotWidget(QWidget):
         except Exception as e:
             logger.error(f"Error cleaning up spots widget: {e}", exc_info=True)
         super().closeEvent(event)
+
+    def _refresh_spots(self) -> None:
+        """Refresh spots display immediately (updates age and applies filters)."""
+        try:
+            self._apply_filters()
+        except Exception as e:
+            logger.error(f"Error refreshing spots: {e}", exc_info=True)
+
+    def _on_spot_selected(self) -> None:
+        """Handle spot selection in the table and emit spot_selected."""
+        try:
+            indexes = self.spots_table.selectedIndexes()
+            if not indexes:
+                return
+            row = indexes[0].row()
+            item = self.spots_table.item(row, 0)
+            if not item:
+                return
+            spot = item.data(Qt.ItemDataRole.UserRole)
+            if not spot:
+                return
+            # Emit callsign and frequency to populate logging form
+            self.spot_selected.emit(spot.callsign, spot.frequency)
+        except Exception as e:
+            logger.error(f"Error handling spot selection: {e}", exc_info=True)
+
+    def _cleanup_old_spots(self) -> None:
+        """Periodic cleanup to remove old spots and shrink duplicate tracking."""
+        try:
+            # Remove spots older than 10 minutes
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+            before = len(self.spots)
+            self.spots = [s for s in self.spots if s.timestamp > cutoff]
+            removed = before - len(self.spots)
+            if removed > 0:
+                logger.info(f"[CLEANUP] Removed {removed} old spots (>{10} minutes)")
+
+            # Trim duplicate tracking older than 2 minutes
+            dup_cutoff = datetime.now(timezone.utc) - timedelta(minutes=2)
+            to_delete = [k for k, t in self.last_shown_time.items() if t < dup_cutoff]
+            for k in to_delete:
+                self.last_shown_time.pop(k, None)
+            if to_delete:
+                logger.debug(f"[CLEANUP] Cleared {len(to_delete)} entries from duplicate tracking")
+        except Exception as e:
+            logger.error(f"Error in cleanup: {e}", exc_info=True)
+
+    @staticmethod
+    def _get_band_freq_range(band: str) -> Optional[tuple[float, float]]:
+        """Return (low, high) MHz range for a given amateur HF band."""
+        bands = {
+            "160M": (1.8, 2.0),
+            "80M": (3.5, 4.0),
+            "60M": (5.1, 5.4),
+            "40M": (7.0, 7.3),
+            "30M": (10.1, 10.15),
+            "20M": (14.0, 14.35),
+            "17M": (18.068, 18.168),
+            "15M": (21.0, 21.45),
+            "12M": (24.89, 24.99),
+            "10M": (28.0, 29.7),
+            "6M": (50.0, 54.0),
+        }
+        return bands.get(band)
