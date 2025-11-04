@@ -261,46 +261,6 @@ class SKCCSpotWidget(QWidget):
         self.status_label.setFont(status_font)
         layout.addWidget(self.status_label)
 
-        # Color-coded legend for spot highlighting
-        legend_layout = QHBoxLayout()
-        legend_layout.addWidget(QLabel("Highlight Colors:"))
-
-        # Red - CRITICAL
-        red_label = QLabel(" CRITICAL (1-5 needed for award) ")
-        red_label.setStyleSheet(
-            "background-color: rgba(255, 0, 0, 120); padding: 2px 5px; border-radius: 3px;"
-        )
-        legend_layout.addWidget(red_label)
-
-        # Orange - HIGH
-        orange_label = QLabel(" HIGH (6-20 needed) ")
-        orange_label.setStyleSheet(
-            "background-color: rgba(255, 100, 0, 100); padding: 2px 5px; border-radius: 3px;"
-        )
-        legend_layout.addWidget(orange_label)
-
-        # Yellow - MEDIUM
-        yellow_label = QLabel(" MEDIUM (21-50 needed) ")
-        yellow_label.setStyleSheet(
-            "background-color: rgba(255, 200, 0, 80); padding: 2px 5px; border-radius: 3px;"
-        )
-        legend_layout.addWidget(yellow_label)
-
-        # Green - LOW
-        green_label = QLabel(" LOW (already worked) ")
-        green_label.setStyleSheet(
-            "background-color: rgba(100, 200, 100, 60); padding: 2px 5px; border-radius: 3px;"
-        )
-        legend_layout.addWidget(green_label)
-
-        # Info label
-        info_label = QLabel(" Hover over highlighted spots for award details")
-        info_label.setStyleSheet("font-style: italic; color: gray;")
-        legend_layout.addWidget(info_label)
-
-        legend_layout.addStretch()
-        layout.addLayout(legend_layout)
-
         # Spots table
         self.spots_table = QTableWidget()
         self.spots_table.setColumnCount(8)
