@@ -218,6 +218,12 @@ class SKCCSpotWidget(QWidget):
         self.unworked_only_check.stateChanged.connect(self._on_filter_changed)  # Debounced
         filter_layout.addWidget(self.unworked_only_check)
 
+        # SKCC Members Only
+        self.skcc_only_check = QCheckBox("SKCC Members Only")
+        self.skcc_only_check.setChecked(True)  # Default to showing only SKCC members
+        self.skcc_only_check.stateChanged.connect(self._on_filter_changed)  # Debounced
+        filter_layout.addWidget(self.skcc_only_check)
+
         # Continent filter
         filter_layout.addWidget(QLabel("Continent:"))
         self.continent_combo = QComboBox()
@@ -593,6 +599,21 @@ class SKCCSpotWidget(QWidget):
             if freq_mhz and freq_mhz > 1000:
                 freq_mhz = round(freq_mhz / 1000.0, 3)
 
+            # Look up SKCC number from roster
+            skcc_number = None
+            is_skcc_member = False
+            skcc_roster = self._get_skcc_roster_cached()
+            if skcc_roster:
+                callsign_upper = rbn_spot.callsign.upper()
+                member_info = skcc_roster.get(callsign_upper)
+                if member_info:
+                    is_skcc_member = True
+                    # Extract SKCC number from member info
+                    if isinstance(member_info, dict):
+                        skcc_number = member_info.get("skcc_number")
+                    else:
+                        skcc_number = member_info
+
             spot = SKCCSpot(
                 callsign=rbn_spot.callsign,
                 frequency=freq_mhz,
@@ -602,11 +623,13 @@ class SKCCSpotWidget(QWidget):
                 strength=rbn_spot.strength,
                 speed=rbn_spot.speed,
                 timestamp=rbn_spot.timestamp,
-                is_skcc=True,
-                skcc_number=rbn_spot.skcc_number,
+                is_skcc=is_skcc_member,
+                skcc_number=str(skcc_number) if skcc_number else None,
             )
 
-            logger.debug(f"[UI] Processing RBN spot: {spot.callsign} {spot.frequency}M")
+            logger.debug(
+                f"[UI] Processing RBN spot: {spot.callsign} {spot.frequency}M SKCC#{skcc_number or 'N/A'}"
+            )
             self._handle_skimmer_spot(spot)
 
         except Exception as e:
@@ -1131,6 +1154,7 @@ class SKCCSpotWidget(QWidget):
         # Apply filters
         min_strength = self.strength_spin.value()
         check_unworked = self.unworked_only_check.isChecked()
+        check_skcc_only = self.skcc_only_check.isChecked()
         worked_callsigns = self._get_worked_callsigns_cached() if check_unworked else set()
 
         # Get SKCC roster for suffix filtering
@@ -1142,6 +1166,11 @@ class SKCCSpotWidget(QWidget):
         # Single-pass filtering
         self.filtered_spots = []
         for s in filtered_spots:
+            # Skip if SKCC-only is checked and this spot has no SKCC number
+            if check_skcc_only and not s.skcc_number:
+                logger.debug(f"[FILTER] Skipping {s.callsign} - not a SKCC member")
+                continue
+
             # Skip if unworked-only is checked and this is already worked
             if check_unworked and s.callsign in worked_callsigns:
                 logger.debug(f"[FILTER] Skipping {s.callsign} - already worked")
@@ -1177,7 +1206,7 @@ class SKCCSpotWidget(QWidget):
             self.filtered_spots.append(s)
 
         logger.info(
-            f"[FILTER] Filtered {len(self.filtered_spots)} spots from {len(filtered_spots)} total (bands: {selected_bands}, min_dB={min_strength}, unworked_only={check_unworked}, continent={selected_continent})"
+            f"[FILTER] Filtered {len(self.filtered_spots)} spots from {len(filtered_spots)} total (bands: {selected_bands}, min_dB={min_strength}, unworked_only={check_unworked}, skcc_only={check_skcc_only}, continent={selected_continent})"
         )
         self._update_table()
 
