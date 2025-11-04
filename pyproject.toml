@@ -95,6 +95,18 @@ exclude = '''
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
 select = ["E", "F"]
 # CI focus: avoid noisy failures from unused imports/vars and benign f-strings
 ignore = [
@@ -106,16 +118,6 @@ ignore = [
     "F601",  # dictionary key literal repeated
     "E402",  # module import not at top of file
     "E722",  # bare except (pre-existing in codebase, should be fixed separately)
-]
-exclude = [
-    ".git",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    "venv",
-    "build",
-    "dist",
 ]
 
 [tool.mypy]
