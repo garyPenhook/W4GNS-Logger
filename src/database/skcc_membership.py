@@ -592,33 +592,31 @@ class SKCCMembershipManager:
             # Cache is empty or stale, try to download fresh data
             logger.info("Downloading fresh SKCC membership data from official source...")
 
-            try:
-                import requests
-            except ImportError:
-                logger.error("requests library not available, cannot download roster")
-                return self.get_member_count() > 0
+            import urllib.request
+            import urllib.error
 
             # Try primary source
             try:
-                response = requests.get(
+                req = urllib.request.Request(
                     self.PRIMARY_SOURCE,
-                    timeout=30,
                     headers={
                         'User-Agent': 'Mozilla/5.0 (W4GNS-Logger/1.0)',
                         'Accept': 'text/csv, text/html, application/json'
                     }
                 )
-                response.raise_for_status()
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    response_text = response.read().decode('utf-8')
+                    content_type = response.headers.get('content-type', 'unknown')
 
-                logger.debug(f"Downloaded {len(response.text)} bytes from {self.PRIMARY_SOURCE}")
-                logger.debug(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
+                logger.debug(f"Downloaded {len(response_text)} bytes from {self.PRIMARY_SOURCE}")
+                logger.debug(f"Content-Type: {content_type}")
 
                 # Try parsing as CSV first, then HTML
-                members = self.parse_roster_csv(response.text)
+                members = self.parse_roster_csv(response_text)
 
                 if not members:
                     logger.debug("CSV parsing returned no members, trying HTML parser...")
-                    members = self.parse_roster_html(response.text)
+                    members = self.parse_roster_html(response_text)
 
                 if members:
                     # Clear old data and cache new members
@@ -628,17 +626,11 @@ class SKCCMembershipManager:
                     logger.info(f"Successfully synced {cached} SKCC members from official source")
                     return True
                 else:
-                    logger.warning(f"Downloaded roster but failed to parse members. Response sample: {response.text[:200]}")
+                    logger.warning(f"Downloaded roster but failed to parse members. Response sample: {response_text[:200]}")
                     return False
 
-            except requests.exceptions.Timeout:
-                logger.warning(f"Timeout downloading from {self.PRIMARY_SOURCE} (30s)")
-                return self.get_member_count() > 0
-            except requests.exceptions.ConnectionError as e:
-                logger.warning(f"Connection error downloading roster: {e}")
-                return self.get_member_count() > 0
-            except requests.exceptions.HTTPError as e:
-                logger.warning(f"HTTP error downloading roster: {e}")
+            except urllib.error.URLError as e:
+                logger.warning(f"Error downloading from {self.PRIMARY_SOURCE}: {e}")
                 return self.get_member_count() > 0
 
         except Exception as e:

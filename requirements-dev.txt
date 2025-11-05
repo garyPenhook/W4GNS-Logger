@@ -1,0 +1,18 @@
+# Optional Development Dependencies for W4GNS Logger
+# Install with: pip install -r requirements-dev.txt
+#
+# This file contains dependencies only needed for development, testing, and code quality.
+# Regular users DO NOT need these to run the application.
+
+# Testing
+pytest>=7.0
+pytest-cov>=4.0
+pytest-qt>=4.2.0
+
+# Code Quality
+black>=22.0
+flake8>=5.0
+mypy>=0.990
+
+# Development
+ipython>=8.0

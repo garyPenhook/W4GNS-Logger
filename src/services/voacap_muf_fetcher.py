@@ -10,7 +10,8 @@ The MUF is the highest frequency that will refract off the ionosphere for a give
 """
 
 import logging
-import requests
+import urllib.request
+import urllib.error
 import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -85,10 +86,7 @@ class VOACAPMUFFetcher:
 
     def __init__(self):
         """Initialize VOACAP MUF fetcher with GIRO real-time data support and prediction caching"""
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'W4GNS-Logger/1.0 (ham radio logging application)'
-        })
+        self.user_agent = 'W4GNS-Logger/1.0 (ham radio logging application)'
         self.last_update = None
         # Cache key -> (predictions dict, timestamp) for O(1) prediction lookups
         self.cached_predictions: Dict[str, Tuple[Dict, datetime]] = {}
@@ -307,12 +305,10 @@ class VOACAPMUFFetcher:
             measurement_time = giro_info.get('time')
             if measurement_time:
                 try:
-                    # Parse the measurement timestamp
-                    from dateutil import parser
-                    from datetime import timezone
-                    
-                    meas_dt = parser.parse(measurement_time)
-                    
+                    # Parse the measurement timestamp (remove 'Z' suffix if present)
+                    time_str_clean = measurement_time.replace('Z', '').strip()
+                    meas_dt = datetime.fromisoformat(time_str_clean)
+
                     # Convert to UTC if not timezone-aware
                     if meas_dt.tzinfo is None:
                         meas_dt = meas_dt.replace(tzinfo=timezone.utc)
@@ -1012,12 +1008,7 @@ class VOACAPMUFFetcher:
                 return "#FF0000"  # Red - not usable
 
     def close(self) -> None:
-        """Close HTTP session and weather fetcher"""
-        try:
-            self.session.close()
-        except Exception as e:
-            logger.warning(f"Error closing VOACAP session: {e}")
-
+        """Close weather fetcher"""
         # Close weather fetcher if it was initialized
         try:
             if self.weather_fetcher is not None:
