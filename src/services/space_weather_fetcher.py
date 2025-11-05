@@ -5,7 +5,8 @@ Retrieves current space weather conditions from NOAA SWPC for HF propagation ass
 """
 
 import logging
-import requests
+import urllib.request
+import urllib.error
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
 import json
@@ -38,10 +39,13 @@ class SpaceWeatherFetcher:
 
     def __init__(self):
         """Initialize the space weather fetcher"""
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'W4GNS-Logger/1.0 (ham radio logging application)'
-        })
+        self.user_agent = 'W4GNS-Logger/1.0 (ham radio logging application)'
+
+    def _fetch_json(self, url: str, timeout: int = HTTP_TIMEOUT) -> Any:
+        """Helper method to fetch JSON data from a URL using urllib"""
+        req = urllib.request.Request(url, headers={'User-Agent': self.user_agent})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return json.loads(response.read().decode('utf-8'))
 
     def get_current_conditions(self) -> Dict[str, Any]:
         """
@@ -52,14 +56,10 @@ class SpaceWeatherFetcher:
         """
         try:
             # Get scales data
-            scales_response = self.session.get(NOAA_SCALES, timeout=HTTP_TIMEOUT)
-            scales_response.raise_for_status()
-            scales_data = scales_response.json()
+            scales_data = self._fetch_json(NOAA_SCALES)
 
             # Get K-index forecast
-            kp_response = self.session.get(NOAA_KP_FORECAST, timeout=HTTP_TIMEOUT)
-            kp_response.raise_for_status()
-            kp_data = kp_response.json()
+            kp_data = self._fetch_json(NOAA_KP_FORECAST)
 
             # Parse current scales (index "0" is current)
             current_scales = scales_data.get("0", {})
@@ -91,7 +91,7 @@ class SpaceWeatherFetcher:
             }
             return result
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.error(f"Error fetching NOAA space weather data: {e}")
             return self._get_error_result(str(e))
         except (json.JSONDecodeError, KeyError, ValueError) as e:
@@ -106,9 +106,7 @@ class SpaceWeatherFetcher:
             Dict with K-index forecast data
         """
         try:
-            response = self.session.get(NOAA_KP_FORECAST, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            data = response.json()
+            data = self._fetch_json(NOAA_KP_FORECAST)
 
             # Extract forecast values (skip header row at index 0)
             forecasts = []
@@ -132,7 +130,7 @@ class SpaceWeatherFetcher:
                 'count': len(forecasts)
             }
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.error(f"Error fetching K-index forecast: {e}")
             return {'forecasts': [], 'error': str(e), 'timestamp': datetime.now().isoformat()}
         except (json.JSONDecodeError, ValueError) as e:
@@ -158,9 +156,7 @@ class SpaceWeatherFetcher:
         try:
             # Primary source: NOAA SWPC F10.7 (Solar Flux) - MOST AUTHORITATIVE
             logger.debug("Fetching Solar Flux (F10.7) from NOAA SWPC...")
-            response = self.session.get(NOAA_F107_FLUX, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            noaa_data = response.json()
+            noaa_data = self._fetch_json(NOAA_F107_FLUX)
 
             if isinstance(noaa_data, list) and len(noaa_data) > 0:
                 # Get the most recent entry
@@ -176,16 +172,14 @@ class SpaceWeatherFetcher:
 
             logger.debug("NOAA F10.7 data not available, trying HamQSL...")
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.warning(f"Unable to fetch NOAA F10.7: {e}, trying fallback...")
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.warning(f"Error parsing NOAA F10.7: {e}, trying fallback...")
 
         try:
             # Secondary source: HamQSL (community maintained aggregation)
-            response = self.session.get(HAMQSL_SOLAR_DATA, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            data = response.json()
+            data = self._fetch_json(HAMQSL_SOLAR_DATA)
 
             # HamQSL format includes 'sfi' field
             if isinstance(data, dict) and 'sfi' in data:
@@ -200,7 +194,7 @@ class SpaceWeatherFetcher:
             logger.debug("SFI not found in HamQSL, will use estimation fallback")
             return None
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.debug(f"Unable to fetch from HamQSL: {e}")
             return None
         except (json.JSONDecodeError, KeyError, ValueError) as e:
@@ -282,11 +276,12 @@ class SpaceWeatherFetcher:
             # Get current sunspot count from HamQSL XML
             try:
                 logger.debug("Fetching sunspot data from HamQSL XML...")
-                response = self.session.get(HAMQSL_SOLAR_XML, timeout=HTTP_TIMEOUT)
-                response.raise_for_status()
+                req = urllib.request.Request(HAMQSL_SOLAR_XML, headers={'User-Agent': self.user_agent})
+                with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as response:
+                    response_text = response.read().decode('utf-8')
 
                 # Parse XML response - structure is <solar><solardata><sunspots>
-                root = ET.fromstring(response.text)
+                root = ET.fromstring(response_text)
                 solardata = root.find('solardata')
 
                 if solardata is not None:
@@ -301,7 +296,7 @@ class SpaceWeatherFetcher:
                         except (ValueError, TypeError):
                             logger.warning(f"Invalid sunspot count value from HamQSL: {sunspot_elem.text}")
 
-            except (requests.RequestException, ET.ParseError) as e:
+            except (urllib.error.URLError, ET.ParseError) as e:
                 logger.debug(f"Unable to fetch HamQSL sunspot data: {e}")
 
             # Get smoothed sunspot number (SSN) from NOAA
@@ -335,9 +330,7 @@ class SpaceWeatherFetcher:
         try:
             # Fetch NOAA solar cycle data (includes smoothed sunspot number)
             logger.debug("Fetching smoothed sunspot number (SSN) from NOAA SWPC...")
-            response = self.session.get(NOAA_SUNSPOTS, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            data = response.json()
+            data = self._fetch_json(NOAA_SUNSPOTS)
 
             # NOAA data structure: list of records with 'time-tag' and 'smoothed_ssn'
             # Recent months may have -1 for smoothed_ssn, so search backwards for valid value
@@ -361,7 +354,7 @@ class SpaceWeatherFetcher:
 
             return None
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.warning(f"Unable to fetch NOAA sunspot data: {e}")
             return None
         except (json.JSONDecodeError, KeyError, ValueError) as e:
@@ -376,9 +369,7 @@ class SpaceWeatherFetcher:
             Dict with solar radiation, radio blackout information, Solar Flux Index, and sunspot data
         """
         try:
-            response = self.session.get(NOAA_SCALES, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            scales_data = response.json()
+            scales_data = self._fetch_json(NOAA_SCALES)
 
             # Get current and forecast scales
             current = scales_data.get("0", {})
@@ -394,9 +385,7 @@ class SpaceWeatherFetcher:
 
             # If actual SFI not available, estimate from conditions
             if solar_flux is None:
-                kp_response = self.session.get(NOAA_KP_FORECAST, timeout=HTTP_TIMEOUT)
-                kp_response.raise_for_status()
-                kp_data = kp_response.json()
+                kp_data = self._fetch_json(NOAA_KP_FORECAST)
 
                 # Get current K-index
                 kp_index = None
@@ -443,7 +432,7 @@ class SpaceWeatherFetcher:
             }
             return result
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.error(f"Error fetching solar data: {e}")
             return {'error': str(e), 'timestamp': datetime.now().isoformat()}
         except (json.JSONDecodeError, KeyError) as e:
@@ -562,9 +551,7 @@ class SpaceWeatherFetcher:
         """
         try:
             logger.debug("Fetching real-time GIRO ionospheric data from prop.kc2g.com...")
-            response = self.session.get(GIRO_STATIONS_API, timeout=HTTP_TIMEOUT)
-            response.raise_for_status()
-            stations = response.json()
+            stations = self._fetch_json(GIRO_STATIONS_API)
 
             if not isinstance(stations, list) or len(stations) == 0:
                 logger.warning("No GIRO station data available")
@@ -723,13 +710,9 @@ class SpaceWeatherFetcher:
                 'source': 'GIRO'
             }
 
-        except requests.RequestException as e:
+        except urllib.error.URLError as e:
             logger.debug(f"Unable to fetch GIRO data: {e}")
             return None
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             logger.debug(f"Error parsing GIRO data: {e}")
             return None
-
-    def close(self) -> None:
-        """Close the session"""
-        self.session.close()
